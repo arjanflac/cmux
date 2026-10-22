@@ -204,6 +204,7 @@ private struct SidebarImmediateObservationState: Equatable {
     let isPinned: Bool
     let isMuted: Bool
     let customColor: String?
+    let customIconFingerprint: String?
     let latestConversationMessage: String?
     let latestSubmittedMessage: String?
     let latestSubmittedAt: Date?
@@ -257,10 +258,11 @@ extension Workspace {
         // `$customTitle` here would forward a leading event while title still
         // has its old value, so the committed title publisher is the single
         // rename invalidation source.
-        let workspaceFields = Publishers.CombineLatest3(
+        let workspaceFields = Publishers.CombineLatest4(
             sidebarTitleDidChangePublisher,
             $customDescription,
-            $isPinned
+            $isPinned,
+            $customIcon
         )
         .combineLatest($customColor)
         .combineLatest($isMuted)
@@ -288,6 +290,7 @@ extension Workspace {
                     isPinned: workspaceFields.0.0.2,
                     isMuted: workspaceFields.1,
                     customColor: workspaceFields.0.1,
+                    customIconFingerprint: workspaceFields.0.0.3?.fingerprint,
                     latestConversationMessage: conversationFields.0,
                     latestSubmittedMessage: conversationFields.1,
                     latestSubmittedAt: conversationFields.2,

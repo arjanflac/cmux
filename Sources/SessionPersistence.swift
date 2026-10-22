@@ -1850,6 +1850,7 @@ struct SessionWorkspaceSnapshot: Codable, Sendable {
     var customTitleWasRemote: Bool? = nil
     var customDescription: String?
     var customColor: String?
+    var customIcon: WorkspaceIcon? = nil
     var customizationDirectory: String? = nil
     var usesWorkspaceDirectoryCustomization: Bool? = nil // `nil` infers a legacy local root.
     var isPinned: Bool

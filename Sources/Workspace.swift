@@ -191,6 +191,7 @@ extension Workspace {
             customTitleWasRemote: effectiveCustomTitleSource == .remote ? true : nil,
             customDescription: customDescription,
             customColor: customColor,
+            customIcon: customIcon,
             isPinned: isPinned,
             isMuted: isMuted,
             groupId: groupId,
@@ -376,6 +377,7 @@ extension Workspace {
         restoreTitleState(from: snapshot, restoredPanelIds: oldToNewPanelIds)
         setCustomDescription(snapshot.customDescription)
         setCustomColor(snapshot.customColor)
+        setCustomIcon(snapshot.customIcon)
         isPinned = snapshot.isPinned
         isMuted = snapshot.isMuted ?? false
         groupId = snapshot.groupId
@@ -2902,6 +2904,8 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
     /// Identifier of the WorkspaceGroup this workspace belongs to, or nil if ungrouped.
     /// The group entity itself lives in `TabManager.workspaceGroups`.
     @Published var groupId: UUID?
+    @Published private(set) var customIcon: WorkspaceIcon?
+    private(set) var sidebarIcon: SidebarWorkspaceIconSnapshot?
     @Published var customColor: String?  // hex string, e.g. "#C0392B"
     /// User-defined environment variables applied to every shell spawned in this
     /// workspace: the initial terminal, every later pane/surface/split, and every
@@ -6230,6 +6234,12 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
 
     // MARK: - Title Management
     // Title/description ownership lives in Workspace+TitleOwnership.swift.
+
+    func setCustomIcon(_ icon: WorkspaceIcon?) {
+        guard customIcon != icon else { return }
+        sidebarIcon = icon.flatMap(SidebarWorkspaceIconSnapshot.init)
+        customIcon = icon
+    }
 
     func setCustomColor(_ hex: String?) {
         if let hex {

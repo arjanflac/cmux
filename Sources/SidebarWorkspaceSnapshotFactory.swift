@@ -219,6 +219,7 @@ struct SidebarWorkspaceSnapshotFactory {
             taskStatusInput: taskStatusInput,
             deviceWorkspaceLabel: cloud?.deviceLabel,
             compactStatusGlyph: compactStatusGlyph,
+            customIcon: workspace.sidebarIcon,
             hostTitleSuffix: hostTitleSuffix
         )
     }

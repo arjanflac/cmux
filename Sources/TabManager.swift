@@ -483,6 +483,7 @@ class TabManager: ObservableObject {
     private let settingsCatalog = SettingCatalog()
     private let defaultWorkspaceWorkingDirectoryProvider: () -> String
     private let ghosttyWorkingDirectoryInheritanceProvider: () -> GhosttyWorkingDirectoryInheritance
+    var workspaceIconImportTokens: [UUID: UUID] = [:]
     let workspaceCustomizationStore: WorkspaceCustomizationStore
     private var lastFocusHistoryIncludesPanesAndTabs: Bool
     let nativeSSHConnectionBroker: NativeSSHConnectionBroker
@@ -6751,6 +6752,7 @@ extension TabManager {
             hasher.combine(workspace.customTitle ?? "")
             hasher.combine(workspace.customDescription ?? "")
             hasher.combine(workspace.customColor ?? "")
+            hasher.combine(workspace.customIcon?.fingerprint)
             hasher.combine(workspace.isPinned)
             // Workspace notification mute is persisted in the session
             // manifest; include it in the autosave fingerprint so toggling

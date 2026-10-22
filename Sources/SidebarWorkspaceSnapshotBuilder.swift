@@ -99,6 +99,9 @@ struct SidebarWorkspaceSnapshotBuilder {
         var remoteWorkspaceBadgeLabel: String? { deviceWorkspaceLabel ?? cloudWorkspaceLabel }
         var remoteWorkspaceBadgeSymbol: String { deviceWorkspaceLabel == nil ? "cloud" : "desktopcomputer" }
 
+        /// Cached thumbnail, decoded only when workspace identity changes.
+        var customIcon: SidebarWorkspaceIconSnapshot? = nil
+
         /// Remote host named after the title when another workspace shares it (beta), else nil.
         var hostTitleSuffix: String? = nil
 

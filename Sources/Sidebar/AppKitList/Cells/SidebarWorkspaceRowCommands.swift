@@ -494,6 +494,14 @@ struct SidebarWorkspaceRowMenuBuilder {
         }
 
         if !isMulti {
+            menu.addItem(item(String(localized: "contextMenu.chooseWorkspaceIcon", defaultValue: "Choose Workspace Icon…")) { [weak tabManager, tab] in
+                tabManager?.chooseWorkspaceIcon(workspaceId: tab.id)
+            })
+            if tab.customIcon != nil {
+                menu.addItem(item(String(localized: "contextMenu.removeWorkspaceIcon", defaultValue: "Remove Workspace Icon")) { [weak tabManager, tab] in
+                    tabManager?.removeWorkspaceIcon(workspaceId: tab.id)
+                })
+            }
             menu.addItem(item(
                 String(localized: "contextMenu.editWorkspaceDescription", defaultValue: "Edit Workspace Description…"),
                 shortcut: KeyboardShortcutSettings.shortcut(for: .editWorkspaceDescription)

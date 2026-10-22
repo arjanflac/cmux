@@ -75,7 +75,8 @@ public struct WorkspaceCustomizationStore {
         updateCustomization(for: stableId) { current in
             WorkspaceCustomization(
                 customTitle: field,
-                customColor: current?.customColor ?? .absent
+                customColor: current?.customColor ?? .absent,
+                customIcon: current?.customIcon ?? .absent
             )
         }
     }
@@ -101,7 +102,22 @@ public struct WorkspaceCustomizationStore {
         updateCustomizations(forKeys: keys) { current in
             WorkspaceCustomization(
                 customTitle: current?.customTitle ?? .absent,
-                customColor: field
+                customColor: field,
+                customIcon: current?.customIcon ?? .absent
+            )
+        }
+    }
+
+    /// Records a thumbnail selection or explicit removal without changing title or color.
+    /// - Parameters:
+    ///   - icon: The normalized thumbnail, or `nil` to record a removal.
+    ///   - stableId: The stable workspace identity.
+    public func setCustomIcon(_ icon: WorkspaceIcon?, for stableId: UUID) {
+        updateCustomization(for: stableId) { current in
+            WorkspaceCustomization(
+                customTitle: current?.customTitle ?? .absent,
+                customColor: current?.customColor ?? .absent,
+                customIcon: icon.map(WorkspaceIconCustomizationField.value) ?? .cleared
             )
         }
     }
@@ -137,7 +153,8 @@ public struct WorkspaceCustomizationStore {
                         : current?.customTitle ?? .absent,
                     customColor: current?.customColor == .absent || current == nil
                         ? self.migratedField(customization.customColor)
-                        : current?.customColor ?? .absent
+                        : current?.customColor ?? .absent,
+                    customIcon: current?.customIcon ?? .absent
                 )
             }
         }

@@ -35,6 +35,7 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
     private let statusGlyphButton = SidebarRowTaskStatusGlyphButton()
     /// `sidebar.compactAgentStatus` leading status glyph.
     private let compactStatusGlyphView = SidebarCompactStatusGlyphImageView()
+    private let workspaceIconView = NSImageView()
     private let titleView = SidebarRowTextView(lines: 1)
     private let cloudImageView = NSImageView()
     private let trailingBadge = SidebarRowUnreadBadgeView()
@@ -334,6 +335,12 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
         statusGlyphButton.onClick = { [weak self] in self?.toggleStatusPopover() }
         contentContainer.addSubview(statusGlyphButton)
         contentContainer.addSubview(leadingBadge)
+        contentContainer.addSubview(workspaceIconView)
+        workspaceIconView.imageScaling = .scaleProportionallyUpOrDown
+        workspaceIconView.wantsLayer = true
+        workspaceIconView.layer?.cornerRadius = 3
+        workspaceIconView.layer?.masksToBounds = true
+        workspaceIconView.setAccessibilityElement(false)
         contentContainer.addSubview(titleView)
         cloudImageView.setAccessibilityIdentifier("sidebarCloudBadge")
         cloudImageView.setAccessibilityElement(false)
@@ -620,6 +627,8 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
             )
         }
 #endif
+        workspaceIconView.image = snapshot.customIcon?.image
+        workspaceIconView.isHidden = snapshot.customIcon == nil
         titleView.stringValue = boundedTitle
         titleView.font = .systemFont(ofSize: model.scaled(12.5), weight: .semibold)
         titleView.textColor = palette.primaryText
@@ -1329,6 +1338,12 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
             x += side + SidebarCompactStatusGlyph.titleSpacing
         }
 
+        if !workspaceIconView.isHidden {
+            let side = model.scaled(18)
+            place(workspaceIconView, size: NSSize(width: side, height: side), centerY: firstLineCenter)
+            x += side + titleRowSpacing
+        }
+
         x = cloudImageView.layoutLeadingSidebarWorkspaceAccessory(
             minX: x, centerY: firstLineCenter, side: model.scaled(10) + 4, spacing: titleRowSpacing, apply: apply
         )
@@ -1367,7 +1382,7 @@ final class SidebarWorkspaceRowTableCellView: NSTableCellView {
                 }
             }
         }
-        y += max(titleHeight, leadingSlotActive ? badgeSide : 0)
+        y += max(titleHeight, leadingSlotActive ? badgeSide : 0, workspaceIconView.isHidden ? 0 : model.scaled(18))
 
         func placeBlock(_ view: SidebarRowTextView) {
             guard !view.isHidden else { return }

@@ -79,6 +79,18 @@ extension TabItemView {
             ? String(localized: "contextMenu.moveWorkspacesToWindow", defaultValue: "Move Workspaces to Window")
             : String(localized: "contextMenu.moveWorkspaceToWindow", defaultValue: "Move Workspace to Window")
 
+        if !isMulti {
+            Button(String(localized: "contextMenu.chooseWorkspaceIcon", defaultValue: "Choose Workspace Icon…")) {
+                actions.chooseIcon()
+            }
+            if workspaceSnapshot.customIcon != nil {
+                Button(String(localized: "contextMenu.removeWorkspaceIcon", defaultValue: "Remove Workspace Icon")) {
+                    actions.removeIcon()
+                }
+            }
+            Divider()
+        }
+
         Button(pinLabel) {
             actions.performPin()
         }

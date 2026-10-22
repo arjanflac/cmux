@@ -107,6 +107,12 @@ extension TabManager {
         )
     }
 
+    func applyWorkspaceIcon(_ icon: WorkspaceIcon?, to workspace: Workspace) {
+        workspaceIconImportTokens.removeValue(forKey: workspace.id)
+        workspace.setCustomIcon(icon)
+        workspaceCustomizationStore.setCustomIcon(icon, for: workspace.stableId)
+    }
+
     private func applyWorkspaceCustomization(
         _ customization: WorkspaceCustomization,
         to workspace: Workspace
@@ -118,6 +124,12 @@ extension TabManager {
             workspace.setCustomTitle(title)
         case .cleared:
             workspace.setCustomTitle(nil)
+        }
+
+        switch customization.customIcon {
+        case .absent: break
+        case let .value(icon): workspace.setCustomIcon(icon)
+        case .cleared: workspace.setCustomIcon(nil)
         }
 
         switch customization.customColor {

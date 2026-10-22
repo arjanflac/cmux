@@ -15492,6 +15492,8 @@ struct VerticalTabsSidebar: View, Equatable {
                 selection = .tabs
                 _ = AppDelegate.shared?.requestEditWorkspaceDescriptionViaCommandPalette()
             },
+            chooseIcon: { tabManager.chooseWorkspaceIcon(workspaceId: tabId) },
+            removeIcon: { tabManager.removeWorkspaceIcon(workspaceId: tabId) },
             closeWorkspace: {
                 guard let tab = workspace() else { return }
                 tabManager.closeWorkspaceFromTabCloseButton(tab)
@@ -16623,6 +16625,16 @@ struct TabItemView: View, Equatable {
                         // Same geometry as the AppKit row: pulled into the leading padding, tighter gap to the title.
                         .padding(.leading, -SidebarCompactStatusGlyph.leadingPullIn)
                         .padding(.trailing, SidebarCompactStatusGlyph.titleSpacing - titleRowSpacing)
+                }
+
+                if let icon = workspaceSnapshot.customIcon {
+                    Image(nsImage: icon.image)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: scaledFontSize(18), height: scaledFontSize(18))
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                        .accessibilityHidden(true)
+                        .alignmentGuide(.sidebarTitleFirstLineCenter) { $0[VerticalAlignment.center] }
                 }
 
                 SidebarCloudWorkspaceBadgeView(label: settings.showsCloudDeviceIcons && !settings.hidesAllDetails ? workspaceSnapshot.remoteWorkspaceBadgeLabel : nil, pointSize: scaledFontSize(10), tint: activeSecondaryColor(0.7), symbol: workspaceSnapshot.remoteWorkspaceBadgeSymbol)
