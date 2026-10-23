@@ -51,7 +51,7 @@ jobs:
             echo 'Already contains the latest stable release.' >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          git config user.name 'cmux Personal update bot'
+          git config user.name 'cmux+ update bot'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           candidate="personal-candidate/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           git switch -c "$candidate"
@@ -120,9 +120,9 @@ jobs:
         run: python3 scripts/personal-build.py
       - name: Package candidate without official auto-updates
         run: |
-          python3 scripts/personal-package.py "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux Personal.app"
+          python3 scripts/personal-package.py "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux+.app"
           mkdir -p dist
-          ditto -c -k --sequesterRsrc --keepParent "$HOME/Applications/cmux Personal.app" dist/cmux-personal-arm64.zip
+          ditto -c -k --sequesterRsrc --keepParent "$HOME/Applications/cmux+.app" dist/cmux-personal-arm64.zip
           shasum -a 256 dist/cmux-personal-arm64.zip > dist/cmux-personal-arm64.zip.sha256
       - uses: actions/upload-artifact@v4
         with:

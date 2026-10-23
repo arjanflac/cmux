@@ -12,7 +12,7 @@ import subprocess
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
-    parser.add_argument("--destination", type=Path, default=Path.home() / "Applications/cmux Personal.app")
+    parser.add_argument("--destination", type=Path, default=Path.home() / "Applications/cmux+.app")
     parser.add_argument("--sign", default="-")
     args = parser.parse_args()
     source = args.source.resolve()
@@ -21,8 +21,8 @@ def main() -> None:
     bundle_id = info["CFBundleIdentifier"]
     if bundle_id != "com.cmuxterm.app.debug.workspace.icons":
         parser.error("expected the isolated workspace-icons build; refusing another app identity")
-    if destination.name != "cmux Personal.app" or destination == source:
-        parser.error("destination must be a separate cmux Personal.app")
+    if destination.name != "cmux+.app" or destination == source:
+        parser.error("destination must be a separate cmux+.app")
     if destination.exists():
         parser.error("destination already exists; quit it and explicitly remove that installation before replacing it")
     processes = subprocess.check_output(["ps", "-axo", "comm="], text=True)
@@ -32,8 +32,8 @@ def main() -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     try:
         subprocess.run(["ditto", str(source), str(destination)], check=True)
-        info["CFBundleName"] = "cmux Personal"
-        info["CFBundleDisplayName"] = "cmux Personal"
+        info["CFBundleName"] = "cmux+"
+        info["CFBundleDisplayName"] = "cmux+"
         info["CMUXPersonalBuild"] = True
         info["SUEnableAutomaticChecks"] = False
         info["SUAutomaticallyUpdate"] = False
@@ -74,7 +74,7 @@ def main() -> None:
     for key, value in (("showSidebarDevBuildBanner", "false"),
                        ("SUEnableAutomaticChecks", "false"), ("SUAutomaticallyUpdate", "false")):
         subprocess.run(["defaults", "write", bundle_id, key, "-bool", value], check=True)
-    print("Installed cmux Personal. Launch it from Applications or Raycast.")
+    print("Installed cmux+. Launch it from Applications or Raycast.")
 
 
 if __name__ == "__main__":

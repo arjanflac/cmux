@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build cmux Personal through the repository wrapper, with bounded compiler concurrency."""
+"""Build cmux+ through the repository wrapper, with bounded compiler concurrency."""
 from pathlib import Path
 import json
 import os
@@ -35,6 +35,6 @@ env.update(PATH=str(tools) + ':' + str(Path.home() / '.cargo/bin') + ':' + env.g
 if not (root / 'GhosttyKit.xcframework').is_dir():
     subprocess.run(['bash', 'scripts/download-prebuilt-ghosttykit.sh'], cwd=root, env=env, check=True)
 sys.exit(subprocess.call(['bash', 'scripts/reload.sh', '--tag', 'workspace-icons',
-                         '--name', 'cmux Personal', '--release', '--prod-auth',
+                         '--name', 'cmux+', '--release', '--prod-auth',
                          '--derived-data', str(Path.home() / 'Library/Developer/Xcode/DerivedData/cmux-personal'),
                          *sys.argv[1:]], cwd=root, env=env))
