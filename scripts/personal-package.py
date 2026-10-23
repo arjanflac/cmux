@@ -44,7 +44,15 @@ def main() -> None:
         for key, value in list(env.items()):
             if isinstance(value, str):
                 env[key] = value.replace(str(source), str(destination))
-        env["PACKAGE_RESOURCE_BUNDLE_PATH"] = str(destination / "Contents/Resources")
+        # Repackage downloaded CI artifacts too: their original build-machine
+        # paths do not match `source` after extraction on another Mac.
+        env.update({
+            "CMUX_BUNDLED_CLI_PATH": str(destination / "Contents/Resources/bin/cmux"),
+            "CMUX_SHELL_INTEGRATION_DIR": str(destination / "Contents/Resources/shell-integration"),
+            "PACKAGE_RESOURCE_BUNDLE_PATH": str(destination / "Contents/Resources"),
+            "CMUXD_UNIX_PATH": str(Path.home() / "Library/Application Support/cmux/cmuxd-dev-workspace-icons.sock"),
+            "CMUXTERM_REPO_ROOT": str(Path(__file__).resolve().parent.parent),
+        })
         (destination / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
         # SwiftPM's Release accessor has no environment override. Standalone CLI
         # processes search beside their executable, rather than the host app's resources.
