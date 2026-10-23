@@ -35,6 +35,6 @@ env.update(PATH=str(tools) + ':' + str(Path.home() / '.cargo/bin') + ':' + env.g
 if not (root / 'GhosttyKit.xcframework').is_dir():
     subprocess.run(['bash', 'scripts/download-prebuilt-ghosttykit.sh'], cwd=root, env=env, check=True)
 sys.exit(subprocess.call(['bash', 'scripts/reload.sh', '--tag', 'workspace-icons',
-                         '--name', 'cmux+', '--release', '--prod-auth',
+                         '--name', 'cmux-custom-build', '--release', '--prod-auth',
                          '--derived-data', str(Path.home() / 'Library/Developer/Xcode/DerivedData/cmux-personal'),
                          *sys.argv[1:]], cwd=root, env=env))

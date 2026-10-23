@@ -120,7 +120,7 @@ jobs:
         run: python3 scripts/personal-build.py
       - name: Package candidate without official auto-updates
         run: |
-          python3 scripts/personal-package.py "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux+.app"
+          python3 scripts/personal-package.py "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux-custom-build.app"
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent "$HOME/Applications/cmux+.app" dist/cmux-personal-arm64.zip
           shasum -a 256 dist/cmux-personal-arm64.zip > dist/cmux-personal-arm64.zip.sha256
