@@ -35,6 +35,16 @@ def main() -> None:
         info["CFBundleName"] = "cmux+"
         info["CFBundleDisplayName"] = "cmux+"
         info["CMUXPersonalBuild"] = True
+        # The hosted production sign-in rejects development callback schemes.
+        # Keep the app's isolated bundle/data identity, but claim the supported
+        # cmux:// callback now that the official app has been uninstalled.
+        auth_types = [entry for entry in info.get("CFBundleURLTypes", [])
+                      if entry.get("CFBundleURLName", "").endswith(".auth")]
+        if len(auth_types) != 1:
+            raise ValueError("expected exactly one native auth callback registration")
+        schemes = auth_types[0].setdefault("CFBundleURLSchemes", [])
+        if "cmux" not in schemes:
+            schemes.append("cmux")
         info["SUEnableAutomaticChecks"] = False
         info["SUAutomaticallyUpdate"] = False
         info["SUAllowsAutomaticUpdates"] = False
@@ -48,6 +58,7 @@ def main() -> None:
         # paths do not match `source` after extraction on another Mac.
         env.update({
             "CMUX_AUTH_ENVIRONMENT": "production",
+            "CMUX_AUTH_CALLBACK_SCHEME": "cmux",
             "CMUX_AUTH_WWW_ORIGIN": "https://cmux.com",
             "CMUX_WWW_ORIGIN": "https://cmux.com",
             "CMUX_API_BASE_URL": "https://cmux.com",
