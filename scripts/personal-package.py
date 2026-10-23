@@ -3,10 +3,49 @@
 from __future__ import annotations
 
 import argparse
+import ctypes
+import os
 from pathlib import Path
 import plistlib
 import shutil
 import subprocess
+import sys
+import tempfile
+
+
+def require_closed(path: Path) -> None:
+    processes = subprocess.check_output(["ps", "-axo", "comm="], text=True)
+    if any(str(path) + "/Contents/" in line for line in processes.splitlines()):
+        raise RuntimeError(f"{path.name} is running; finish its sessions and quit it first")
+
+
+def replace_installation(source: Path, destination: Path, identity: str) -> None:
+    """Validate a complete same-volume candidate before an atomic directory swap."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    require_closed(destination)
+    with tempfile.TemporaryDirectory(prefix=".cmux-plus-install-", dir=destination.parent) as temporary:
+        staged = Path(temporary) / "cmux+.app"
+        subprocess.run([sys.executable, str(Path(__file__).resolve()), str(source),
+                        "--destination", str(staged), "--runtime-destination", str(destination),
+                        "--sign", identity], check=True)
+        # The user may have reopened the app while signing. Never replace a live bundle.
+        require_closed(destination)
+        if destination.exists():
+            previous = plistlib.loads((destination / "Contents/Info.plist").read_bytes())
+            if previous.get("CFBundleIdentifier") != "com.cmuxterm.app.debug.workspace.icons":
+                raise RuntimeError("refusing to replace a different application identity")
+            libc = ctypes.CDLL(None, use_errno=True)
+            swap = libc.renameatx_np
+            swap.argtypes = [ctypes.c_int, ctypes.c_char_p, ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+            swap.restype = ctypes.c_int
+            # Darwin: AT_FDCWD = -2; RENAME_SWAP = 2. Both paths share a volume.
+            if swap(-2, os.fsencode(staged), -2, os.fsencode(destination), 2) != 0:
+                error = ctypes.get_errno()
+                raise OSError(error, os.strerror(error))
+            # The retired bundle now occupies the disposable staging path; no backup is kept.
+        else:
+            os.replace(staged, destination)
+    print("Installed cmux+ after validating the replacement. Launch it from Applications or Raycast.")
 
 
 def main() -> None:
@@ -14,6 +53,9 @@ def main() -> None:
     parser.add_argument("source", type=Path)
     parser.add_argument("--destination", type=Path, default=Path.home() / "Applications/cmux+.app")
     parser.add_argument("--sign", default="-")
+    parser.add_argument("--replace", action="store_true",
+                        help="validate a staged copy, then atomically replace a closed installation")
+    parser.add_argument("--runtime-destination", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     source = args.source.resolve()
     destination = args.destination.expanduser().absolute()
@@ -23,13 +65,20 @@ def main() -> None:
         parser.error("expected the isolated workspace-icons build; refusing another app identity")
     if destination.name != "cmux+.app" or destination == source:
         parser.error("destination must be a separate cmux+.app")
+    require_closed(source)
+    if args.replace:
+        if args.runtime_destination is not None:
+            parser.error("--runtime-destination cannot be combined with --replace")
+        replace_installation(source, destination, args.sign)
+        return
     if destination.exists():
-        parser.error("destination already exists; quit it and explicitly remove that installation before replacing it")
+        parser.error("destination already exists; quit the app and use --replace")
     processes = subprocess.check_output(["ps", "-axo", "comm="], text=True)
     if any(str(source) + "/Contents/MacOS/" in line or str(destination) + "/Contents/MacOS/" in line
            for line in processes.splitlines()):
         parser.error("the source or destination is running; finish its sessions and quit it first")
     destination.parent.mkdir(parents=True, exist_ok=True)
+    runtime_destination = args.runtime_destination.expanduser().absolute() if args.runtime_destination else destination
     try:
         subprocess.run(["ditto", str(source), str(destination)], check=True)
         info["CFBundleName"] = "cmux+"
@@ -53,7 +102,7 @@ def main() -> None:
         env = info.setdefault("LSEnvironment", {})
         for key, value in list(env.items()):
             if isinstance(value, str):
-                env[key] = value.replace(str(source), str(destination))
+                env[key] = value.replace(str(source), str(runtime_destination))
         # Repackage downloaded CI artifacts too: their original build-machine
         # paths do not match `source` after extraction on another Mac.
         env.update({
@@ -64,9 +113,9 @@ def main() -> None:
             "CMUX_API_BASE_URL": "https://cmux.com",
             "CMUX_VM_API_BASE_URL": "https://cmux.com",
             "CMUX_IROH_BROKER_BASE_URL": "https://cmux.com",
-            "CMUX_BUNDLED_CLI_PATH": str(destination / "Contents/Resources/bin/cmux"),
-            "CMUX_SHELL_INTEGRATION_DIR": str(destination / "Contents/Resources/shell-integration"),
-            "PACKAGE_RESOURCE_BUNDLE_PATH": str(destination / "Contents/Resources"),
+            "CMUX_BUNDLED_CLI_PATH": str(runtime_destination / "Contents/Resources/bin/cmux"),
+            "CMUX_SHELL_INTEGRATION_DIR": str(runtime_destination / "Contents/Resources/shell-integration"),
+            "PACKAGE_RESOURCE_BUNDLE_PATH": str(runtime_destination / "Contents/Resources"),
             "CMUXD_UNIX_PATH": str(Path.home() / "Library/Application Support/cmux/cmuxd-dev-workspace-icons.sock"),
             "CMUXTERM_REPO_ROOT": str(Path(__file__).resolve().parent.parent),
         })
