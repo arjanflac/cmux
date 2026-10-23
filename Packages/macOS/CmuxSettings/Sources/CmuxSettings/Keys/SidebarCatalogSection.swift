@@ -78,6 +78,13 @@ public struct SidebarCatalogSection: SettingCatalogSection {
         userDefaultsKey: "sidebarNotificationMessageLineLimit"
     )
 
+    /// Whether workspace rows include Git branch names, independently of directory paths.
+    public let showGitBranch = DefaultsKey<Bool>(
+        id: "sidebar.showGitBranch",
+        defaultValue: true,
+        userDefaultsKey: "sidebarShowGitBranch"
+    )
+
     public let showBranchDirectory = DefaultsKey<Bool>(
         id: "sidebar.showBranchDirectory",
         defaultValue: true,

@@ -79,6 +79,18 @@ final class SidebarDividerTrackingView: NSView {
     // NSSplitView.
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
+    /// Bounds each idle wait so a missing mouse-up cannot strand the resize session.
+    /// Queued events are drained before consulting physical state, preserving a queued release.
+    static func nextTrackingEvent(
+        isTrackingActive: () -> Bool,
+        nextEvent: (Date) -> NSEvent?
+    ) -> NSEvent? {
+        while true {
+            if let event = nextEvent(Date(timeIntervalSinceNow: 0.05)) { return event }
+            guard isTrackingActive() else { return nil }
+        }
+    }
+
     override func mouseDown(with event: NSEvent) {
         guard let window else { return }
         trackMouseDown(with: event, in: window)
@@ -107,12 +119,19 @@ final class SidebarDividerTrackingView: NSView {
 #endif
         }
         while true {
-            guard var next = window.nextEvent(
-                matching: [.leftMouseDragged, .leftMouseUp],
-                until: .distantFuture,
-                inMode: .eventTracking,
-                dequeue: true
-            ) else { continue }
+            guard var next = Self.nextTrackingEvent(
+                isTrackingActive: {
+                    window.isVisible && CGEventSource.buttonState(.combinedSessionState, button: .left)
+                },
+                nextEvent: { deadline in
+                    window.nextEvent(
+                        matching: [.leftMouseDragged, .leftMouseUp],
+                        until: deadline,
+                        inMode: .eventTracking,
+                        dequeue: true
+                    )
+                }
+            ) else { break }
             // Track the newest queued position: high-polling mice deliver
             // drags faster than frames present, and replaying stale ones
             // would put the divider behind the cursor.

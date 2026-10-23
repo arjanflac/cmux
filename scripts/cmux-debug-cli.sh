@@ -100,4 +100,9 @@ export CMUX_SOCKET_PATH="$socket_path"
 export CMUX_TAG="$tag_slug"
 export CMUX_BUNDLE_ID="com.cmuxterm.app.debug.${tag_bundle_id}"
 export CMUX_BUNDLED_CLI_PATH="$cli_path"
+# Xcode's Debug SwiftPM accessor does not search above a nested CLI executable.
+# Use the resource bundles already packaged in this exact tagged app.
+if [[ -z "${PACKAGE_RESOURCE_BUNDLE_PATH:-}" ]]; then
+  export PACKAGE_RESOURCE_BUNDLE_PATH="$(dirname "$(dirname "$cli_path")")"
+fi
 exec "$cli_path" "$@"

@@ -1709,6 +1709,11 @@ enum CmuxEmbeddedConfigSchema {
           "description": "Maximum lines shown for the latest notification below each workspace title.",
           "descriptionKey": "schemaDescriptions.sidebar.notificationMessageLineLimit"
         },
+        "showGitBranch": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show Git branch names in workspace rows independently of working directories."
+        },
         "showBranchDirectory": {
           "type": "boolean",
           "default": true,

@@ -4903,6 +4903,15 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
     /// Registers a bonsplit surface as the active owner for a panel.
     func bindSurface(_ surfaceId: TabID, toPanelId panelId: UUID) {
         paneTree.bindSurface(surfaceId, toPanelId: panelId)
+        if panels[panelId] is TerminalPanel {
+            syncTerminalTabIcon(surfaceId)
+        }
+    }
+
+    /// Uses workspace identity for terminal tabs; other panel kinds retain their own icons.
+    private func syncTerminalTabIcon(_ tabId: TabID) {
+        guard let tab = bonsplitController.tab(tabId), tab.iconImageData != customIcon?.pngData else { return }
+        bonsplitController.updateTab(tabId, iconImageData: .some(customIcon?.pngData))
     }
 
     /// Removes one bonsplit surface mapping.
@@ -6239,6 +6248,9 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
         guard customIcon != icon else { return }
         sidebarIcon = icon.flatMap(SidebarWorkspaceIconSnapshot.init)
         customIcon = icon
+        for (tabId, panelId) in surfaceIdToPanelId where panels[panelId] is TerminalPanel {
+            syncTerminalTabIcon(tabId)
+        }
     }
 
     func setCustomColor(_ hex: String?) {
@@ -10188,7 +10200,7 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
             tabId,
             title: replacementPanel.displayTitle,
             icon: .some(replacementPanel.displayIcon),
-            iconImageData: .some(nil),
+            iconImageData: .some(customIcon?.pngData),
             iconAsset: .some(nil),
             kind: .some(SurfaceKind.terminal.rawValue),
             hasCustomTitle: false,

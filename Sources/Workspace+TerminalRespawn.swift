@@ -149,7 +149,7 @@ extension Workspace {
             tabId,
             title: resolvedTitle,
             icon: .some(replacementPanel.displayIcon),
-            iconImageData: .some(nil),
+            iconImageData: .some(customIcon?.pngData),
             iconAsset: .some(nil),
             kind: .some(SurfaceKind.terminal.rawValue),
             hasCustomTitle: customTitle != nil,

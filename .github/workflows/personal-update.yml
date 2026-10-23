@@ -1,0 +1,158 @@
+name: Personal cmux updates
+
+on:
+  schedule:
+    - cron: '31 17 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: personal-cmux-update
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.repository == 'arjanflac/cmux'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      build: ${{ steps.merge.outputs.build }}
+      candidate: ${{ steps.merge.outputs.candidate }}
+      sha: ${{ steps.merge.outputs.sha }}
+      release: ${{ steps.merge.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: personal
+          fetch-depth: 0
+      - name: Merge the latest stable upstream release into an isolated candidate
+        id: merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          release=$(gh api repos/manaflow-ai/cmux/releases/latest --jq .tag_name)
+          [[ "$release" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git fetch https://github.com/manaflow-ai/cmux.git "refs/tags/$release:refs/tags/$release"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          if git merge-base --is-ancestor "$release" HEAD && [[ "$EVENT_NAME" != workflow_dispatch ]]; then
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+            echo 'Already contains the latest stable release.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name 'cmux Personal update bot'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          candidate="personal-candidate/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git switch -c "$candidate"
+          # A conflict stops here. No PR is opened and the working branch is untouched.
+          git merge --no-edit "$release"
+          git push origin "HEAD:refs/heads/$candidate"
+          echo "candidate=$candidate" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo 'build=true' >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: macos-26
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CARGO_BUILD_JOBS: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          fetch-depth: 0
+          submodules: recursive
+          persist-credentials: false
+      - name: Select Xcode and prepare native toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+          major=$(tr -d '[:space:]' < .xcode-version)
+          developer=$(find /Applications -maxdepth 1 -type d -name "Xcode_${major}*.app" | sort -V | tail -1)
+          test -n "$developer"
+          echo "DEVELOPER_DIR=$developer/Contents/Developer" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$developer/Contents/Developer"
+          xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rust_version=$(awk -F '"' '/^[[:space:]]*channel[[:space:]]*=/{print $2; exit}' Native/DiffSidecar/rust-toolchain.toml)
+          rustup toolchain install "$rust_version" --profile minimal
+          # Version and SHA-256 are read from Zig's official distribution index.
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib, re, subprocess, urllib.request
+          version = re.search(r'\.minimum_zig_version\s*=\s*"([^"]+)"', pathlib.Path('ghostty/build.zig.zon').read_text()).group(1)
+          index = json.load(urllib.request.urlopen('https://ziglang.org/download/index.json'))
+          item = index[version]['aarch64-macos']
+          archive = pathlib.Path(os.environ['RUNNER_TEMP']) / 'zig.tar.xz'
+          urllib.request.urlretrieve(item['tarball'], archive)
+          assert hashlib.sha256(archive.read_bytes()).hexdigest() == item['shasum']
+          destination = pathlib.Path(os.environ['RUNNER_TEMP']) / 'personal-zig'
+          destination.mkdir()
+          subprocess.run(['tar', '-xf', str(archive), '-C', str(destination), '--strip-components=1'], check=True)
+          with open(os.environ['GITHUB_PATH'], 'a') as stream: stream.write(str(destination) + '\n')
+          PY
+      - name: Restore native dependency caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            ~/Library/Caches/cmux
+            ~/Library/Developer/Xcode/DerivedData/cmux-personal/SourcePackages
+          key: personal-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock', '**/Package.resolved', 'scripts/ghosttykit-checksums.txt') }}
+      - name: Check custom settings, Swift syntax, and test wiring
+        run: python3 scripts/verify-local.py --swift-changed origin/main
+      - name: Build an isolated native Release app
+        run: python3 scripts/personal-build.py
+      - name: Package candidate without official auto-updates
+        run: |
+          python3 scripts/personal-package.py "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux Personal.app"
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "$HOME/Applications/cmux Personal.app" dist/cmux-personal-arm64.zip
+          shasum -a 256 dist/cmux-personal-arm64.zip > dist/cmux-personal-arm64.zip.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cmux-personal-arm64-${{ github.run_id }}
+          path: dist/*
+          retention-days: 7
+      - name: Keep failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: personal-build-log-${{ github.run_id }}
+          path: /tmp/cmux-reload-workspace-icons.log
+          retention-days: 7
+
+  promote:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: personal
+          fetch-depth: 0
+      - name: Advance personal source only after a successful build
+        env:
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+          EXPECTED_SHA: ${{ needs.prepare.outputs.sha }}
+          UPSTREAM_RELEASE: ${{ needs.prepare.outputs.release }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$CANDIDATE"
+          test "$(git rev-parse FETCH_HEAD)" = "$EXPECTED_SHA"
+          # Fast-forward only: never overwrite changes pushed while the build ran.
+          git push origin "$EXPECTED_SHA:refs/heads/personal"
+          git push origin --delete "$CANDIDATE"
+          echo "Built $EXPECTED_SHA with upstream $UPSTREAM_RELEASE. Download the candidate from this run's artifacts; installation is manual." >> "$GITHUB_STEP_SUMMARY"

@@ -62,7 +62,7 @@ struct SidebarTabItemSettingsSnapshot: Equatable {
         sidebarShortcutHintYOffset = ShortcutHintDebugSettings.defaultSidebarHintY
         alwaysShowShortcutHints = ShortcutHintDebugSettings(defaults: defaults).alwaysShowHints
         sidebarFontScale = SidebarTabItemFontScale.scale(for: sidebarFontSize)
-        showsGitBranch = Self.bool(defaults: defaults, key: "sidebarShowGitBranch", defaultValue: true)
+        showsGitBranch = settings.value(for: sidebar.showGitBranch)
         showsGitBranchIcon = Self.bool(defaults: defaults, key: "sidebarShowGitBranchIcon", defaultValue: false)
         showsCloudDeviceIcons = settings.value(for: sidebar.showCloudDeviceIcons)
         makesPullRequestsClickable = settings.value(for: sidebar.makePullRequestsClickable)

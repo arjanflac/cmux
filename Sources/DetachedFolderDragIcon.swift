@@ -4,14 +4,16 @@ import UniformTypeIdentifiers
 
 struct DetachedFolderDragIcon: NSViewRepresentable {
     let directory: String
+    var customImage: NSImage? = nil
 
     func makeNSView(context: Context) -> DraggableFolderNSView {
-        DraggableFolderNSView(directory: directory)
+        DraggableFolderNSView(directory: directory, customImage: customImage)
     }
 
     func updateNSView(_ nsView: DraggableFolderNSView, context: Context) {
-        if nsView.directory != directory {
+        if nsView.directory != directory || nsView.customImage !== customImage {
             nsView.directory = directory
+            nsView.customImage = customImage
             nsView.updateIcon()
         }
     }
@@ -24,6 +26,7 @@ final class DraggableFolderNSView: NSView, NSDraggingSource {
     }
 
     var directory: String
+    var customImage: NSImage?
     private var imageView: FolderIconImageView!
     private var pendingDragEvent: NSEvent?
     private var pendingDragStartPoint: NSPoint?
@@ -33,8 +36,9 @@ final class DraggableFolderNSView: NSView, NSDraggingSource {
         String(format: "(%.1f,%.1f)", point.x, point.y)
     }
 
-    init(directory: String) {
+    init(directory: String, customImage: NSImage? = nil) {
         self.directory = directory
+        self.customImage = customImage
         super.init(frame: .zero)
         identifier = NSUserInterfaceItemIdentifier("cmux.folderDragIcon")
         setupImageView()
@@ -100,7 +104,7 @@ final class DraggableFolderNSView: NSView, NSDraggingSource {
         dispatchPrecondition(condition: .onQueue(.main))
         #endif
 
-        imageView.image = Self.genericFolderIcon(size: 16)
+        imageView.image = customImage ?? Self.genericFolderIcon(size: 16)
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
@@ -269,5 +273,15 @@ final class DraggableFolderNSView: NSView, NSDraggingSource {
     @objc private func openComputer(_ sender: NSMenuItem) {
         // Open the root filesystem entry represented by the bottom path item.
         NSWorkspace.shared.open(URL(fileURLWithPath: "/", isDirectory: true))
+    }
+}
+
+/// Keeps the titlebar logo in sync with the selected workspace's cached thumbnail.
+struct WorkspaceFolderDragIcon: View {
+    @ObservedObject var workspace: Workspace
+    let directory: String
+
+    var body: some View {
+        DetachedFolderDragIcon(directory: directory, customImage: workspace.sidebarIcon?.image)
     }
 }

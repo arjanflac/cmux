@@ -2154,8 +2154,8 @@ struct ContentView: View {
                     }
 
                     // Draggable folder icon + focused command name
-                    if let directory = focusedDirectory {
-                        DetachedFolderDragIcon(directory: directory)
+                    if let directory = focusedDirectory, let workspace = tabManager.selectedWorkspace {
+                        WorkspaceFolderDragIcon(workspace: workspace, directory: directory)
                             .frame(width: 16, height: 16)
                             .padding(.leading, -6)
                     }

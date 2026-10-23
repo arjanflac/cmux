@@ -397,6 +397,7 @@ enum SidebarSettingsFileMapping {
             jsonKey: "showNotificationMessage",
             defaultsKey: sidebar.showNotificationMessage.userDefaultsKey
         ),
+        .init(jsonKey: "showGitBranch", defaultsKey: sidebar.showGitBranch.userDefaultsKey),
         .init(
             jsonKey: "showBranchDirectory",
             defaultsKey: SidebarWorkspaceDetailDefaults.showBranchDirectoryKey
