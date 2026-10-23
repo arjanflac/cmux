@@ -46,10 +46,19 @@ def main() -> None:
                 env[key] = value.replace(str(source), str(destination))
         env["PACKAGE_RESOURCE_BUNDLE_PATH"] = str(destination / "Contents/Resources")
         (destination / "Contents/Info.plist").write_bytes(plistlib.dumps(info))
+        # SwiftPM's Release accessor has no environment override. Standalone CLI
+        # processes search beside their executable, rather than the host app's resources.
+        resources = destination / "Contents/Resources"
+        for bundle in resources.glob("*.bundle"):
+            link = resources / "bin" / bundle.name
+            if not link.exists():
+                link.symlink_to(Path("..") / bundle.name)
         subprocess.run(["codesign", "--force", "--sign", args.sign, "--timestamp=none",
                         "--preserve-metadata=entitlements,flags", "--generate-entitlement-der",
                         str(destination)], check=True)
         subprocess.run(["codesign", "--verify", "--deep", "--strict", str(destination)], check=True)
+        subprocess.run([str(resources / "bin/cmux"), "--help"], check=True,
+                       stdout=subprocess.DEVNULL)
     except BaseException:
         shutil.rmtree(destination)
         raise
