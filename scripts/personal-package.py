@@ -47,6 +47,12 @@ def main() -> None:
         # Repackage downloaded CI artifacts too: their original build-machine
         # paths do not match `source` after extraction on another Mac.
         env.update({
+            "CMUX_AUTH_ENVIRONMENT": "production",
+            "CMUX_AUTH_WWW_ORIGIN": "https://cmux.com",
+            "CMUX_WWW_ORIGIN": "https://cmux.com",
+            "CMUX_API_BASE_URL": "https://cmux.com",
+            "CMUX_VM_API_BASE_URL": "https://cmux.com",
+            "CMUX_IROH_BROKER_BASE_URL": "https://cmux.com",
             "CMUX_BUNDLED_CLI_PATH": str(destination / "Contents/Resources/bin/cmux"),
             "CMUX_SHELL_INTEGRATION_DIR": str(destination / "Contents/Resources/shell-integration"),
             "PACKAGE_RESOURCE_BUNDLE_PATH": str(destination / "Contents/Resources"),
