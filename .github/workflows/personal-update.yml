@@ -77,6 +77,11 @@ jobs:
           fetch-depth: 0
           submodules: recursive
           persist-credentials: false
+      - name: Install the Go toolchain required by the Release tunnel component
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26.x'
+          cache: false
       - name: Select Xcode and prepare native toolchains
         shell: bash
         run: |
@@ -86,6 +91,7 @@ jobs:
           test -n "$developer"
           echo "DEVELOPER_DIR=$developer/Contents/Developer" >> "$GITHUB_ENV"
           export DEVELOPER_DIR="$developer/Contents/Developer"
+          go version
           xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
           rustup toolchain install stable --profile minimal
           rustup default stable
