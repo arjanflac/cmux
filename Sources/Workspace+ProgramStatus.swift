@@ -15,6 +15,11 @@ extension Workspace {
         let previousStore = programStatusStoresByPanelId[panelId] ?? ProgramStatusRecordStore()
         let updatedStore = updateProgramStatusStore(panelId: panelId) { $0.apply(report) }
         guard let store = updatedStore else { return }
+        if previousStore.mostUrgentRecord()?.state != store.mostUrgentRecord()?.state,
+           let state = store.mostUrgentRecord()?.state,
+           state == .working || state == .done || state == .blocked || state == .error {
+            WorkspaceActivityReorderController.shared.nativeProgramActivity(workspaceId: id)
+        }
         scheduleAgentTurnSettlement(panelId: panelId, previous: previousStore, current: store)
         CmuxEventBus.shared.publishProgramStatusChanged(
             workspaceId: id,

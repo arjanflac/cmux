@@ -13242,8 +13242,9 @@ struct VerticalTabsSidebar: View, Equatable {
         guard !workspaceIds.isEmpty else { return }
         let workspaceById = Dictionary(uniqueKeysWithValues: tabManager.tabs.map { ($0.id, $0) })
         let settings = tabItemSettingsStore.snapshot
+        // The personal build makes this an explicit user preference rather
+        // than depending on the upstream spinner experiment rollout.
         let showsAgentActivity = settings.details.showAgentActivity
-            && CmuxFeatureFlags.shared.isSidebarWorkspaceAgentSpinnerEnabled
         let presentation = originPresentationValues(
             tabs: tabManager.tabs,
             changedWorkspaceIds: workspaceIds
@@ -13275,8 +13276,9 @@ struct VerticalTabsSidebar: View, Equatable {
         let tabs = tabManager.tabs
         let workspaceById = Dictionary(uniqueKeysWithValues: tabs.map { ($0.id, $0) })
         let settings = tabItemSettingsStore.snapshot
+        // The personal build makes this an explicit user preference rather
+        // than depending on the upstream spinner experiment rollout.
         let showsAgentActivity = settings.details.showAgentActivity
-            && CmuxFeatureFlags.shared.isSidebarWorkspaceAgentSpinnerEnabled
         let presentation = originPresentationValues(tabs: tabs)
         let mirrorDestinations = presentation.mirrorDestinations
         let hostTitleSuffixes = presentation.hostTitleSuffixes

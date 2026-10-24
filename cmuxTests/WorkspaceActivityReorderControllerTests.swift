@@ -71,6 +71,23 @@ final class WorkspaceActivityReorderControllerTests: XCTestCase {
         XCTAssertEqual(fixture.manager.tabs.first?.id, fixture.bottom.id)
     }
 
+    func testNativeProgramActivityMovesBackgroundWorkspaceToTop() {
+        let fixture = makeFixture()
+        fixture.controller.nativeProgramActivity(workspaceId: fixture.bottom.id)
+        XCTAssertEqual(fixture.manager.tabs.first?.id, fixture.bottom.id)
+    }
+
+    func testNativeProgramActivityDefersWhileSidebarIsInteracting() {
+        let fixture = makeFixture()
+        let before = fixture.manager.tabs.map(\.id)
+        interacting = true
+        fixture.controller.nativeProgramActivity(workspaceId: fixture.bottom.id)
+        XCTAssertEqual(fixture.manager.tabs.map(\.id), before)
+        interacting = false
+        fixture.controller.drainPendingMoves()
+        XCTAssertEqual(fixture.manager.tabs.first?.id, fixture.bottom.id)
+    }
+
     func testNotificationsModeIgnoresAgentActivity() {
         let fixture = makeFixture(mode: .notifications)
         let before = fixture.manager.tabs.map(\.id)

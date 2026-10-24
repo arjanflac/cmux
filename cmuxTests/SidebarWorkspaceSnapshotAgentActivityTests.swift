@@ -9,6 +9,28 @@ import Testing
 #endif
 
 extension SidebarWorkspaceSnapshotTests {
+    @Test func nativeWorkingPaneShowsActivityWithoutHookState() {
+        #expect(SidebarAgentActivitySummary.activeCodingAgentCount(
+            statesByPanelId: [:], workingProgramPanelIds: [UUID()]
+        ) == 1)
+    }
+
+    @Test func nativeAndHookActivityInSamePaneIsNotDoubleCounted() {
+        let pane = UUID()
+        #expect(SidebarAgentActivitySummary.activeCodingAgentCount(
+            statesByPanelId: [pane: ["codex": .running]], workingProgramPanelIds: [pane]
+        ) == 1)
+    }
+
+    @Test func hiddenSpinnerDoesNotReadNativeProgramStates() {
+        var didRead = false
+        func nativePanes() -> Set<UUID> { didRead = true; return [UUID()] }
+        #expect(SidebarAgentActivitySummary.visibleActiveCodingAgentCount(
+            showsAgentActivity: false, statesByPanelId: [:], workingProgramPanelIds: nativePanes()
+        ) == 0)
+        #expect(!didRead)
+    }
+
     @MainActor
     @Test func workspaceAgentSpinnerFeatureFlagDefaultsOff() throws {
         let definition = try #require(CmuxFeatureFlags.allFlags.first {

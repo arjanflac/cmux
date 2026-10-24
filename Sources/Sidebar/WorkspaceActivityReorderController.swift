@@ -55,6 +55,11 @@ final class WorkspaceActivityReorderController {
         request(workspaceId: workspaceId, trigger: .agentActivity)
     }
 
+    /// Native OSC activity uses the same interaction/cooldown protections as hooks.
+    func nativeProgramActivity(workspaceId: UUID) {
+        request(workspaceId: workspaceId, trigger: .agentActivity)
+    }
+
     /// Releases deferred moves that may run now. Also runs on a timer while
     /// any move is deferred.
     func drainPendingMoves() {
