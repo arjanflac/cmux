@@ -119,6 +119,9 @@ struct AgentTaskCoordinatorTests {
         #expect(coordinator.records[id] == nil)
         #expect(try await coordinator.record(id)?.result == "Archived result")
         #expect(views.opened.isEmpty)
+        let child = try await coordinator.start(request(.background, parent: id))
+        #expect(child.parentTaskID == id)
+        try await coordinator.cancel(child.id)
     }
 
     @Test func missingDirectoryCannotLaunchInAnUnrelatedFallbackDirectory() async throws {

@@ -63,6 +63,27 @@ struct AgentManagedTaskBackendTests {
         try await backend.cancel(id: id)
     }
 
+    @Test func backgroundClaudeEOFWithoutCompletionEndsAsUncertain() async throws {
+        let backend = AgentManagedTaskBackend(connection: TaskProtocolFixture(), claudeFactory: { _ in TaskApprovalBrain(approval: false) })
+        var input = request(); input.provider = .claude; input.model = "haiku"
+        let id = UUID()
+        let stream = try await backend.start(id: id, request: input)
+        let event = await withTaskGroup(of: AgentTaskEvent?.self) { group in
+            group.addTask {
+                do {
+                    for try await event in stream { if case .disconnected = event { return event } }
+                } catch {}
+                return nil
+            }
+            group.addTask { try? await Task.sleep(for: .seconds(1)); return nil }
+            let event = await group.next() ?? nil
+            group.cancelAll()
+            return event
+        }
+        #expect(event == .disconnected("stream_ended_without_completion"))
+        try? await backend.cancel(id: id)
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["CMUX_TEST_AGENT_TASK_LIVE"] == "1"))
     func liveLunaTaskUsesExistingDaemonAndReturnsAConfirmedResult() async throws {
         let path = NSHomeDirectory() + "/.codex/app-server-control/app-server-control.sock"
@@ -98,10 +119,11 @@ struct AgentManagedTaskBackendTests {
 }
 
 private struct TaskApprovalBrain: ChiefBrain {
+    var approval = true
     func run(_ request: ChiefTurnRequest) -> AsyncThrowingStream<ChiefTurnEvent, any Error> {
         AsyncThrowingStream { continuation in
             continuation.yield(.session("claude-fixture-session"))
-            continuation.yield(.approvalRequested(id: "permission", prompt: "Write a file?", options: ["allow", "deny"]))
+            if approval { continuation.yield(.approvalRequested(id: "permission", prompt: "Write a file?", options: ["allow", "deny"])) }
             continuation.finish()
         }
     }
