@@ -50,6 +50,12 @@ BRANCHES = {"main": "origin/main", FEAT: "origin/feat-cmux-next"}
 ON_CI = os.environ.get("GITHUB_ACTIONS") == "true"
 
 
+def requires_other_branch() -> bool:
+    # Only upstream owns a fleet spanning main and feat-cmux-next. Forks
+    # still validate their local workflows and run the detector fixtures.
+    return ON_CI and os.environ.get("GITHUB_REPOSITORY", "manaflow-ai/cmux") == "manaflow-ai/cmux"
+
+
 def git(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", str(ROOT), *args], input=stdin, capture_output=True, text=True)
 
@@ -111,7 +117,7 @@ class OwnedPoolSources(unittest.TestCase):
             raise unittest.SkipTest("cannot tell whether this tree is main or feat-cmux-next (a ref is missing); "
                                     "set CMUX_OWNED_POOL_BRANCH")
         cls.ref = other_ref()
-        if not has_ref(cls.ref) and ON_CI:
+        if not has_ref(cls.ref) and requires_other_branch():
             fetch(cls.ref)
         cls.other = sources.Tree(ROOT, cls.ref) if has_ref(cls.ref) else None
         here = sources.Tree(ROOT)
@@ -125,7 +131,7 @@ class OwnedPoolSources(unittest.TestCase):
     def test_the_other_branch_is_read(self) -> None:
         if self.other is None:
             message = f"{self.ref} is not available, so its workflows were not checked"
-            if ON_CI:
+            if requires_other_branch():
                 self.fail(f"{message}; the guard job must be able to fetch it")
             self.skipTest(message)
 

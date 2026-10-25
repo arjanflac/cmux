@@ -20,7 +20,7 @@ permissions:
 jobs:
   prepare:
     if: github.repository == 'arjanflac/cmux'
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 15
     permissions:
       contents: write
@@ -65,7 +65,7 @@ jobs:
   build:
     needs: prepare
     if: needs.prepare.outputs.build == 'true'
-    runs-on: macos-26
+    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'macos-26' || vars.MACOS_RUNNER_26 || 'blacksmith-6vcpu-macos-26' }}
     timeout-minutes: 180
     env:
       GH_TOKEN: ${{ github.token }}
@@ -82,16 +82,13 @@ jobs:
         with:
           go-version: '1.26.x'
           cache: false
-      - name: Select Xcode and prepare native toolchains
+      - name: Select the pinned Xcode
+        run: ./scripts/select-ci-xcode.sh
+      - name: Prepare native toolchains
         id: toolchain
         shell: bash
         run: |
           set -euo pipefail
-          major=$(tr -d '[:space:]' < .xcode-version)
-          developer=$(find /Applications -maxdepth 1 -type d -name "Xcode_${major}*.app" | sort -V | tail -1)
-          test -n "$developer"
-          echo "DEVELOPER_DIR=$developer/Contents/Developer" >> "$GITHUB_ENV"
-          export DEVELOPER_DIR="$developer/Contents/Developer"
           echo "cache-id=$(xcodebuild -version | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           go version
           xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
@@ -166,7 +163,7 @@ jobs:
 
   promote:
     needs: [prepare, build]
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 10
     permissions:
       contents: write
