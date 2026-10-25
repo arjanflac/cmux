@@ -18,6 +18,21 @@ One page = one session: `/` is the composer, `/s/<id>` a chat. When `CMUX_AGENT_
 
 The terminal stays the source of truth. The composer types the prompt into the terminal's agent with `mobile.chat.send` (bracketed paste and submit, the delivery the iOS chat uses), and Stop or Esc sends `mobile.chat.interrupt`; both go over the cmux control socket through `cmux rpc` (`cmux-rpc.ts`, using the `CMUX_BUNDLED_CLI_PATH` and `CMUX_SOCKET_PATH` the app passes to the sidecar). The prompt shows immediately and is replaced by the transcript's own copy when it lands. Permission prompts, questions, and pickers stay in the terminal: when the hook store says the agent needs input, the view shows the request with an "Answer in terminal" button that focuses the terminal pane. Open the view with "Open terminal as chat" in the command palette (Agent Chat UI flag) or `cmux-chat --terminal --surface <surface-id>` from a shell.
 
+## Personal quiet transcript view
+
+The personal branch keeps assistant updates, available reasoning summaries,
+plans, errors and final answers visible while grouping technical activity behind
+one collapsed row per turn, including while a turn is running. `Ctrl+T` toggles
+the grouped rows in this web chat view. Individual tool output remains collapsed
+until explicitly opened; the saved transcript and model context are unchanged.
+This does not change the terminal CLI's rendering or keyboard shortcuts.
+Append `?readonly=1` to a terminal transcript URL for a viewing-only interface
+without the composer, interruption shortcut, fork or handoff controls. This is
+useful when the owning CLI is in another terminal application.
+For a dedicated viewing server, set `CMUX_AGENT_CHAT_READ_ONLY=1` too. This
+rejects model-changing operations and non-GET HTTP requests, and skips provider
+catalog warm-up so the viewing server does not start provider app servers.
+
 ## Model catalog
 
 The sidecar fetches the model catalog from `https://cmux.dev/api/agent-models` (`CMUX_AGENT_MODELS_URL` overrides it for development), revalidates it with ETags after a one-hour TTL, and caches the last-good response at `~/.cache/cmux-agent-chat/models.json` for offline startup. Refreshes happen in the background; changed catalogs are pushed to open pages so model pickers update without reloading.

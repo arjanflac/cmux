@@ -29,6 +29,9 @@ export type AgentChatTextKey =
   | "continueElsewhere"
   | "transcriptViewRunning"
   | "transcriptViewIdle"
+  | "transcriptReadOnly"
+  | "toggleToolActivity"
+  | "toolActivity"
   | "answerInTerminal"
   | "agentMessageFrom"
   | "agentMessageQueued"
@@ -38,6 +41,9 @@ export type AgentChatTextKey =
 
 const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
   en: {
+    toolActivity: "Tool activity",
+    transcriptReadOnly: "Live view · reply in your terminal or phone",
+    toggleToolActivity: "Show or hide tool activity",
     continuedNewChat: "Continued in a new chat. Previous context is linked.",
     movedServingRoute: "Moved to another serving route. Conversation context was preserved.",
     continueNewChat: "Continue in new chat",
@@ -52,6 +58,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Retry",
   },
   ja: {
+    toolActivity: "ツールの動作",
+    transcriptReadOnly: "ライブ表示 · ターミナルまたはスマートフォンで返信",
+    toggleToolActivity: "ツールの動作を表示または非表示",
     continuedNewChat: "新しいチャットで続行しました。以前のコンテキストはリンクされています。",
     movedServingRoute: "別の配信ルートに移動しました。会話のコンテキストは保持されています。",
     continueNewChat: "新しいチャットで続行",
@@ -66,6 +75,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "再試行",
   },
   "zh-CN": {
+    toolActivity: "工具活动",
+    transcriptReadOnly: "实时视图 · 请在终端或手机上回复",
+    toggleToolActivity: "显示或隐藏工具活动",
     continuedNewChat: "已在新聊天中继续。之前的上下文已关联。",
     movedServingRoute: "已切换到其他服务路由。对话上下文已保留。",
     continueNewChat: "在新聊天中继续",
@@ -80,6 +92,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "重试",
   },
   "zh-TW": {
+    toolActivity: "工具活動",
+    transcriptReadOnly: "即時檢視 · 請在終端機或手機上回覆",
+    toggleToolActivity: "顯示或隱藏工具活動",
     continuedNewChat: "已在新聊天中繼續。先前的內容已連結。",
     movedServingRoute: "已切換至其他服務路由。對話內容已保留。",
     continueNewChat: "在新聊天中繼續",
@@ -94,6 +109,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "重試",
   },
   ko: {
+    toolActivity: "도구 활동",
+    transcriptReadOnly: "실시간 보기 · 터미널이나 휴대폰에서 답장하세요",
+    toggleToolActivity: "도구 활동 표시 또는 숨기기",
     continuedNewChat: "새 채팅에서 계속합니다. 이전 컨텍스트가 연결되어 있습니다.",
     movedServingRoute: "다른 서비스 경로로 이동했습니다. 대화 컨텍스트는 유지되었습니다.",
     continueNewChat: "새 채팅에서 계속",
@@ -108,6 +126,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "다시 시도",
   },
   de: {
+    toolActivity: "Werkzeugaktivität",
+    transcriptReadOnly: "Live-Ansicht · Im Terminal oder auf dem Handy antworten",
+    toggleToolActivity: "Werkzeugaktivität ein- oder ausblenden",
     continuedNewChat: "In einem neuen Chat fortgesetzt. Der vorherige Kontext ist verknüpft.",
     movedServingRoute: "Auf eine andere Bereitstellungsroute gewechselt. Der Gesprächskontext wurde beibehalten.",
     continueNewChat: "In neuem Chat fortfahren",
@@ -122,6 +143,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Erneut versuchen",
   },
   es: {
+    toolActivity: "Actividad de herramientas",
+    transcriptReadOnly: "Vista en directo · Responde en tu terminal o teléfono",
+    toggleToolActivity: "Mostrar u ocultar la actividad de herramientas",
     continuedNewChat: "Se continuó en un chat nuevo. El contexto anterior está vinculado.",
     movedServingRoute: "Se cambió a otra ruta de servicio. Se conservó el contexto de la conversación.",
     continueNewChat: "Continuar en un chat nuevo",
@@ -136,6 +160,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Reintentar",
   },
   fr: {
+    toolActivity: "Activité des outils",
+    transcriptReadOnly: "Vue en direct · Répondez dans le terminal ou sur votre téléphone",
+    toggleToolActivity: "Afficher ou masquer l’activité des outils",
     continuedNewChat: "La conversation continue dans un nouveau chat. Le contexte précédent est lié.",
     movedServingRoute: "Passage à une autre route de service. Le contexte de la conversation a été conservé.",
     continueNewChat: "Continuer dans un nouveau chat",
@@ -150,6 +177,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Réessayer",
   },
   it: {
+    toolActivity: "Attività degli strumenti",
+    transcriptReadOnly: "Vista dal vivo · Rispondi dal terminale o dal telefono",
+    toggleToolActivity: "Mostra o nascondi l’attività degli strumenti",
     continuedNewChat: "Continuazione in una nuova chat. Il contesto precedente è collegato.",
     movedServingRoute: "Passaggio a un altro percorso di servizio. Il contesto della conversazione è stato mantenuto.",
     continueNewChat: "Continua in una nuova chat",
@@ -164,6 +194,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Riprova",
   },
   da: {
+    toolActivity: "Værktøjsaktivitet",
+    transcriptReadOnly: "Livevisning · Svar i terminalen eller på telefonen",
+    toggleToolActivity: "Vis eller skjul værktøjsaktivitet",
     continuedNewChat: "Fortsat i en ny chat. Den tidligere kontekst er knyttet til.",
     movedServingRoute: "Flyttet til en anden serveringsrute. Samtalens kontekst blev bevaret.",
     continueNewChat: "Fortsæt i ny chat",
@@ -178,6 +211,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Prøv igen",
   },
   pl: {
+    toolActivity: "Aktywność narzędzi",
+    transcriptReadOnly: "Podgląd na żywo · Odpowiedz w terminalu lub na telefonie",
+    toggleToolActivity: "Pokaż lub ukryj aktywność narzędzi",
     continuedNewChat: "Kontynuowano w nowym czacie. Poprzedni kontekst jest połączony.",
     movedServingRoute: "Przeniesiono na inną trasę obsługi. Kontekst rozmowy został zachowany.",
     continueNewChat: "Kontynuuj w nowym czacie",
@@ -192,6 +228,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Spróbuj ponownie",
   },
   ru: {
+    toolActivity: "Действия инструментов",
+    transcriptReadOnly: "Просмотр в реальном времени · Ответьте в терминале или на телефоне",
+    toggleToolActivity: "Показать или скрыть действия инструментов",
     continuedNewChat: "Продолжено в новом чате. Предыдущий контекст связан.",
     movedServingRoute: "Переключено на другой маршрут обслуживания. Контекст разговора сохранён.",
     continueNewChat: "Продолжить в новом чате",
@@ -206,6 +245,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Повторить",
   },
   bs: {
+    toolActivity: "Aktivnost alata",
+    transcriptReadOnly: "Prikaz uživo · Odgovorite u terminalu ili na telefonu",
+    toggleToolActivity: "Prikaži ili sakrij aktivnost alata",
     continuedNewChat: "Nastavljeno u novom chatu. Prethodni kontekst je povezan.",
     movedServingRoute: "Prebačeno na drugu servisnu rutu. Kontekst razgovora je sačuvan.",
     continueNewChat: "Nastavi u novom chatu",
@@ -220,6 +262,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Pokušaj ponovo",
   },
   ar: {
+    toolActivity: "نشاط الأدوات",
+    transcriptReadOnly: "عرض مباشر · أجب في الطرفية أو على هاتفك",
+    toggleToolActivity: "إظهار نشاط الأدوات أو إخفاؤه",
     continuedNewChat: "تمت المتابعة في محادثة جديدة. السياق السابق مرتبط.",
     movedServingRoute: "تم الانتقال إلى مسار خدمة آخر. تم الاحتفاظ بسياق المحادثة.",
     continueNewChat: "المتابعة في محادثة جديدة",
@@ -234,6 +279,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "إعادة المحاولة",
   },
   no: {
+    toolActivity: "Verktøyaktivitet",
+    transcriptReadOnly: "Direktevisning · Svar i terminalen eller på telefonen",
+    toggleToolActivity: "Vis eller skjul verktøyaktivitet",
     continuedNewChat: "Fortsatt i en ny chat. Tidligere kontekst er koblet til.",
     movedServingRoute: "Flyttet til en annen serveringsrute. Samtalekonteksten ble bevart.",
     continueNewChat: "Fortsett i ny chat",
@@ -248,6 +296,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Prøv igjen",
   },
   "pt-BR": {
+    toolActivity: "Atividade das ferramentas",
+    transcriptReadOnly: "Visualização ao vivo · Responda no terminal ou no celular",
+    toggleToolActivity: "Mostrar ou ocultar a atividade das ferramentas",
     continuedNewChat: "Continuado em um novo chat. O contexto anterior está vinculado.",
     movedServingRoute: "Movido para outra rota de atendimento. O contexto da conversa foi preservado.",
     continueNewChat: "Continuar em um novo chat",
@@ -262,6 +313,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Tentar novamente",
   },
   th: {
+    toolActivity: "การทำงานของเครื่องมือ",
+    transcriptReadOnly: "มุมมองสด · ตอบในเทอร์มินัลหรือโทรศัพท์",
+    toggleToolActivity: "แสดงหรือซ่อนการทำงานของเครื่องมือ",
     continuedNewChat: "ดำเนินการต่อในแชทใหม่แล้ว โดยเชื่อมโยงบริบทก่อนหน้าไว้",
     movedServingRoute: "ย้ายไปยังเส้นทางการให้บริการอื่นแล้ว โดยยังคงบริบทการสนทนาไว้",
     continueNewChat: "ดำเนินการต่อในแชทใหม่",
@@ -276,6 +330,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "ลองอีกครั้ง",
   },
   tr: {
+    toolActivity: "Araç etkinliği",
+    transcriptReadOnly: "Canlı görünüm · Terminalden veya telefonunuzdan yanıtlayın",
+    toggleToolActivity: "Araç etkinliğini göster veya gizle",
     continuedNewChat: "Yeni bir sohbette devam edildi. Önceki bağlam bağlantılı.",
     movedServingRoute: "Başka bir hizmet rotasına geçildi. Konuşma bağlamı korundu.",
     continueNewChat: "Yeni sohbette devam et",
@@ -290,6 +347,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Yeniden dene",
   },
   km: {
+    toolActivity: "សកម្មភាពឧបករណ៍",
+    transcriptReadOnly: "ទិដ្ឋភាពផ្ទាល់ · ឆ្លើយតបក្នុងស្ថានីយ ឬទូរសព្ទរបស់អ្នក",
+    toggleToolActivity: "បង្ហាញ ឬលាក់សកម្មភាពឧបករណ៍",
     continuedNewChat: "បានបន្តនៅក្នុងការជជែកថ្មី។ បរិបទមុនត្រូវបានភ្ជាប់។",
     movedServingRoute: "បានប្តូរទៅផ្លូវបម្រើផ្សេង។ បរិបទនៃការសន្ទនាត្រូវបានរក្សាទុក។",
     continueNewChat: "បន្តក្នុងការជជែកថ្មី",
@@ -304,6 +364,9 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "ព្យាយាមម្តងទៀត",
   },
   uk: {
+    toolActivity: "Дії інструментів",
+    transcriptReadOnly: "Перегляд наживо · Відповідайте в терміналі або на телефоні",
+    toggleToolActivity: "Показати або приховати дії інструментів",
     continuedNewChat: "Продовжено в новому чаті. Попередній контекст пов’язано.",
     movedServingRoute: "Перемкнено на інший маршрут обслуговування. Контекст розмови збережено.",
     continueNewChat: "Продовжити в новому чаті",

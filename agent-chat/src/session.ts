@@ -174,6 +174,10 @@ export interface SessionSummary {
 
 export interface QueuedAgentMessage { id: string; from: string; body: string }
 
+export function transcriptReadOnly(mode: string | undefined, search: string): boolean {
+  return mode === "transcript" && new URLSearchParams(search).get("readonly") === "1";
+}
+
 /** Whether a terminal-backed chat must be answered in the terminal itself. */
 export function transcriptComposerLocked(
   session: Pick<SessionSummary, "mode" | "attention"> | null,

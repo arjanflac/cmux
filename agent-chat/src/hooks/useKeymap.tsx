@@ -2,6 +2,7 @@ import { useEffect, type RefObject } from "react";
 import { KEYMAP, MENU_KEYMAP, keyDispatchFor, type KeyAction } from "../keymap";
 import type { CtrlJMode, OptionValue, SessionOption } from "../session";
 import { isEditableTarget } from "./useTypeToFocus";
+import { agentChatText } from "../i18n";
 import { cycleSelect, planToggleValue, visibleChoices } from "../components/options";
 
 function cycleOption(options: SessionOption[], ids: string[], setOption: (id: string, value: OptionValue) => void) {
@@ -79,7 +80,10 @@ export function useKeymap({
         return;
       }
       e.preventDefault();
-      if (action === "help") setHelpOpen(!helpOpen);
+      if (action === "toggle-activity") {
+        if (!e.repeat) window.dispatchEvent(new Event("cmux-agent-chat-toggle-activity"));
+      }
+      else if (action === "help") setHelpOpen(!helpOpen);
       else if (action === "cycle-mode") cycleOption(options, ["permissionMode", "mode", "approvals"], setOption);
       else if (action === "cycle-model") cycleOption(options, ["model"], setOption);
       else if (action === "open-model") openModel();
@@ -103,11 +107,11 @@ export function ShortcutOverlay({ provider, options, running, ctrlJ, onClose }: 
       <div className="shortcut-panel" onMouseDown={(e) => e.stopPropagation()}>
         <div className="shortcut-title">{provider} shortcuts</div>
         {KEYMAP.map((k) => {
-          const ok = actionSupported(k.action, options, running) || k.action === "interrupt";
+          const ok = actionSupported(k.action, options, running) || k.action === "interrupt" || k.action === "toggle-activity";
           return (
             <div key={k.combo} className={"shortcut-row" + (ok ? "" : " disabled")}>
               <kbd>{k.combo}</kbd>
-              <span>{k.description}</span>
+              <span>{k.action === "toggle-activity" ? agentChatText("toggleToolActivity") : k.description}</span>
             </div>
           );
         })}

@@ -1,5 +1,5 @@
 import { Popover } from "@base-ui-components/react/popover";
-import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { Block, ChangedFile, SessionActions } from "../session";
 import { fileDiffCacheKey } from "../session";
 import { agentChatText } from "../i18n";
@@ -10,7 +10,7 @@ import { useActivityStartedAt, useTicker } from "../hooks/useTicker";
 import { useVirtualTurns } from "../hooks/useVirtualTurns";
 import { Check, Chevron, CopyIcon, EllipsisIcon, PinwheelSpinner } from "./icons";
 import { HintTooltip } from "./Tooltips";
-import { activityRowLabel, groupTurns, summarizeTurnActivity, type TurnGroup } from "../turns";
+import { activityRowLabel, groupTurns, quietActivity, toggleActivityDisclosure, type TurnGroup } from "../turns";
 
 export type ToolBlockVariant = "card" | "inline" | "rail" | "oneliner" | "terminal";
 export const TOOL_BLOCK_VARIANT: ToolBlockVariant = "inline";
@@ -776,7 +776,7 @@ function ActivityBlock({
 }) {
   switch (block.kind) {
     case "tool":
-      return <ToolBlock b={block} defaultOpen />;
+      return <ToolBlock b={block} />;
     case "assistant":
       return <div className="turn-activity-assistant selectable"><ChatMarkdown text={block.text} streaming={block.open} /></div>;
     case "thinking":
@@ -816,7 +816,7 @@ function TurnActivity({
   thinkingDefaultOpen: boolean;
 }) {
   if (!group.activity.length) return null;
-  const summary = summarizeTurnActivity(group.activity);
+  const summary = `${agentChatText("toolActivity")} · ${new Intl.NumberFormat().format(group.activity.length)}`;
   return (
     <div className="msg assistant" style={activityMessageAlignStyle}>
       <div className="body selectable" style={activityBodyAlignStyle}>
@@ -903,13 +903,12 @@ function TurnGroupView({
   expandedItems: Record<string, boolean>;
   setExpandedItems: (next: Record<string, boolean>) => void;
 }) {
-  const live = status === "running" && !group.done;
+  const activity = quietActivity(group.activity);
   return (
     <div className="turn-group">
       {group.user ? <div className="msg user"><div className="body selectable">{group.user.text}</div></div> : null}
       {group.messages?.map((message) => <AgentMessageRow key={message.id} message={message} />)}
-      {live
-        ? group.activity.map((block, i) => (
+      {activity.visible.map((block, i) => (
           block.kind === "thinking" || block.kind === "assistant"
             ? (
               <div className="turn-live-activity" key={i}>
@@ -917,10 +916,10 @@ function TurnGroupView({
               </div>
             )
             : <ActivityBlock key={i} block={block} fileDiffs={fileDiffs} fileDiffErrors={fileDiffErrors} onFileDiff={onFileDiff} thinkingDefaultOpen={thinkingDefaultOpen} />
-        ))
-        : (
+        ))}
+      {activity.details.length > 0 ? (
           <TurnActivity
-            group={group}
+            group={{ ...group, activity: activity.details }}
             expanded={Boolean(expandedTurns[group.id])}
             setExpanded={(open) => setExpandedTurns({ ...expandedTurns, [group.id]: open })}
             expandedItems={expandedItems}
@@ -929,7 +928,7 @@ function TurnGroupView({
             onFileDiff={onFileDiff}
             thinkingDefaultOpen={thinkingDefaultOpen}
           />
-        )}
+        ) : null}
       {group.assistant ? <div className="msg assistant"><div className="body selectable"><ChatMarkdown text={group.assistant.text} streaming={group.assistant.open} /></div></div> : null}
       {group.footer ? <TurnActions stats={group.footer.text} text={group.assistant?.text ?? ""} actions={actions} onFork={onFork} forkPending={forkPending} onHandoff={onHandoff} handoffPending={handoffPending} /> : null}
     </div>
@@ -973,6 +972,13 @@ export function Blocks({
   const virtual = useVirtualTurns(groups.length, virtualized);
   const [expandedTurns, setExpandedTurns] = useState<Record<string, boolean>>(() => initialExpandedTurns);
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>(() => initialExpandedItems);
+  const activityIdsKey = JSON.stringify(groups.filter((group) => quietActivity(group.activity).details.length > 0).map((group) => group.id));
+  useEffect(() => {
+    const ids: string[] = JSON.parse(activityIdsKey);
+    const toggle = () => setExpandedTurns((current) => toggleActivityDisclosure(ids, current));
+    window.addEventListener("cmux-agent-chat-toggle-activity", toggle);
+    return () => window.removeEventListener("cmux-agent-chat-toggle-activity", toggle);
+  }, [activityIdsKey]);
   const start = virtualized ? virtual.range.start : 0;
   const end = virtualized ? virtual.range.end : groups.length - 1;
   const visible = groups.slice(start, end + 1);

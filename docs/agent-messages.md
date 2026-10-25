@@ -55,6 +55,24 @@ When messages are turned off, anything already queued for the affected recipient
 
 Per-agent and per-workspace settings are kept with the messages, so they survive a restart. cmux keeps 1,000 of them. Past that it drops the oldest setting for a surface or workspace that is no longer open, or the oldest overall if every one is still open, which turns messages back on for it. Each drop is logged.
 
+## Personal shared-server experiment
+
+The personal branch includes `scripts/codex-shared-observer.py` for a bounded,
+opt-in experiment with an explicitly known Codex conversation, terminal surface,
+workspace and owning CLI PID. It reads status through the existing daemon's Unix
+WebSocket without resuming a thread. With `--messages`, it delivers deferred cmux
+message leases through native `codex queue` and acknowledges only accepted sends.
+Messages wait while the thread is busy or needs human input. Process ownership
+is checked through cmux before delivery. Ambiguous delivery failures stop the
+observer rather than retrying automatically.
+
+This is not automatic tracking for arbitrary CLI launches or `/new` transitions.
+Do not infer bindings from titles, directories, timestamps or the newest session.
+The experiment expires after 30 minutes by default. It leaves the global Codex
+integration setting and native computer-use provider unchanged. Permission,
+question and system-error states can produce attention notifications; native OSC
+completion notifications remain responsible for Done alerts to avoid duplicates.
+
 ## Limits
 
 - Bodies are text only: control characters other than newline and tab are rejected, so no escape sequence can ride along. The limit is 32 KiB.

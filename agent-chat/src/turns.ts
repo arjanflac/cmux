@@ -1,5 +1,22 @@
 import type { Block } from "./session";
 
+/** Keep the conversation readable while retaining technical activity intact. */
+export function quietActivity(blocks: Block[]): { visible: Block[]; details: Block[] } {
+  const visible: Block[] = [];
+  const details: Block[] = [];
+  for (const block of blocks) {
+    if (block.kind === "status" || block.kind === "files"
+        || (block.kind === "tool" && block.status !== "fail")) details.push(block);
+    else visible.push(block);
+  }
+  return { visible, details };
+}
+
+export function toggleActivityDisclosure(ids: string[], current: Record<string, boolean>): Record<string, boolean> {
+  const open = ids.some((id) => !current[id]);
+  return { ...current, ...Object.fromEntries(ids.map((id) => [id, open])) };
+}
+
 export interface TurnGroup {
   id: string;
   user?: Extract<Block, { kind: "user" }>;

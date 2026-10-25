@@ -38,6 +38,11 @@ function argValue(name: string): string | undefined {
 
 const PORT = Number(argValue("--port") ?? process.env.CMUX_AGENT_CHAT_PORT ?? process.env.CMUX_AGENT_UI_PORT ?? 7739);
 const AUTH_TOKEN = argValue("--token") ?? process.env.CMUX_AGENT_CHAT_TOKEN ?? "";
+const READ_ONLY = process.env.CMUX_AGENT_CHAT_READ_ONLY === "1";
+
+export function readOnlyOperationAllowed(op: string, readOnly = READ_ONLY): boolean {
+  return !readOnly || op === "subscribe" || op === "get-file-diff";
+}
 if (AUTH_TOKEN.includes("/")) throw new Error("CMUX_AGENT_CHAT_TOKEN must be a single path segment");
 const AUTH_PREFIX = AUTH_TOKEN ? `/${encodeURIComponent(AUTH_TOKEN)}` : "";
 const STATE_FILE = process.env.CMUX_AGENT_CHAT_STATE_FILE ?? "";
@@ -2118,6 +2123,7 @@ function startServer() {
     if (originalUrl.pathname === "/healthz") return new Response("ok");
     const url = stripAuthPrefix(originalUrl);
     if (!url) return new Response("not found", { status: 404 });
+    if (READ_ONLY && req.method !== "GET") return new Response("read-only", { status: 403 });
     if (url.pathname === "/ws") {
       if (!hasTrustedOrigin(req)) return new Response("forbidden", { status: 403 });
       return srv.upgrade(req, { data: { subscribed: null } })
@@ -2253,18 +2259,20 @@ function startServer() {
     (err) => console.error(String(err)),
   );
 
-  for (const p of PROVIDERS) {
-    refreshCatalog(p.id, process.env.CMUX_AGENT_UI_CWD ?? DEFAULT_CWD).catch((err) => {
-      console.warn(`catalog warm failed for ${p.id}: ${String(err)}`);
+  if (!READ_ONLY) {
+    for (const p of PROVIDERS) {
+      refreshCatalog(p.id, process.env.CMUX_AGENT_UI_CWD ?? DEFAULT_CWD).catch((err) => {
+        console.warn(`catalog warm failed for ${p.id}: ${String(err)}`);
+      });
+    }
+    agentModelCatalog.subscribe(() => {
+      applyAgentModelCatalog().catch((err) => console.warn(`model catalog apply failed: ${String(err)}`));
     });
-  }
-  agentModelCatalog.subscribe(() => {
-    applyAgentModelCatalog().catch((err) => console.warn(`model catalog apply failed: ${String(err)}`));
-  });
-  agentModelCatalog.refreshIfStale().catch((err) => console.warn(`model catalog refresh failed: ${String(err)}`));
-  setInterval(() => {
     agentModelCatalog.refreshIfStale().catch((err) => console.warn(`model catalog refresh failed: ${String(err)}`));
-  }, 60_000);
+    setInterval(() => {
+      agentModelCatalog.refreshIfStale().catch((err) => console.warn(`model catalog refresh failed: ${String(err)}`));
+    }, 60_000);
+  }
   startThemeWatcher();
   writeStateFile(server.port).catch((err) => console.error(`failed to write agent-chat state file: ${String(err)}`));
 
@@ -2360,6 +2368,10 @@ export async function sendCommandCatalogResponse(
 }
 
 export function handleSessionMessage(ws: Bun.ServerWebSocket<WsData>, msg: any) {
+  if (!readOnlyOperationAllowed(String(msg.op ?? ""))) {
+    ws.send(JSON.stringify({ kind: "error", op: String(msg.op ?? ""), message: "This transcript view is read-only." }));
+    return;
+  }
   switch (msg.op) {
     case "start": {
       const prompt = String(msg.prompt ?? "").trim();

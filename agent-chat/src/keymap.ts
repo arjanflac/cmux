@@ -5,6 +5,7 @@ export type KeyAction =
   | "cycle-thinking"
   | "toggle-fast"
   | "toggle-plan"
+  | "toggle-activity"
   | "interrupt"
   | "help";
 export type MenuKeyAction = "menu-next" | "menu-prev" | "menu-accept" | "menu-close" | "newline" | "picker-rail-next" | "picker-rail-prev";
@@ -26,6 +27,7 @@ export type KeyDispatch =
   | { kind: "menu"; action: MenuKeyAction };
 
 export const KEYMAP: KeymapEntry[] = [
+  { combo: "Ctrl+T", description: "Show or hide tool activity", action: "toggle-activity" },
   { combo: "Shift+Tab", description: "Cycle mode-like option", action: "cycle-mode" },
   { combo: "Ctrl+Shift+M", description: "Cycle model", action: "cycle-model" },
   { combo: "Ctrl+Shift+P", description: "Open model selector", action: "open-model" },
@@ -69,8 +71,8 @@ export function menuActionForKey(e: KeyEventLike, ctrlJ?: "newline" | "menu"): M
 export function keyDispatchFor(e: KeyEventLike, ctx: { editable: boolean; popupOpen: boolean; ctrlJ?: "newline" | "menu" }): KeyDispatch | null {
   const menuAction = menuActionForKey(e, ctx.ctrlJ);
   if (ctx.popupOpen && menuAction) return { kind: "menu", action: menuAction };
-  if (ctx.editable && !ctx.popupOpen && isPlainCtrlLetter(e)) return null;
   const action = actionForKey(e);
+  if (ctx.editable && !ctx.popupOpen && isPlainCtrlLetter(e) && action !== "toggle-activity") return null;
   if (!action) return null;
   if (ctx.popupOpen && action !== "interrupt") return null;
   return { kind: "global", action };

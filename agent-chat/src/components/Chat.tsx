@@ -3,7 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject }
 import { useCtx } from "../context";
 import { agentChatText } from "../i18n";
 import { readStoredProviderOptions, persistOptionsSnapshot, updateStoredProviderOption } from "../options-store";
-import { composerDraftKey, routedToTranscript, transcriptComposerLocked, type OptionValue, type SessionOption } from "../session";
+import { composerDraftKey, routedToTranscript, transcriptComposerLocked, transcriptReadOnly, type OptionValue, type SessionOption } from "../session";
 import { ArrowUp } from "./icons";
 import { isCtrlJ, insertNewlineAtCaret, useCommandMenu } from "./CommandMenu";
 import { optionAcceptsValue, optionsForSelectedModel } from "./options";
@@ -75,6 +75,7 @@ export function Chat() {
   const running = session?.status === "running";
   // Transcript views mirror a terminal agent: no composer, catalogs, or files.
   const transcriptView = session ? session.mode === "transcript" : routedToTranscript;
+  const readOnlyView = transcriptReadOnly(transcriptView ? "transcript" : undefined, globalThis.location?.search ?? "");
   const composerLocked = transcriptComposerLocked(session);
   const catalogCwd = transcriptView ? "" : cwd;
   const resolvedOptions = useMemo(() => optionsForSelectedModel(options), [options]);
@@ -91,8 +92,8 @@ export function Chat() {
   useKeymap({
     options: resolvedOptions,
     setOption,
-    running,
-    stop,
+    running: running && !readOnlyView,
+    stop: readOnlyView ? () => {} : stop,
     helpOpen,
     setHelpOpen,
     popupOpen: commandMenu.open || Boolean(openOptionId),
@@ -157,7 +158,7 @@ export function Chat() {
         <Blocks
           blocks={blocks}
           status={session?.status}
-          actions={actions}
+          actions={readOnlyView ? {} : actions}
           onFork={fork}
           forkPending={forkPending}
           onHandoff={handoff}
@@ -182,10 +183,10 @@ export function Chat() {
         {transcriptView && session?.attention ? (
           <div className="terminal-attention" id="terminal-attention" role="status">
             <span className="terminal-attention-text">{session.attention}</span>
-            <button className="terminal-attention-btn" type="button" onClick={focusTerminal}>{agentChatText("answerInTerminal")}</button>
+            {!readOnlyView ? <button className="terminal-attention-btn" type="button" onClick={focusTerminal}>{agentChatText("answerInTerminal")}</button> : null}
           </div>
         ) : null}
-        <div id="chat-card">
+        {readOnlyView ? <div className="transcript-hint" role="status">{agentChatText("transcriptReadOnly")}</div> : <div id="chat-card">
           <div className="input-wrap chat-text-wrap">
             <textarea
               ref={taRef}
@@ -233,7 +234,7 @@ export function Chat() {
               trailing={chatActions}
             />
           )}
-        </div>
+        </div>}
       </div>
       {helpOpen ? <ShortcutOverlay provider={session?.provider ?? "agent"} options={resolvedOptions} running={running} ctrlJ={ctrlJ} onClose={() => setHelpOpen(false)} /> : null}
     </section>
