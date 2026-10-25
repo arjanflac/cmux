@@ -207,6 +207,25 @@ struct AgentTaskCoordinatorTests {
         #expect(coordinator.records[child.id]?.phase == .disconnected)
     }
 
+    @Test func overlappingCancellationDoesNotClaimAnInFlightChildStopped() async throws {
+        let backend = TaskTestBackend(), views = TaskTestViews(), gate = TaskCancelGate()
+        let coordinator = AgentTaskCoordinator(backend: backend, repository: TaskTestRepository(), present: views.open)
+        let parent = try await coordinator.start(request(.background))
+        let child = try await coordinator.start(request(.background, parent: parent.id))
+        await backend.beforeCancel(child.id) {
+            await gate.hold()
+            throw CocoaError(.fileWriteUnknown)
+        }
+        let direct = Task { try await coordinator.cancel(child.id) }
+        var entered = gate.entered.makeAsyncIterator()
+        _ = await entered.next()
+        await #expect(throws: (any Error).self) { try await coordinator.cancel(parent.id) }
+        await gate.open()
+        await #expect(throws: (any Error).self) { try await direct.value }
+        #expect(coordinator.records[child.id]?.phase == .disconnected)
+        try? await coordinator.cancel(child.id)
+    }
+
     @Test func receiptsUsePrivateFilesAndRoundTrip() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -228,8 +247,8 @@ private actor TaskTestBackend: AgentTaskBackend {
     var attempted: Set<UUID> = []
     var failures: Set<UUID> = []
     func failCancel(_ id: UUID) { failures.insert(id) }
-    var callbacks: [UUID: @Sendable () async -> Void] = [:]
-    func beforeCancel(_ id: UUID, _ callback: @escaping @Sendable () async -> Void) { callbacks[id] = callback }
+    var callbacks: [UUID: @Sendable () async throws -> Void] = [:]
+    func beforeCancel(_ id: UUID, _ callback: @escaping @Sendable () async throws -> Void) { callbacks[id] = callback }
     private var streams: [UUID: AsyncThrowingStream<AgentTaskEvent, any Error>.Continuation] = [:]
     func start(id: UUID, request: AgentTaskRequest) -> AsyncThrowingStream<AgentTaskEvent, any Error> {
         started.append(id)
@@ -240,9 +259,23 @@ private actor TaskTestBackend: AgentTaskBackend {
     func cancel(id: UUID) async throws {
         attempted.insert(id)
         if failCancellation || failures.contains(id) { throw CocoaError(.fileWriteUnknown) }
-        if let callback = callbacks.removeValue(forKey: id) { await callback() }
+        if let callback = callbacks.removeValue(forKey: id) { try await callback() }
         cancelled.insert(id); streams.removeValue(forKey: id)?.finish()
     }
+}
+
+private actor TaskCancelGate {
+    nonisolated let entered: AsyncStream<Void>
+    private let sink: AsyncStream<Void>.Continuation
+    private var release: CheckedContinuation<Void, Never>?
+    init() {
+        let pair = AsyncStream.makeStream(of: Void.self)
+        entered = pair.stream; sink = pair.continuation
+    }
+    func hold() async {
+        await withCheckedContinuation { release = $0; sink.yield(()) }
+    }
+    func open() { release?.resume(); release = nil; sink.finish() }
 }
 
 private actor TaskTestRepository: AgentTaskRepository {
