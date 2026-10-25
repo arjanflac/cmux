@@ -8533,6 +8533,9 @@ struct CMUXCLI {
                 windowOverride: windowId
             )
 
+        case "task":
+            try runAgentTaskCommand(commandArgs, client: client, windowOverride: windowId)
+
         case "chief":
             try runChiefSocketCommand(
                 commandArgs: commandArgs,
@@ -21120,6 +21123,8 @@ struct CMUXCLI {
             return Self.remotesUsage
         case "todo":
             return Self.todoUsage
+        case "task":
+            return Self.agentTaskUsage
         case "chief":
             return Self.chiefUsage
         case "comments":
@@ -23540,6 +23545,7 @@ struct CMUXCLI {
 
     /// Dispatch help for a subcommand. Returns true if help was printed.
     private func dispatchSubcommandHelp(command: String, commandArgs: [String]) -> Bool {
+        if command == "task", !commandArgs.prefix(while: { $0 != "--" }).contains(where: { $0 == "--help" || $0 == "-h" }) { return false }
         guard commandArgs.contains("--help") || commandArgs.contains("-h") else { return false }
         // `cmux vm <verb> --help` answers for that verb; the family text stays for
         // `cmux vm --help` and verbs without their own usage.

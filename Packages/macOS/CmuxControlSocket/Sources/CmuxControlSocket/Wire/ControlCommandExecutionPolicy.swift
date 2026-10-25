@@ -128,6 +128,9 @@ public enum ControlCommandExecutionPolicy: Sendable, Equatable {
         "agent.message.ack",
         "agent.message.mark_read",
         "agent.message.poll", "agent.message.settings",
+        // Local managed tasks await provider events and disk receipts off-main.
+        "agent.task.start", "agent.task.list", "agent.task.read",
+        "agent.task.wait", "agent.task.cancel", "agent.task.report",
         // Chief: owner-actor reads and writes, the store's send, and at most
         // one main-actor hop for app state (`TerminalController+Chief`).
         // `chief.approve`, `chief.answer` and `chief.debug` answer only in DEBUG builds.
