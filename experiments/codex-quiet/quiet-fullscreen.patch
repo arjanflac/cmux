@@ -1,0 +1,271 @@
+diff --git a/codex-rs/tui/src/chatwidget/activity_presentation.rs b/codex-rs/tui/src/chatwidget/activity_presentation.rs
+index 573a4770f6265fe88acca9e69d56394229a34fa7..ba2c7c9830637a7706e279429c881aedee2b8ae2 100644
+--- a/codex-rs/tui/src/chatwidget/activity_presentation.rs
++++ b/codex-rs/tui/src/chatwidget/activity_presentation.rs
+@@ -31,16 +31,28 @@ impl ChatWidget {
+         };
+         let has_activity = mode == HistoryRenderMode::Rich
+             && active.is_some_and(|cell| !cell.activity_ids().is_empty());
+-        let activity = active.map_or_else(Vec::new, |cell| {
+-            if expanded && has_activity {
+-                cell.expanded_hyperlink_lines(width)
+-            } else {
+-                render_compact(cell, width)
+-            }
+-        });
+-        let disclosure = active
+-            .filter(|_| has_activity)
+-            .and_then(|cell| cell.activity_disclosure(width));
++        let quiet = active
++            .filter(|_| has_activity && !expanded)
++            .and_then(|cell| cell.quiet_fullscreen_line(width));
++        let quiet_disclosure = quiet.is_some();
++        let activity = if let Some(line) = quiet {
++            vec![line]
++        } else {
++            active.map_or_else(Vec::new, |cell| {
++                if expanded && has_activity {
++                    cell.expanded_hyperlink_lines(width)
++                } else {
++                    render_compact(cell, width)
++                }
++            })
++        };
++        let disclosure = if quiet_disclosure {
++            Some(history_cell::ActivityDisclosure::Generic)
++        } else {
++            active
++                .filter(|_| has_activity)
++                .and_then(|cell| cell.activity_disclosure(width))
++        };
+         let mut auxiliary = self
+             .active_cell_hyperlink_lines_with(width, |cell, width| {
+                 if active.is_some_and(|active| std::ptr::eq(active, cell)) {
+diff --git a/codex-rs/tui/src/exec_cell/render.rs b/codex-rs/tui/src/exec_cell/render.rs
+index 22a0ea7d320f3e5f1ade29c03df3398a1e35de96..e05b96a5034b13eed4d2a7dac580336993fd559a 100644
+--- a/codex-rs/tui/src/exec_cell/render.rs
++++ b/codex-rs/tui/src/exec_cell/render.rs
+@@ -210,6 +210,51 @@ fn activity_marker(start_time: Option<Instant>, animations_enabled: bool) -> Spa
+ }
+ 
+ impl HistoryCell for ExecCell {
++    fn quiet_fullscreen_line(&self, width: u16) -> Option<HyperlinkLine> {
++        // User-shell commands and terminal interaction records retain their existing display.
++        if self.group.calls.is_empty()
++            || self.iter_calls().any(|call| {
++                !matches!(
++                    call.source,
++                    ExecCommandSource::Agent | ExecCommandSource::UnifiedExecStartup
++                )
++            })
++        {
++            return None;
++        }
++        let nonzero: Vec<_> = self
++            .iter_calls()
++            .filter(|call| call.duration.is_some())
++            .filter_map(|call| call.output.as_ref())
++            .filter(|output| output.exit_code != 0)
++            .collect();
++        let mut status = if self.is_active() {
++            "Running"
++        } else {
++            "Completed"
++        }
++        .to_owned();
++        if self.group.calls.len() == 1 {
++            if let Some(output) = nonzero.first() {
++                status.push_str(&format!(" (exit {})", output.exit_code));
++            }
++        } else if !nonzero.is_empty() {
++            status.push_str(&format!(" ({} nonzero exits)", nonzero.len()));
++        }
++        let name = if self.group.calls.len() == 1 {
++            if self.is_exploring_cell() {
++                "exploration".to_owned()
++            } else {
++                "command".to_owned()
++            }
++        } else {
++            format!("{} commands", self.group.calls.len())
++        };
++        Some(crate::history_cell::activity_preview::quiet_tool_line(
++            &status, &name, width,
++        ))
++    }
++
+     fn append_reasoning(&mut self, cell: Box<dyn HistoryCell>) -> Result<(), Box<dyn HistoryCell>> {
+         if self.is_exploring_cell() {
+             self.group.push_detail(std::sync::Arc::from(cell));
+diff --git a/codex-rs/tui/src/history_cell/activity_preview.rs b/codex-rs/tui/src/history_cell/activity_preview.rs
+index 0a8ade1e1521070d4d5d9e6eb1ae12592e4841e2..8284e4a24fd98cc44c7f3192f5761573849e1531 100644
+--- a/codex-rs/tui/src/history_cell/activity_preview.rs
++++ b/codex-rs/tui/src/history_cell/activity_preview.rs
+@@ -18,3 +18,12 @@ pub(crate) enum ActivityDisclosure {
+ pub(crate) fn clipped_line(line: Line<'static>, width: u16) -> HyperlinkLine {
+     truncate_line_with_ellipsis_if_overflow(line, usize::from(width)).into()
+ }
++
++/// Summaries contain a typed status and name, never tool arguments or result text.
++pub(crate) fn quiet_tool_line(status: &str, name: &str, width: u16) -> HyperlinkLine {
++    let name: String = name
++        .chars()
++        .map(|ch| if ch.is_control() { ' ' } else { ch })
++        .collect();
++    clipped_line(Line::from(format!("• {status} {name}")), width)
++}
+diff --git a/codex-rs/tui/src/history_cell/dynamic.rs b/codex-rs/tui/src/history_cell/dynamic.rs
+index 9c5c603064d83ac193d1285db95860b6f7c89506..65c7877b6a53d293d23a53fe099c161789fda77d 100644
+--- a/codex-rs/tui/src/history_cell/dynamic.rs
++++ b/codex-rs/tui/src/history_cell/dynamic.rs
+@@ -32,6 +32,7 @@ struct DynamicToolCallData {
+     status: DynamicToolCallStatus,
+     interrupted: bool,
+     output: Option<Vec<String>>,
++    has_non_text_output: bool,
+     duration_ms: Option<i64>,
+ }
+ 
+@@ -101,6 +102,11 @@ impl DynamicToolCallData {
+         else {
+             return None;
+         };
++        let has_non_text_output = content_items.as_ref().is_some_and(|items| {
++            items
++                .iter()
++                .any(|item| !matches!(item, DynamicToolCallOutputContentItem::InputText { .. }))
++        });
+         Some((
+             id,
+             Self {
+@@ -127,6 +133,7 @@ impl DynamicToolCallData {
+                         })
+                         .collect()
+                 }),
++                has_non_text_output,
+                 duration_ms,
+             },
+         ))
+@@ -173,6 +180,28 @@ impl DynamicToolCallData {
+ }
+ 
+ impl HistoryCell for DynamicToolCallCell {
++    fn quiet_fullscreen_line(&self, width: u16) -> Option<HyperlinkLine> {
++        let data = self
++            .data
++            .read()
++            .unwrap_or_else(std::sync::PoisonError::into_inner);
++        if data.has_non_text_output {
++            return None;
++        }
++        let status = if data.interrupted {
++            "Interrupted"
++        } else {
++            match data.status {
++                DynamicToolCallStatus::InProgress => "Calling",
++                DynamicToolCallStatus::Completed => "Called",
++                DynamicToolCallStatus::Failed => "Failed",
++            }
++        };
++        Some(super::activity_preview::quiet_tool_line(
++            status, &data.name, width,
++        ))
++    }
++
+     fn has_stable_transcript_height(&self) -> bool {
+         false
+     }
+diff --git a/codex-rs/tui/src/history_cell/mcp.rs b/codex-rs/tui/src/history_cell/mcp.rs
+index 9f80e5e5d7893a4fdba82f4b317fd8af29806a8c..b7f54253940ebeff2162cfe3ccd30091b0af6294 100644
+--- a/codex-rs/tui/src/history_cell/mcp.rs
++++ b/codex-rs/tui/src/history_cell/mcp.rs
+@@ -356,6 +356,24 @@ impl McpToolCallCell {
+ }
+ 
+ impl HistoryCell for McpToolCallCell {
++    fn quiet_fullscreen_line(&self, width: u16) -> Option<HyperlinkLine> {
++        if let Some(Ok(result)) = &self.result
++            && result.content.iter().any(|block| !block.is_plain_text())
++        {
++            return None;
++        }
++        let status = match self.success() {
++            None => "Calling",
++            Some(true) => "Called",
++            Some(false) => "Failed",
++        };
++        Some(super::activity_preview::quiet_tool_line(
++            status,
++            &format!("{}.{}", self.invocation.server, self.invocation.tool),
++            width,
++        ))
++    }
++
+     fn activity_ids(&self) -> Vec<String> {
+         vec![format!("mcp:{}", self.call_id)]
+     }
+diff --git a/codex-rs/tui/src/history_cell/mcp_result.rs b/codex-rs/tui/src/history_cell/mcp_result.rs
+index 04bf485a9d9c7dff1c02b8c60d276c8e295d2871..243119730cd0e0784afa7df9c321a27b08e6353a 100644
+--- a/codex-rs/tui/src/history_cell/mcp_result.rs
++++ b/codex-rs/tui/src/history_cell/mcp_result.rs
+@@ -111,6 +111,11 @@ impl McpToolResult {
+ }
+ 
+ impl McpContentBlock {
++    /// Media, resources, malformed and future block types keep their existing presentation.
++    pub(super) fn is_plain_text(&self) -> bool {
++        matches!(self.display, McpContentDisplay::Text(_))
++    }
++
+     /// Returns all retained text, with honest markers for media and embedded resource bodies.
+     pub(super) fn render_full(&self) -> &str {
+         if let Some(text) = &self.original_text {
+diff --git a/codex-rs/tui/src/history_cell/mod.rs b/codex-rs/tui/src/history_cell/mod.rs
+index 5b14559f6325d54aeee6a835287460631d4ca7bb..e67ed4a5fc829cfbbae61ad8199fb84fcc551a87 100644
+--- a/codex-rs/tui/src/history_cell/mod.rs
++++ b/codex-rs/tui/src/history_cell/mod.rs
+@@ -245,6 +245,13 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
+         self.display_hyperlink_lines(width)
+     }
+ 
++    /// Optional one-row tool summary for the normal owned fullscreen viewport only.
++    /// Unknown cells decline it. Inline, expanded, raw, and detailed rendering retain their
++    /// original content; the viewport supplies disclosure for every accepted summary.
++    fn quiet_fullscreen_line(&self, _width: u16) -> Option<HyperlinkLine> {
++        None
++    }
++
+     /// Rich presentation in a viewport that can redraw previously visible rows.
+     fn retained_hyperlink_lines(&self, width: u16, detailed: bool) -> Vec<HyperlinkLine> {
+         if detailed {
+diff --git a/codex-rs/tui/src/transcript_view/layout.rs b/codex-rs/tui/src/transcript_view/layout.rs
+index f91e3d022576624b954554ae20d6a091f70ad489..20b30c36efae3b936e0a4bbad4df39262384603b 100644
+--- a/codex-rs/tui/src/transcript_view/layout.rs
++++ b/codex-rs/tui/src/transcript_view/layout.rs
+@@ -193,15 +193,25 @@ impl TranscriptView {
+             .primary_hint(KeymapContext::Global, "open_transcript");
+         Some(self.cache.get(cell, width, presentation, || {
+             let mut layout = if disclosure {
++                let quiet = (!expanded)
++                    .then(|| cell.quiet_fullscreen_line(width))
++                    .flatten();
++                let quiet_disclosure = quiet.is_some();
+                 activity_layout(
+                     ActivityTranscriptLines {
+                         activity: if expanded {
+                             cell.expanded_hyperlink_lines(width)
++                        } else if let Some(line) = quiet {
++                            vec![line]
+                         } else {
+                             cell.compact_hyperlink_lines(width)
+                         },
+                         auxiliary: Vec::new(),
+-                        disclosure: cell.activity_disclosure(width),
++                        disclosure: if quiet_disclosure {
++                            Some(ActivityDisclosure::Generic)
++                        } else {
++                            cell.activity_disclosure(width)
++                        },
+                     },
+                     width,
+                     expanded,
