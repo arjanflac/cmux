@@ -18,7 +18,7 @@ concurrency:
 jobs:
   rendering:
     if: github.repository == 'arjanflac/cmux'
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 90
     env:
       CARGO_BUILD_JOBS: '2'
