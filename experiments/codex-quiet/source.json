@@ -1,0 +1,7 @@
+{
+  "repository": "https://github.com/openai/codex",
+  "commit": "6aaac694803004a63c6f393d153c96d22521a6b9",
+  "release": "rust-v0.164.0",
+  "testCount": 7,
+  "testFilter": "cmux_quiet_"
+}
