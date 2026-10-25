@@ -17,7 +17,10 @@ if not zig:
     sys.exit('zig must be installed at the version required by ghostty/build.zig.zon')
 compiler = '#!/bin/sh\ncase " $* " in\n *" -frontend "*|*" -package-description-version "*) exec ' + shlex.quote(swift) + ' "$@" ;;\n *) exec ' + shlex.quote(swift) + ' "$@" -enable-batch-mode -driver-batch-count 256 -j1 ;;\nesac\n'
 selector = 'SWIFT_EXEC=$(CMUX_PERSONAL_SWIFT_EXEC_$(TARGET_NAME):default=' + swift + ')'
-xcode = '#!/bin/sh\ncase " $* " in\n *" -project cmux.xcodeproj "*) exec /usr/bin/xcodebuild -jobs 1 "$@" ONLY_ACTIVE_ARCH=YES ARCHS=arm64 SWIFT_COMPILATION_MODE=incremental SWIFT_MAXIMUM_CONCURRENT_COMPILE_TASKS=1 ' + shlex.quote(selector) + ' ' + shlex.quote('CMUX_PERSONAL_SWIFT_EXEC_cmux=' + str(tools / 'swiftc')) + ' ;;\n *) exec /usr/bin/xcodebuild "$@" ;;\nesac\n'
+# CI does not need IDE indexing. Keep the workstation's existing behavior and
+# single-worker memory limits, and print timings so cache gains can be measured.
+ci_options = ' -showBuildTimingSummary COMPILER_INDEX_STORE_ENABLE=NO' if os.environ.get('GITHUB_ACTIONS') == 'true' else ''
+xcode = '#!/bin/sh\ncase " $* " in\n *" -project cmux.xcodeproj "*) exec /usr/bin/xcodebuild -jobs 1 "$@" ONLY_ACTIVE_ARCH=YES ARCHS=arm64 SWIFT_COMPILATION_MODE=incremental SWIFT_MAXIMUM_CONCURRENT_COMPILE_TASKS=1 ' + shlex.quote(selector) + ' ' + shlex.quote('CMUX_PERSONAL_SWIFT_EXEC_cmux=' + str(tools / 'swiftc')) + ci_options + ' ;;\n *) exec /usr/bin/xcodebuild "$@" ;;\nesac\n'
 for name, content in [('swiftc', compiler), ('xcodebuild', xcode)]:
     path = tools / name
     if not path.exists() or path.read_text() != content:

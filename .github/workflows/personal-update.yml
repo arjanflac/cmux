@@ -83,6 +83,7 @@ jobs:
           go-version: '1.26.x'
           cache: false
       - name: Select Xcode and prepare native toolchains
+        id: toolchain
         shell: bash
         run: |
           set -euo pipefail
@@ -91,6 +92,7 @@ jobs:
           test -n "$developer"
           echo "DEVELOPER_DIR=$developer/Contents/Developer" >> "$GITHUB_ENV"
           export DEVELOPER_DIR="$developer/Contents/Developer"
+          echo "cache-id=$(xcodebuild -version | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
           go version
           xcrun metal --version || xcodebuild -downloadComponent MetalToolchain
           rustup toolchain install stable --profile minimal
@@ -118,12 +120,30 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             ~/Library/Caches/cmux
-            ~/Library/Developer/Xcode/DerivedData/cmux-personal/SourcePackages
-          key: personal-native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock', '**/Package.resolved', 'scripts/ghosttykit-checksums.txt') }}
+          key: personal-native-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/Cargo.lock', 'scripts/ghosttykit-checksums.txt') }}
+      - name: Restore incremental Xcode build outputs and unchanged source timestamps
+        uses: irgaly/xcode-cache@4141f139f00e335c6e1031fb93e667181f86146f # v1.9.2
+        with:
+          deriveddata-directory: ~/Library/Developer/Xcode/DerivedData/cmux-personal
+          key: personal-xcode-v1-${{ runner.arch }}-${{ steps.toolchain.outputs.cache-id }}-${{ hashFiles('scripts/personal-build.py') }}-${{ needs.prepare.outputs.sha }}
+          restore-keys: personal-xcode-v1-${{ runner.arch }}-${{ steps.toolchain.outputs.cache-id }}-${{ hashFiles('scripts/personal-build.py') }}-
+          swiftpm-cache-key: personal-spm-v1-${{ runner.arch }}-${{ steps.toolchain.outputs.cache-id }}-${{ hashFiles('**/Package.resolved') }}
+          restore-mtime-targets: |
+            **/*.rs
+            **/*.go
+            **/*.zig
+            **/*.sh
+            **/*.py
+            **/*.toml
+            **/Cargo.lock
+            **/go.mod
+            **/go.sum
       - name: Check custom settings, Swift syntax, and test wiring
         run: python3 scripts/verify-local.py --swift-changed origin/main
       - name: Build an isolated native Release app
         run: python3 scripts/personal-build.py
+      - name: Record incremental build cache size
+        run: du -sh "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal"
       - name: Package candidate without official auto-updates
         run: |
           python3 scripts/personal-package.py "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux-custom-build.app"
