@@ -1,8 +1,9 @@
 import { preferenceStorage, draftStorage } from "../browser-storage";
 import { useCallback, useMemo, useState } from "react";
-import { composerDraftKey, visibleWorkflowHarnesses, type OptionValue } from "../session";
+import { appPath, composerDraftKey, type OptionValue } from "../session";
 import { useCtx } from "../context";
 import { readStoredProviderOptions, updateStoredProviderOption } from "../options-store";
+import { agentChatText } from "../i18n";
 import { ArrowUp } from "./icons";
 import { StatusRow } from "./StatusRow";
 import { isCtrlJ, insertNewlineAtCaret, useCommandMenu } from "./CommandMenu";
@@ -21,17 +22,19 @@ import {
   withFileTrigger,
 } from "../hooks/useCatalogs";
 
-import { selectHarnessLocale, formatHarnessMessage, renderHarnessMessage } from "../harness-i18n";
 
 const readProviderOptions = readStoredProviderOptions;
+function initialCwd() {
+  const requested = new URLSearchParams(globalThis.location?.search ?? "").get("cwd");
+  return requested?.startsWith("/") ? requested : preferenceStorage.getItem("agentui.cwd") || "";
+}
 
 export function Composer() {
   const {
     ready,
+    recentSessions,
     connectionEpoch,
     providers,
-    harnessSnapshot,
-    harnessCatalogs,
     capabilities,
     defaultCwd,
     providerOptions,
@@ -48,8 +51,8 @@ export function Composer() {
     start,
   } = useCtx();
   const [provider, setProvider] = useState(() => preferenceStorage.getItem("agentui.provider") || "claude");
-  const [cwd, setCwd] = useState(() => preferenceStorage.getItem("agentui.cwd") || "");
-  const [committedCwd, setCommittedCwd] = useState(() => preferenceStorage.getItem("agentui.cwd") || "");
+  const [cwd, setCwd] = useState(initialCwd);
+  const [committedCwd, setCommittedCwd] = useState(initialCwd);
   const [prompt, setPrompt] = useState(() => {
     const draft = draftStorage.getItem(composerDraftKey) || "";
     draftStorage.removeItem(composerDraftKey);
@@ -71,9 +74,6 @@ export function Composer() {
   const options = withLocalValues(baseOptions, startOptions);
   const commandGroups = useMemo(() => withFileTrigger(providerCommands[provider] ?? [], filesByCwd[committedCwd] ?? []), [committedCwd, filesByCwd, provider, providerCommands]);
   const commandMenu = useCommandMenu(prompt, setPrompt, commandGroups, taRef, ctrlJ);
-  const harnessLocale = selectHarnessLocale(harnessCatalogs, navigator.languages);
-  const harnessMessages = harnessCatalogs[harnessLocale];
-  const workflowHarnesses = useMemo(() => visibleWorkflowHarnesses(harnessSnapshot, cwd), [cwd, harnessSnapshot]);
 
   useDefaultCwd(defaultCwd, cwd, setCwd, committedCwd, setCommittedCwd);
   useProviderFallback(providers, provider, setProvider);
@@ -89,7 +89,7 @@ export function Composer() {
     });
   }, [options, provider]);
   useKeymap({
-    options,
+    options: options.filter(option => option.id !== "mode"),
     setOption: setLocalOption,
     running: false,
     stop: () => {},
@@ -181,28 +181,19 @@ export function Composer() {
           )}
         />
       </div>
-      {harnessMessages && workflowHarnesses.length ? (
-        <div className="harness-recommendation" role="status" lang={harnessLocale} dir={harnessLocale === "ar" ? "rtl" : "ltr"}>
-          <div className="harness-recommendation-title">{harnessMessages.title}</div>
-          <div className="harness-recommendation-note">{harnessMessages.selectionNotice}</div>
-          {workflowHarnesses.map((harness) => (
-            <div className="harness-recommendation-item" key={harness.id}>
-              <div>
-                <strong>{harness.label}</strong>
-                <span>{[renderHarnessMessage(harnessMessages, harness.evidence ?? harness.reason), renderHarnessMessage(harnessMessages, harness.benefit)].filter(Boolean).join(" · ")}</span>
-              </div>
-              {harness.provider && providers.some((p) => p.id === harness.provider && p.installed !== false) ? (
-                <button type="button" onClick={() => changeProvider(harness.provider!)}>
-                  {formatHarnessMessage(harnessMessages, "selectProvider", { provider: providers.find((p) => p.id === harness.provider)?.label ?? harness.provider })}
-                </button>
-              ) : null}
-            </div>
+      {recentSessions?.some(chat => chat.mode !== "transcript" && chat.cwd === cwd) ? (
+        <section className="recent-chats" aria-label={agentChatText("recentConversations")}>
+          <h2>{agentChatText("recentConversations")}</h2>
+          {recentSessions.filter(chat => chat.mode !== "transcript" && chat.cwd === cwd).slice(0, 12).map(chat => (
+            <a key={chat.id} href={appPath(`/s/${chat.id}`)}>
+              <span>{chat.title}</span><small>{chat.provider}</small>
+            </a>
           ))}
-        </div>
+        </section>
       ) : null}
       {lastError ? <div className="composer-error">{lastError}</div> : null}
       <div id="composer-hint">Enter to start · Shift+Enter for newline · Ctrl+/ for shortcuts</div>
-      {helpOpen ? <ShortcutOverlay provider={provider} options={options} running={false} ctrlJ={ctrlJ} onClose={() => setHelpOpen(false)} /> : null}
+      {helpOpen ? <ShortcutOverlay provider={provider} options={options.filter(option => option.id !== "mode")} running={false} ctrlJ={ctrlJ} onClose={() => setHelpOpen(false)} /> : null}
     </section>
   );
 }

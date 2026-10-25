@@ -816,7 +816,8 @@ function TurnActivity({
   thinkingDefaultOpen: boolean;
 }) {
   if (!group.activity.length) return null;
-  const summary = `${agentChatText("toolActivity")} · ${new Intl.NumberFormat().format(group.activity.length)}`;
+  const failed = group.activity.filter(block => block.kind === "tool" && block.status === "fail").length;
+  const summary = `${agentChatText("toolActivity")} · ${new Intl.NumberFormat().format(group.activity.length)}${failed ? ` · ×${new Intl.NumberFormat().format(failed)}` : ""}`;
   return (
     <div className="msg assistant" style={activityMessageAlignStyle}>
       <div className="body selectable" style={activityBodyAlignStyle}>
@@ -825,7 +826,7 @@ function TurnActivity({
             label={summary}
             open={expanded}
             canExpand
-            className={"turn-summary" + (expanded ? " open" : "")}
+            className={"turn-summary" + (expanded ? " open" : "") + (failed ? " has-failure" : "")}
             onToggle={() => setExpanded(!expanded)}
           />
           <DisclosureMotion open={expanded}>

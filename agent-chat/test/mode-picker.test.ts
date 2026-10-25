@@ -38,16 +38,11 @@ for (const running of [false, true]) {
     for (const choice of choices) {
       const option: SessionOption = { id, label: "Mode", kind: "select", value: choice.value, choices };
       const markup = renderMode(option, running);
-      const trigger = markup.match(/<button\b[^>]*aria-label="Mode"[^>]*>[\s\S]*?<\/button>/)?.[0];
-      assert.ok(trigger, `${id}=${choice.value}, running=${running}: the mode must have an accessible visible picker`);
-      assert.ok(trigger.includes(choice.label), "the picker must display the selected provider label");
-      assert.ok(trigger.includes('aria-haspopup="dialog"'), "opening the picker should offer a deliberate choice");
+      assert.ok(!markup.includes('aria-label="Mode"'), "mode controls do not occupy the composer row");
+      if (id === "permissionMode") assert.ok(markup.includes('aria-label="More options"'), "permissions remain available in the menu");
+      assert.ok(!markup.includes('cwd-label'), "a non-editable cwd is not shown as a fake control");
     }
-    const disabled = renderMode({ id, label: "Mode", kind: "select", value: "plan", choices, disabled: true }, running);
-    const trigger = disabled.match(/<button\b[^>]*aria-label="Mode"[^>]*>/)?.[0];
-    assert.ok(trigger?.includes('disabled=""'), "a provider-disabled mode must not offer an active control");
   }
 }
-assert.ok(!renderMode(undefined, false).includes('aria-label="Mode"'), "providers without modes must not show a fake picker");
 assert.deepEqual(mutations, [], "rendering a picker must preserve the provider's mode");
-console.log("mode picker visibility and disabled-state assertions passed");
+console.log("compact composer preserves permissions without inline mode/cwd controls");

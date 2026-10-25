@@ -1,3 +1,4 @@
+import { graphicalFullAccessDefault } from "../permission-defaults";
 import type { Adapter, CommandEntry, OptionChoice, OptionValue, SessionCtx, SessionOption } from "../types";
 import { readLines, tryParse, truncate } from "./lines";
 import { prettifyModelLabel } from "./model-label";
@@ -144,7 +145,7 @@ export const claudeAdapter: Adapter = {
       model: enabledClaudeDefault(choices.choices),
       modelChoices: choices.choices,
       modelMeta: choices.meta,
-      permissionMode: "acceptEdits",
+      permissionMode: graphicalFullAccessDefault() ? "bypassPermissions" : "acceptEdits",
       thinking: "0",
       effort: "",
       fastMode: false,
@@ -180,7 +181,7 @@ function state(sess: SessionCtx): ClaudeState {
       model: normalizeStartModel(stringOption(sess, "model", seededClaudeDefault(sess))),
       modelChoices: initialChoices,
       modelMeta: initialMeta,
-      permissionMode: stringOption(sess, "permissionMode", sess.autoApprove ? "acceptEdits" : "default"),
+      permissionMode: stringOption(sess, "permissionMode", sess.autoApprove ? (graphicalFullAccessDefault() ? "bypassPermissions" : "acceptEdits") : "default"),
       thinking: stringOption(sess, "thinking", "0"),
       effort: stringOption(sess, "effort", ""),
       fastMode: booleanOption(sess, "fastMode", false),
@@ -241,6 +242,9 @@ function ensureProc(sess: SessionCtx): Bun.Subprocess<"pipe", "pipe", "pipe"> {
   if (apiModel) args.push("--model", apiModel);
   const fork = sess.internal.claudeFork as { providerSessionId?: string } | undefined;
   if (fork?.providerSessionId) args.push("--resume", fork.providerSessionId, "--fork-session");
+  else if (typeof sess.internal.restoredProviderSessionId === "string") {
+    args.push("--resume", sess.internal.restoredProviderSessionId);
+  }
   if (st.permissionMode !== "default") args.push("--permission-mode", st.permissionMode);
   if (sess.autoApprove) args.push("--allowedTools", "Bash Read Edit Write Glob Grep WebFetch WebSearch");
   if (typeof sess.startOptions.effort === "string" && st.effort) args.push("--effort", st.effort);
@@ -419,7 +423,7 @@ async function refreshClaudeOptions(sess: SessionCtx) {
   if (seedModelChoices(sess, st)) emitOptions(sess);
   const res = await control(sess, "list_models");
   const version = await fetchClaudeVersion();
-  const catalog = normalizeModelCatalog(res?.models, version);
+  const catalog = normalizeClaudeModelCatalog(res?.models, version);
   st.modelChoices = catalog.choices;
   st.modelMeta = catalog.meta;
   const selected = st.modelChoices.find((choice) => choice.value === st.model);
@@ -604,11 +608,8 @@ function bareClaudeAlias(value: string): string {
 }
 
 function aliasClaudeModel(value: string): string {
-  const lower = value.toLowerCase();
-  if (lower === "opus") return "claude-opus-4-8";
-  if (lower === "fable") return "claude-fable-5";
-  if (lower === "sonnet") return "claude-sonnet-5";
-  if (lower === "haiku") return "claude-haiku-4-5";
+  // Aliases are resolved by the installed CLI/account. Freezing `opus` to a
+  // dated ID silently selects an older model despite a newer live catalog.
   return value;
 }
 

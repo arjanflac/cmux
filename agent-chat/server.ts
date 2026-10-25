@@ -1,3 +1,5 @@
+import { ChatSessionStore } from "./session-store";
+import { graphicalFullAccessDefault } from "./permission-defaults";
 import { initializeAgentPath } from "./path-environment";
 import type {
   Adapter,
@@ -210,6 +212,11 @@ interface WsData {
 }
 
 const sessions = new Map<string, Session>();
+const sessionStore = new ChatSessionStore(process.env.CMUX_AGENT_CHAT_SESSION_DIRECTORY ?? "");
+function persistChat(session: Session) {
+  try { sessionStore.save(session); }
+  catch (error) { console.error("[agent-chat] session persistence failed", error); }
+}
 const allSockets = new Set<Bun.ServerWebSocket<WsData>>();
 let fileTheme = resolveGhosttyTheme();
 let cmuxThemeOverride: GhosttyTheme | null = null;
@@ -442,6 +449,7 @@ function createSession(
       }
       if (sess.status === status) return;
       sess.status = status;
+      persistChat(sess);
       const payload = JSON.stringify({ kind: "session-status", sessionId: id, status });
       for (const ws of sess.sockets) ws.send(payload);
       broadcastSessions();
@@ -471,6 +479,7 @@ function emitSessionEvent(sess: Session, evt: AgentEvent) {
   generations.push(generation);
   capSessionEvents(sess);
   broadcastSessionEvent(sess, evt);
+  if (evt.kind === "meta" || evt.kind === "options" || evt.kind === "done") persistChat(sess);
 }
 
 function recordSessionEventSideEffects(sess: Session, evt: AgentEvent) {
@@ -952,10 +961,10 @@ function parseOptions(raw: unknown): Record<string, OptionValue> {
 function applyAutoApproveDefaults(provider: string, autoApprove: boolean, raw: Record<string, OptionValue>): Record<string, OptionValue> {
   const out = { ...raw };
   if (provider === "claude") {
-    if (out.permissionMode === undefined) out.permissionMode = autoApprove ? "acceptEdits" : "default";
+    if (out.permissionMode === undefined) out.permissionMode = autoApprove ? (graphicalFullAccessDefault() ? "bypassPermissions" : "acceptEdits") : "default";
   } else if (provider === "codex") {
     if (out.approvals === undefined) out.approvals = autoApprove ? "never" : "on-request";
-    if (out.sandbox === undefined) out.sandbox = autoApprove ? "workspace-write" : "read-only";
+    if (out.sandbox === undefined) out.sandbox = autoApprove ? (graphicalFullAccessDefault() ? "danger-full-access" : "workspace-write") : "read-only";
   } else if (provider === "opencode" || provider === "gemini") {
     if (out.autoApprove === undefined) out.autoApprove = autoApprove;
   }
@@ -2114,6 +2123,15 @@ function assetResponse(req: Request, asset: StaticAsset): Response {
 }
 
 function startServer() {
+  // Restoring a page never resumes a provider; only an explicit Send does.
+  for (const saved of sessionStore.load()) {
+    const session = createSession(saved.provider, saved.cwd, saved.autoApprove, saved.title,
+      saved.options, { conversationId: saved.conversationId, parentSessionId: saved.parentSessionId, parentConversationId: saved.parentConversationId }, { id: saved.id });
+    session.createdAt = saved.createdAt;
+    session.events = saved.events;
+    session.internal[saved.provider === "codex" ? "threadId" : "providerSessionId"] = saved.providerSessionId;
+    if (saved.provider === "claude") session.internal.restoredProviderSessionId = saved.providerSessionId;
+  }
   const server = Bun.serve<WsData>({
     port: PORT,
     hostname: "127.0.0.1",
@@ -2618,9 +2636,11 @@ function subscribe(ws: Bun.ServerWebSocket<WsData>, sess: Session) {
   cancelTranscriptDispose(sess);
 }
 
-process.on("SIGINT", () => {
-  for (const sess of sessions.values()) sess.adapter.dispose(sess);
+function shutdown() {
+  for (const session of sessions.values()) { persistChat(session); session.adapter.dispose(session); }
   process.exit(0);
-});
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
 
 if (import.meta.main) startServer();

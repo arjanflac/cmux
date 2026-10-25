@@ -6,7 +6,7 @@ export function quietActivity(blocks: Block[]): { visible: Block[]; details: Blo
   const details: Block[] = [];
   for (const block of blocks) {
     if (block.kind === "status" || block.kind === "files"
-        || (block.kind === "tool" && block.status !== "fail")) details.push(block);
+        || block.kind === "tool") details.push(block);
     else visible.push(block);
   }
   return { visible, details };

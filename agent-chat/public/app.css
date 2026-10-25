@@ -897,3 +897,15 @@ details.thinking .t-body { white-space: pre-wrap; font-size: calc(var(--font-siz
   position: static; width: 100%; max-width: 100%; min-height: 300px;
 }
 .gallery-picker-static .model-picker-shell { height: 340px; }
+
+/* Expanded diagnostics remain subordinate to the conversation. */
+.turn-summary.has-failure { color: var(--red, #bd777c); }
+.turn-activity .tool summary { font-size: 12px; color: var(--muted); }
+.turn-activity-row .turn-row-content { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.recent-chats { width: min(100%, 720px); margin: 20px auto 0; }
+.recent-chats h2 { font-size: 12px; color: var(--muted); font-weight: 500; }
+.recent-chats a { display: flex; gap: 16px; padding: 9px 0; color: var(--fg); text-decoration: none; }
+.recent-chats a span { flex: 1; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.recent-chats a small { color: var(--muted); }
+.recent-chats a:hover { color: var(--accent); }

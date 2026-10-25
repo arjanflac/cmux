@@ -267,6 +267,7 @@ export interface SessionState {
   ctrlJ: CtrlJMode;
   phase: "composer" | "chat";
   session: SessionSummary | null;
+  recentSessions: SessionSummary[];
   routing: RouteStatus | null;
   blocks: Block[];
   options: SessionOption[];
@@ -317,7 +318,7 @@ function routePath(): string {
   return location.pathname.startsWith(base + "/") ? location.pathname.slice(base.length) : location.pathname;
 }
 
-function appPath(path: string): string {
+export function appPath(path: string): string {
   return `${basePrefix()}${path}`;
 }
 
@@ -390,6 +391,7 @@ export function useSession(): SessionState {
   const [ctrlJ, setCtrlJ] = useState<CtrlJMode>("newline");
   const [phase, setPhase] = useState<"composer" | "chat">(routedSessionId ? "chat" : "composer");
   const [session, setSession] = useState<SessionSummary | null>(null);
+  const [recentSessions, setRecentSessions] = useState<SessionSummary[]>([]);
   const [routing, setRouting] = useState<RouteStatus | null>(null);
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [options, setOptions] = useState<SessionOption[]>([]);
@@ -579,6 +581,9 @@ export function useSession(): SessionState {
             setConnectionEpoch((n) => n + 1);
             break;
           }
+          case "sessions":
+            setRecentSessions(Array.isArray(msg.sessions) ? msg.sessions : []);
+            break;
           case "session-created": {
             const pending = pendingStartRef.current;
             if (!pending || msg.requestId !== pending.requestId) {
@@ -1009,6 +1014,7 @@ export function useSession(): SessionState {
     ctrlJ,
     phase,
     session,
+    recentSessions,
     routing,
     blocks,
     options,

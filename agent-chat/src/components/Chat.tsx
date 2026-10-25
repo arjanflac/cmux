@@ -90,7 +90,7 @@ export function Chat() {
     else draftStorage.removeItem(composerDraftKey);
   }, [text]);
   useKeymap({
-    options: resolvedOptions,
+    options: resolvedOptions.filter(option => option.id !== "mode"),
     setOption,
     running: running && !readOnlyView,
     stop: readOnlyView ? () => {} : stop,
@@ -236,7 +236,7 @@ export function Chat() {
           )}
         </div>}
       </div>
-      {helpOpen ? <ShortcutOverlay provider={session?.provider ?? "agent"} options={resolvedOptions} running={running} ctrlJ={ctrlJ} onClose={() => setHelpOpen(false)} /> : null}
+      {helpOpen ? <ShortcutOverlay provider={session?.provider ?? "agent"} options={resolvedOptions.filter(option => option.id !== "mode")} running={running} ctrlJ={ctrlJ} onClose={() => setHelpOpen(false)} /> : null}
     </section>
   );
 }

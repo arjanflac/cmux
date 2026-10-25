@@ -45,6 +45,22 @@ backend. Omit the variable to retain the existing standalone stdio adapter.
 Start a fresh graphical conversation for testing. This mode does not discover
 or take over conversations already owned by another frontend. The same model,
 effort, streaming, Stop, and multi-turn adapter paths serve both transports.
+Optional personal-sidecar settings:
+
+- `CMUX_AGENT_CHAT_SESSION_DIRECTORY`: persist this UI's own idle Codex/Claude
+  conversations, provider IDs, options and transcript events in private files.
+  Reopening a page does not start or resume an agent; Send resumes that saved
+  provider conversation. Sessions interrupted while running remain on disk but
+  are excluded from idle restoration until reconciliation is implemented.
+- `CMUX_AGENT_CHAT_FULL_ACCESS_DEFAULT=1`: new auto-approved graphical chats
+  default to Codex danger-full-access or Claude bypassPermissions. Explicit
+  selections still win; provider CLI configuration files are never changed.
+
+The initial composer lists open conversations for its working directory, so
+changing providers does not strand the previous chat. This list includes only
+this sidecar's sessions. Claude aliases reported by the installed CLI retain
+those executable alias values; they are not rewritten to dated model IDs.
+
 Phone visibility must be tested with the user's actual remote client; sharing
 a daemon alone is not proof of remote-client compatibility. Image paste is
 not implemented in this composer yet. The Solid native agent-session panel

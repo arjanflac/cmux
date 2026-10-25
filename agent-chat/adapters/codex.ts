@@ -1,3 +1,4 @@
+import { graphicalFullAccessDefault } from "../permission-defaults";
 import type { Adapter, CommandEntry, OptionChoice, OptionValue, SessionCtx, SessionOption } from "../types";
 import { readLines, tryParse, truncate } from "./lines";
 import { prettifyModelLabel } from "./model-label";
@@ -91,7 +92,7 @@ export const codexAdapter: Adapter = {
       { id: "model", label: "Model", kind: "select", value: "", disabled: true, description: "Loads at start" },
       { id: "effort", label: "Effort", kind: "select", value: "", role: "effort", choices: [], disabled: true, description: "Loads with model" },
       { id: "approvals", label: "Approvals", kind: "select", value: "never", choices: APPROVAL_CHOICES },
-      { id: "sandbox", label: "Sandbox", kind: "select", value: "workspace-write", choices: SANDBOX_CHOICES },
+      { id: "sandbox", label: "Sandbox", kind: "select", value: graphicalFullAccessDefault() ? "danger-full-access" : "workspace-write", choices: SANDBOX_CHOICES },
       { id: "mode", label: "Mode", kind: "select", value: "default", choices: [{ value: "default", label: "Default" }, { value: "plan", label: "Plan" }] },
     ],
   },
@@ -572,7 +573,7 @@ function defaultState(autoApprove: boolean): CodexState {
     model: "",
     effort: "",
     approvals: autoApprove ? "never" : "on-request",
-    sandbox: autoApprove ? "workspace-write" : "read-only",
+    sandbox: autoApprove ? (graphicalFullAccessDefault() ? "danger-full-access" : "workspace-write") : "read-only",
     fastMode: false,
     mode: "default",
     turnActive: false,
@@ -758,7 +759,9 @@ async function setCodexOption(sess: SessionCtx, id: string, value: OptionValue) 
       throw new Error(`unsupported codex option: ${id}`);
   }
   const threadId = sess.internal.threadId as string | undefined;
-  if (threadId) {
+  // A restored page has not resumed/subscribed yet. Keep its selections local
+  // until Send, rather than changing a thread owned by another connection.
+  if (threadId && shared?.sessionsByThread.get(threadId) === sess) {
     const srv = await ensureServer();
     await srv.request("thread/settings/update", {
       threadId,

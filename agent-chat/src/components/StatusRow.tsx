@@ -152,16 +152,6 @@ function StaticProvider({ provider, running = false }: { provider: Provider; run
   );
 }
 
-function StaticCwd({ cwd }: { cwd: string }) {
-  return (
-    <HintTooltip label="Working directory">
-      <span className="row-control cwd-trigger">
-        <FolderIcon />
-        <span className="cwd-label">{basename(cwd)}</span>
-      </span>
-    </HintTooltip>
-  );
-}
 
 function modelOption(options: SessionOption[]): SessionOption | undefined {
   return options.find((o) => o.id === "model" && o.kind === "select");
@@ -585,8 +575,7 @@ export function StatusRow({
   const context = resolvedOptions.find((o) => o.id === "context" && o.kind === "select");
   const fast = resolvedOptions.find((o) => o.id === "fastMode" && o.kind === "toggle");
   const approval = resolvedOptions.find((o) => o.role === "approval" && o.kind === "toggle");
-  const mode = resolvedOptions.find((o) => (o.id === "mode" || o.id === "permissionMode") && o.kind === "select");
-  const overflow = resolvedOptions.filter((o) => !isInlineOption(o));
+  const overflow = resolvedOptions.filter((o) => !isInlineOption(o) || o.id === "permissionMode");
   const providerInfo = providers?.find((p) => p.id === provider) ?? { id: provider, label: provider };
   return (
     <div className="status-row">
@@ -646,17 +635,7 @@ export function StatusRow({
           onOpenChange={(open) => setOpenOptionId(open ? context.id : null)}
         />
       ) : null}
-      {mode ? (
-        <InlineSelect
-          option={mode}
-          icon={<PlanIcon />}
-          label={prettyValue(mode)}
-          onChange={onChange}
-          open={openOptionId === mode.id}
-          onOpenChange={(open) => setOpenOptionId(open ? mode.id : null)}
-        />
-      ) : null}
-      {onCwdChange && onCwdCommit ? <CwdPopover cwd={cwd} onChange={onCwdChange} onCommit={onCwdCommit} /> : <StaticCwd cwd={cwd} />}
+      {onCwdChange && onCwdCommit ? <CwdPopover cwd={cwd} onChange={onCwdChange} onCommit={onCwdCommit} /> : null}
       {approval ? (
         <HintTooltip label={optionTooltip(approval)}>
           <button

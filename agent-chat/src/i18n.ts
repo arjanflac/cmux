@@ -37,10 +37,12 @@ export type AgentChatTextKey =
   | "agentMessageQueued"
   | "loadingDiff"
   | "diffUnavailable"
-  | "retryDiff";
+  | "retryDiff"
+  | "recentConversations";
 
 const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
   en: {
+    recentConversations: "Open conversations",
     toolActivity: "Tool activity",
     transcriptReadOnly: "Live view · reply in your terminal or phone",
     toggleToolActivity: "Show or hide tool activity",
@@ -58,6 +60,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Retry",
   },
   ja: {
+    recentConversations: "開いている会話",
     toolActivity: "ツールの動作",
     transcriptReadOnly: "ライブ表示 · ターミナルまたはスマートフォンで返信",
     toggleToolActivity: "ツールの動作を表示または非表示",
@@ -75,6 +78,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "再試行",
   },
   "zh-CN": {
+    recentConversations: "已打开的对话",
     toolActivity: "工具活动",
     transcriptReadOnly: "实时视图 · 请在终端或手机上回复",
     toggleToolActivity: "显示或隐藏工具活动",
@@ -92,6 +96,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "重试",
   },
   "zh-TW": {
+    recentConversations: "已開啟的對話",
     toolActivity: "工具活動",
     transcriptReadOnly: "即時檢視 · 請在終端機或手機上回覆",
     toggleToolActivity: "顯示或隱藏工具活動",
@@ -109,6 +114,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "重試",
   },
   ko: {
+    recentConversations: "열린 대화",
     toolActivity: "도구 활동",
     transcriptReadOnly: "실시간 보기 · 터미널이나 휴대폰에서 답장하세요",
     toggleToolActivity: "도구 활동 표시 또는 숨기기",
@@ -126,6 +132,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "다시 시도",
   },
   de: {
+    recentConversations: "Offene Unterhaltungen",
     toolActivity: "Werkzeugaktivität",
     transcriptReadOnly: "Live-Ansicht · Im Terminal oder auf dem Handy antworten",
     toggleToolActivity: "Werkzeugaktivität ein- oder ausblenden",
@@ -143,6 +150,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Erneut versuchen",
   },
   es: {
+    recentConversations: "Conversaciones abiertas",
     toolActivity: "Actividad de herramientas",
     transcriptReadOnly: "Vista en directo · Responde en tu terminal o teléfono",
     toggleToolActivity: "Mostrar u ocultar la actividad de herramientas",
@@ -160,6 +168,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Reintentar",
   },
   fr: {
+    recentConversations: "Conversations ouvertes",
     toolActivity: "Activité des outils",
     transcriptReadOnly: "Vue en direct · Répondez dans le terminal ou sur votre téléphone",
     toggleToolActivity: "Afficher ou masquer l’activité des outils",
@@ -177,6 +186,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Réessayer",
   },
   it: {
+    recentConversations: "Conversazioni aperte",
     toolActivity: "Attività degli strumenti",
     transcriptReadOnly: "Vista dal vivo · Rispondi dal terminale o dal telefono",
     toggleToolActivity: "Mostra o nascondi l’attività degli strumenti",
@@ -194,6 +204,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Riprova",
   },
   da: {
+    recentConversations: "Åbne samtaler",
     toolActivity: "Værktøjsaktivitet",
     transcriptReadOnly: "Livevisning · Svar i terminalen eller på telefonen",
     toggleToolActivity: "Vis eller skjul værktøjsaktivitet",
@@ -211,6 +222,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Prøv igen",
   },
   pl: {
+    recentConversations: "Otwarte rozmowy",
     toolActivity: "Aktywność narzędzi",
     transcriptReadOnly: "Podgląd na żywo · Odpowiedz w terminalu lub na telefonie",
     toggleToolActivity: "Pokaż lub ukryj aktywność narzędzi",
@@ -228,6 +240,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Spróbuj ponownie",
   },
   ru: {
+    recentConversations: "Открытые разговоры",
     toolActivity: "Действия инструментов",
     transcriptReadOnly: "Просмотр в реальном времени · Ответьте в терминале или на телефоне",
     toggleToolActivity: "Показать или скрыть действия инструментов",
@@ -245,6 +258,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Повторить",
   },
   bs: {
+    recentConversations: "Otvoreni razgovori",
     toolActivity: "Aktivnost alata",
     transcriptReadOnly: "Prikaz uživo · Odgovorite u terminalu ili na telefonu",
     toggleToolActivity: "Prikaži ili sakrij aktivnost alata",
@@ -262,6 +276,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Pokušaj ponovo",
   },
   ar: {
+    recentConversations: "المحادثات المفتوحة",
     toolActivity: "نشاط الأدوات",
     transcriptReadOnly: "عرض مباشر · أجب في الطرفية أو على هاتفك",
     toggleToolActivity: "إظهار نشاط الأدوات أو إخفاؤه",
@@ -279,6 +294,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "إعادة المحاولة",
   },
   no: {
+    recentConversations: "Åpne samtaler",
     toolActivity: "Verktøyaktivitet",
     transcriptReadOnly: "Direktevisning · Svar i terminalen eller på telefonen",
     toggleToolActivity: "Vis eller skjul verktøyaktivitet",
@@ -296,6 +312,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Prøv igjen",
   },
   "pt-BR": {
+    recentConversations: "Conversas abertas",
     toolActivity: "Atividade das ferramentas",
     transcriptReadOnly: "Visualização ao vivo · Responda no terminal ou no celular",
     toggleToolActivity: "Mostrar ou ocultar a atividade das ferramentas",
@@ -313,6 +330,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Tentar novamente",
   },
   th: {
+    recentConversations: "การสนทนาที่เปิดอยู่",
     toolActivity: "การทำงานของเครื่องมือ",
     transcriptReadOnly: "มุมมองสด · ตอบในเทอร์มินัลหรือโทรศัพท์",
     toggleToolActivity: "แสดงหรือซ่อนการทำงานของเครื่องมือ",
@@ -330,6 +348,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "ลองอีกครั้ง",
   },
   tr: {
+    recentConversations: "Açık konuşmalar",
     toolActivity: "Araç etkinliği",
     transcriptReadOnly: "Canlı görünüm · Terminalden veya telefonunuzdan yanıtlayın",
     toggleToolActivity: "Araç etkinliğini göster veya gizle",
@@ -347,6 +366,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "Yeniden dene",
   },
   km: {
+    recentConversations: "ការសន្ទនាដែលបើក",
     toolActivity: "សកម្មភាពឧបករណ៍",
     transcriptReadOnly: "ទិដ្ឋភាពផ្ទាល់ · ឆ្លើយតបក្នុងស្ថានីយ ឬទូរសព្ទរបស់អ្នក",
     toggleToolActivity: "បង្ហាញ ឬលាក់សកម្មភាពឧបករណ៍",
@@ -364,6 +384,7 @@ const COPY: Record<AgentChatLocale, Record<AgentChatTextKey, string>> = {
     retryDiff: "ព្យាយាមម្តងទៀត",
   },
   uk: {
+    recentConversations: "Відкриті розмови",
     toolActivity: "Дії інструментів",
     transcriptReadOnly: "Перегляд наживо · Відповідайте в терміналі або на телефоні",
     toggleToolActivity: "Показати або приховати дії інструментів",
