@@ -17,8 +17,8 @@ const activity: Block[] = [
   { kind: "tool", toolId: "2", name: "failed-tool", status: "fail", out: "large-error-dump" },
 ];
 const result = quietActivity(activity);
-assert.deepEqual(result.visible.map(b => b.kind), ["assistant", "thinking", "error", "tool"]);
-assert.equal(result.details.length, 1);
+assert.deepEqual(result.visible.map(b => b.kind), ["assistant", "thinking", "error"]);
+assert.equal(result.details.length, 2);
 assert.equal(activity.length, 5);
 assert.deepEqual(toggleActivityDisclosure(["a","b"], {a:true}), {a:true,b:true});
 assert.deepEqual(toggleActivityDisclosure(["a","b"], {a:true,b:true}), {a:false,b:false});
@@ -34,9 +34,9 @@ for (const status of ["running", "idle"]) {
   const html = renderToStaticMarkup(React.createElement(Blocks, {
     blocks, status, actions: {} as any, onFork: () => {}, forkPending: false,
   }));
-  for (const text of ["Readable progress","Visible thinking","Visible error","failed-tool","Final answer"])
+  for (const text of ["Readable progress","Visible thinking","Visible error","Final answer"])
     assert.ok(html.includes(text), `${status}: lost ${text}`);
-  for (const text of ["private-command","private-output","large-error-dump"])
+  for (const text of ["private-command","private-output","failed-tool","large-error-dump"])
     assert.ok(!html.includes(text), `${status}: leaked ${text}`);
 }
 console.log("PASS: quiet activity preserves conversation and errors, hides tool dumps live and idle");

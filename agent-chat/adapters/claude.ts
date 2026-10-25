@@ -498,7 +498,7 @@ function resolveClaudeModelId(st: Pick<ClaudeState, "model" | "modelMeta" | "con
   return st.model;
 }
 
-function normalizeModelCatalog(models: any, version: string | null): { choices: OptionChoice[]; meta: Map<string, ClaudeModelMeta> } {
+export function normalizeClaudeModelCatalog(models: any, version: string | null): { choices: OptionChoice[]; meta: Map<string, ClaudeModelMeta> } {
   const meta = new Map<string, ClaudeModelMeta>();
   const choices: OptionChoice[] = [];
   const covered = new Set<string>();
@@ -681,7 +681,7 @@ async function fetchClaudeModels(cwd: string): Promise<{ choices: OptionChoice[]
         if (response?.request_id !== "cmux-list-options") return;
         clearTimeout(timer);
         if (response.subtype !== "success") reject(new Error(response.error ?? response.message ?? "claude list_models failed"));
-        else resolve(normalizeModelCatalog(response.response?.models, version));
+        else resolve(normalizeClaudeModelCatalog(response.response?.models, version));
       }, () => {
         clearTimeout(timer);
         reject(new Error("claude exited while listing models"));
