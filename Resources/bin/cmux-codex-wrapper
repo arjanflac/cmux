@@ -723,7 +723,9 @@ if ! should_inject_codex_hooks "$@"; then
     exec_real_codex_passthrough "$@"
 fi
 
-# cmux owns the Computer Use provider for every Codex session it launches.
+# cmux owns the Computer Use provider only when its attachment is requested.
+# An explicit MCP opt-out must leave native Computer Use enabled and avoid
+# this feature override so hook-only launches can use Codex's shared server.
 # Codex also exposes a native `computer` tool behind the `computer_use` feature;
 # leaving that feature enabled lets the model silently bypass the explicitly
 # requested `cmux-cua` MCP server. Disable the competing provider before any
@@ -731,7 +733,10 @@ fi
 # no Computer Use provider rather than falling back to Codex Computer Use.
 # This policy is intentionally scoped to cmux-launched sessions. Plain Codex
 # outside cmux keeps its normal native Computer Use behavior.
-cmux_codex_native_computer_use_args=(--disable computer_use)
+cmux_codex_native_computer_use_args=()
+if cmux_codex_computer_use_enabled_for_invocation "$@"; then
+    cmux_codex_native_computer_use_args=(--disable computer_use)
+fi
 
 # Export launch identity so the hook subprocesses and cmux's agent-pid /
 # ended-detection can bind this Codex to its surface and pid. Because we exec

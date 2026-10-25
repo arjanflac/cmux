@@ -35,6 +35,7 @@ def run_wrapper(
     restore_token: str | None = None,
     inject_args_available: bool = True,
     subrouter_marker: str | None = None,
+    persistent_hooks: bool = False,
 ) -> tuple[int, list[str], list[str], dict[str, str], str]:
     with tempfile.TemporaryDirectory(prefix="cmux-codex-wrapper-test-") as td:
         tmp = Path(td)
@@ -91,6 +92,7 @@ if [[ "${1:-}" == "ping" ]]; then
 fi
 if [[ "${1:-}" == "hooks" && "${2:-}" == "codex" && "${3:-}" == "inject-args" ]]; then
   [[ "${FAKE_INJECT_ARGS_AVAILABLE:-1}" == "1" ]] || exit 1
+  [[ "${FAKE_PERSISTENT_HOOKS:-0}" == "1" ]] && exit 0
   printf '%s\\0' \
     '--enable' \
     'hooks' \
@@ -126,6 +128,7 @@ exit 1
         env["FAKE_CMUX_LOG"] = str(cmux_log)
         env["FAKE_SOCKET_STATE"] = socket_state
         env["FAKE_INJECT_ARGS_AVAILABLE"] = "1" if inject_args_available else "0"
+        env["FAKE_PERSISTENT_HOOKS"] = "1" if persistent_hooks else "0"
         # Keep this hook-only fixture independent of any ambient cmux CUA
         # installation on the developer or CI machine.
         env["CMUX_COMPUTER_USE_APP_ENABLED"] = "0"
@@ -167,10 +170,9 @@ def expect(condition: bool, message: str, failures: list[str]) -> None:
         failures.append(message)
 
 
-# cmux-launched Codex always disables the native `computer_use` provider before
-# any other argument (Resources/bin/cmux-codex-wrapper), including when hook
-# injection fails, so cmux-cua stays the only Computer Use provider.
-NATIVE_COMPUTER_USE_POLICY = ["--disable", "computer_use"]
+# This hook-only fixture explicitly opts out of cmux CUA. Native Computer Use
+# must remain available, without adding a feature override to the CLI.
+NATIVE_COMPUTER_USE_POLICY = []
 
 
 def assert_session_entrypoint_is_instrumented(
@@ -189,8 +191,8 @@ def assert_session_entrypoint_is_instrumented(
     )
     expect(code == 0, f"{label}: wrapper exited {code}: {stderr}", failures)
     expect(stderr == "", f"{label}: wrapper wrote unexpected stderr: {stderr!r}", failures)
-    expect(real_argv[:len(NATIVE_COMPUTER_USE_POLICY)] == NATIVE_COMPUTER_USE_POLICY,
-           f"{label}: missing native Computer Use policy prefix: {real_argv}", failures)
+    expect("computer_use" not in real_argv,
+           f"{label}: hook-only launch disabled native Computer Use: {real_argv}", failures)
     hook_args = real_argv[len(NATIVE_COMPUTER_USE_POLICY):]
     expect(hook_args[:3] == ["--enable", "hooks", "--dangerously-bypass-hook-trust"],
            f"{label}: missing injected hook prefix: {real_argv}", failures)
@@ -312,6 +314,19 @@ def test_injection_failure_preserves_cmux_context(failures: list[str]) -> None:
            f"inject-failure: missing launch kind: {observed_env}", failures)
 
 
+def test_persistent_hooks_preserve_shared_server_argv(failures: list[str]) -> None:
+    code, args, log, env, stderr = run_wrapper(
+        socket_state="live", argv=["resume", SESSION_ID], persistent_hooks=True,
+    )
+    expect(code == 0 and not stderr, f"persistent hooks launch failed: {stderr}", failures)
+    expect(args == ["resume", SESSION_ID],
+           f"persistent hooks added overrides that exclude the shared server: {args}", failures)
+    expect(env.get("CMUX_AGENT_LAUNCH_KIND") == "codex",
+           f"persistent hooks lost launch tracking: {env}", failures)
+    expect(any("hooks enqueue codex session-start" in line for line in log),
+           f"persistent hooks lost resume registration: {log}", failures)
+
+
 def test_non_session_command_still_bypasses_hooks(failures: list[str]) -> None:
     code, real_argv, cmux_log, _, stderr = run_wrapper(
         socket_state="stale",
@@ -380,6 +395,7 @@ def main() -> int:
     test_stale_socket_fresh_launch_is_instrumented(failures)
     test_restore_tokens_do_not_gate_instrumentation(failures)
     test_injection_failure_preserves_cmux_context(failures)
+    test_persistent_hooks_preserve_shared_server_argv(failures)
     test_non_session_command_still_bypasses_hooks(failures)
     test_subrouter_marker_is_bound_to_current_launch_argv(failures)
     test_headless_marker_follows_the_subcommand(failures)
