@@ -10,6 +10,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import tomllib
 
 
 HERE = Path(__file__).resolve().parent
@@ -18,6 +19,43 @@ HERE = Path(__file__).resolve().parent
 def run(arguments, directory):
     return subprocess.run(arguments, cwd=directory, text=True, check=True,
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT).stdout
+
+
+def prepare_release_lock(source, logs):
+    root = source / "codex-rs"
+    manifest = tomllib.loads((root / "Cargo.toml").read_text())
+    version = manifest["workspace"]["package"]["version"]
+    inherited = set()
+    for member in manifest["workspace"]["members"]:
+        package = tomllib.loads((root / member / "Cargo.toml").read_text())["package"]
+        if package.get("version") == {"workspace": True}:
+            inherited.add(package["name"])
+    before = tomllib.loads((root / "Cargo.lock").read_text())
+    expected = json.loads(json.dumps(before))
+    updates = {entry["name"]: entry["version"] for entry in before["package"]
+               if "source" not in entry and entry["name"] in inherited and entry["version"] != version}
+    for entry in expected["package"]:
+        if "source" not in entry and entry["name"] in updates:
+            entry["version"] = version
+        dependencies = entry.get("dependencies", [])
+        for index, dependency in enumerate(dependencies):
+            for name, old_version in updates.items():
+                old = f"{name} {old_version}"
+                if dependency == old or dependency.startswith(old + " "):
+                    dependencies[index] = f"{name} {version}" + dependency[len(old):]
+    with (logs / "release-lock-setup.log").open("w") as stream:
+        subprocess.run(["cargo", "update", "--workspace"], cwd=root, check=True,
+                       stdout=stream, stderr=subprocess.STDOUT, timeout=600)
+    after = tomllib.loads((root / "Cargo.lock").read_text())
+    for document in (expected, after):
+        document["package"].sort(key=lambda entry: (entry["name"], entry["version"], entry.get("source", "")))
+        for entry in document["package"]:
+            if "dependencies" in entry:
+                entry["dependencies"].sort()
+    (logs / "release-lock.diff").write_text(run(["git", "diff", "--", "codex-rs/Cargo.lock"], source))
+    if after != expected:
+        raise RuntimeError("Release lock normalization changed more than local workspace version labels")
+    print(f"Normalized {len(updates)} local release labels; all external lock entries unchanged", flush=True)
 
 
 def test(source, log, expected_count, *, should_fail):
@@ -57,6 +95,7 @@ def main():
         raise RuntimeError("The source checkout does not match the pinned Codex release")
     if run(["git", "status", "--porcelain"], source).strip():
         raise RuntimeError("Use a clean disposable source checkout")
+    prepare_release_lock(source, logs)
     for patch_name, should_fail in (("regression-tests.patch", True), ("quiet-fullscreen.patch", False)):
         patch = HERE / patch_name
         run(["git", "apply", "--check", str(patch)], source)

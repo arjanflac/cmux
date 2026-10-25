@@ -46,16 +46,26 @@ jobs:
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends build-essential clang lld cmake pkg-config libcap-dev libasound2-dev libssl-dev bubblewrap
       - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1, as pinned by Codex 0.164
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             quiet-target
-          key: quiet-render-v1-linux-rust1991-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}
-          restore-keys: quiet-render-v1-linux-rust1991-6aaac694-
+          key: quiet-render-v2-linux-rust1991-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
+          restore-keys: |
+            quiet-render-v2-linux-rust1991-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-
+            quiet-render-v2-linux-rust1991-6aaac694-
       - name: Require behavioral failure on stock and success after the rendering patch
         run: python3 lane/experiments/codex-quiet/check.py --source codex --logs proof-logs
+      - uses: actions/cache/save@v4
+        if: always() && !cancelled()
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            quiet-target
+          key: quiet-render-v2-linux-rust1991-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

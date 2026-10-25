@@ -12,6 +12,12 @@ artifact contains the stock and patched test logs. Setup failures, compilation
 errors, skipped tests and zero executed tests do not satisfy the regression gate.
 Do not compile this experiment on the 8 GB workstation.
 
+The release tag bumps the workspace manifest version to 0.164.0 but leaves local
+lockfile entries at 0.0.0. Setup runs `cargo update --workspace`, then compares
+the parsed lockfile against only those expected local version-label changes.
+Any external package, checksum, revision or dependency change stops the lane.
+Both rendering runs then use `--locked`; the lockfile diff is in the CI artifact.
+
 The initial cohort covers agent shell commands, text-only MCP calls and dynamic
 tool calls. A short tool name/status replaces arguments and output in compact
 fullscreen presentation. Original transcript cells and expanded details remain.
