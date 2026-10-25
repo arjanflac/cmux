@@ -1748,6 +1748,7 @@ def test_codex_skips_when_disabled(failures: list[str]) -> None:
     code, args, stderr, skill = run_wrapper(["hello"], disabled=True)
     expect(code == 0, f"disabled wrapper exited {code}: {stderr}", failures)
     expect(command_config(args) is None, f"expected no injection with kill switch, got {args}", failures)
+    expect("computer_use" not in args, f"CUA opt-out must preserve native Computer Use, got {args}", failures)
     expect(configured_skill_path(args) is None, f"expected no skill config with kill switch, got {args}", failures)
     expect(skill["exists"] is False, f"expected no global skill with kill switch, got {skill}", failures)
 
