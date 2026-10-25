@@ -130,6 +130,33 @@ struct AgentTaskCoordinatorTests {
         #expect(await backend.started.isEmpty)
     }
 
+    @Test func restoredProviderCannotBeReportedCancelledWithoutReconciliation() async throws {
+        let repository = TaskTestRepository(), views = TaskTestViews()
+        var record = AgentTaskRecord(id: UUID(), request: request(.background), now: Date())
+        record.phase = .running; record.sessionID = "previously-running-daemon-session"
+        await repository.save(record)
+        let backend = AgentManagedTaskBackend(socketPath: "/tmp/" + UUID().uuidString, cancelTerminal: { _ in })
+        let coordinator = AgentTaskCoordinator(backend: backend, repository: repository, present: views.open)
+        try await coordinator.restore()
+        await #expect(throws: (any Error).self) { try await coordinator.cancel(record.id) }
+        #expect(coordinator.records[record.id]?.phase == .disconnected)
+    }
+
+    @Test func uncertainChildDoesNotPreventOtherCancellationAttempts() async throws {
+        let backend = TaskTestBackend(), views = TaskTestViews()
+        let coordinator = AgentTaskCoordinator(backend: backend, repository: TaskTestRepository(), present: views.open)
+        let parent = try await coordinator.start(request(.background))
+        let uncertain = try await coordinator.start(request(.background, parent: parent.id))
+        let sibling = try await coordinator.start(request(.background, parent: parent.id))
+        await backend.failCancel(uncertain.id)
+        await #expect(throws: (any Error).self) { try await coordinator.cancel(parent.id) }
+        #expect(await backend.attempted.contains(parent.id))
+        #expect(await backend.attempted.contains(sibling.id))
+        #expect(coordinator.records[parent.id]?.phase == .cancelled)
+        #expect(coordinator.records[sibling.id]?.phase == .cancelled)
+        #expect(coordinator.records[uncertain.id]?.phase == .disconnected)
+    }
+
     @Test func receiptsUsePrivateFilesAndRoundTrip() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -148,6 +175,9 @@ private actor TaskTestBackend: AgentTaskBackend {
     init(failCancellation: Bool = false) { self.failCancellation = failCancellation }
     var started: [UUID] = []
     var cancelled: Set<UUID> = []
+    var attempted: Set<UUID> = []
+    var failures: Set<UUID> = []
+    func failCancel(_ id: UUID) { failures.insert(id) }
     private var streams: [UUID: AsyncThrowingStream<AgentTaskEvent, any Error>.Continuation] = [:]
     func start(id: UUID, request: AgentTaskRequest) -> AsyncThrowingStream<AgentTaskEvent, any Error> {
         started.append(id)
@@ -156,7 +186,8 @@ private actor TaskTestBackend: AgentTaskBackend {
         return stream
     }
     func cancel(id: UUID) throws {
-        if failCancellation { throw CocoaError(.fileWriteUnknown) }
+        attempted.insert(id)
+        if failCancellation || failures.contains(id) { throw CocoaError(.fileWriteUnknown) }
         cancelled.insert(id); streams.removeValue(forKey: id)?.finish()
     }
 }

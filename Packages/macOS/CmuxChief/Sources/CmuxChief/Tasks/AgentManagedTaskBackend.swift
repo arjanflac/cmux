@@ -18,6 +18,7 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
     private let taskCommand: [String]
     private let cancelTerminal: @Sendable (UUID) async throws -> Void
     private let connectionFactory: @Sendable (String) -> any AgentCodexTransport
+    private let claudeFactory: @Sendable (ClaudeCodeBrain.Configuration) -> any ChiefBrain
     private var connection: (any AgentCodexTransport)?
     private var startup: Task<any AgentCodexTransport, any Error>?
     private var reader: Task<Void, Never>?
@@ -26,7 +27,7 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
     private var bySession: [String: UUID] = [:]
     private var cancelled: Set<UUID> = []
     private var uncertain: Set<UUID> = []
-    private var claudeBrains: [UUID: ClaudeCodeBrain] = [:]
+    private var claudeBrains: [UUID: any ChiefBrain] = [:]
     private var claudeReaders: [UUID: Task<Void, Never>] = [:]
     private var admissionWaiters: [UUID: [CheckedContinuation<Void, Never>]] = [:]
     private var startupDeadlines: [UUID: Task<Void, Never>] = [:]
@@ -37,13 +38,15 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
         self.taskCommand = taskCommand
         self.cancelTerminal = cancelTerminal
         connectionFactory = { AgentCodexConnection(path: $0) }
+        claudeFactory = { ClaudeCodeBrain(configuration: $0) }
     }
 
-    init(connection: any AgentCodexTransport) {
+    init(connection: any AgentCodexTransport, claudeFactory: @escaping @Sendable (ClaudeCodeBrain.Configuration) -> any ChiefBrain = { ClaudeCodeBrain(configuration: $0) }) {
         socketPath = ""
         taskCommand = ["cmux", "task"]
         cancelTerminal = { _ in throw CocoaError(.featureUnsupported) }
         connectionFactory = { _ in connection }
+        self.claudeFactory = claudeFactory
     }
 
     /// Accepts one task without retrying its prompt or changing the normal launcher.
@@ -277,7 +280,7 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
     }
 
     private func startBackgroundClaude(_ id: UUID, request: AgentTaskRequest) {
-        let brain = ClaudeCodeBrain(configuration: .init(model: request.model ?? "opus", effort: request.effort,
+        let brain = claudeFactory(.init(model: request.model ?? "opus", effort: request.effort,
                                                         dangerouslySkipPermissions: true, extraArguments: []))
         claudeBrains[id] = brain
         running[id]?.ready = true

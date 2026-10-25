@@ -1,4 +1,5 @@
 import Foundation
+import CmuxHomeCore
 import Testing
 @testable import CmuxChief
 
@@ -35,6 +36,33 @@ struct AgentManagedTaskBackendTests {
         #expect(await transport.methods.filter { $0 == "turn/start" }.count == 1)
     }
 
+    @Test func backgroundClaudeUsesBypassAndCannotHangOnInvisibleApproval() async throws {
+        let backend = AgentManagedTaskBackend(connection: TaskProtocolFixture(), claudeFactory: { configuration in
+            let arguments = ClaudeCodeBrain.arguments(configuration, session: .new("fixture-session"), systemPrompt: "")
+            #expect(arguments.contains("bypassPermissions"))
+            return TaskApprovalBrain()
+        })
+        var input = request(); input.provider = .claude; input.model = "haiku"
+        let id = UUID()
+        let stream = try await backend.start(id: id, request: input)
+        let event = await withTaskGroup(of: AgentTaskEvent?.self) { group in
+            group.addTask {
+                do {
+                    for try await event in stream {
+                        if case .failed = event { return event }
+                    }
+                } catch {}
+                return nil
+            }
+            group.addTask { try? await Task.sleep(for: .seconds(1)); return nil }
+            let event = await group.next() ?? nil
+            group.cancelAll()
+            return event
+        }
+        #expect(event == .failed("background_input_required"))
+        try await backend.cancel(id: id)
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["CMUX_TEST_AGENT_TASK_LIVE"] == "1"))
     func liveLunaTaskUsesExistingDaemonAndReturnsAConfirmedResult() async throws {
         let path = NSHomeDirectory() + "/.codex/app-server-control/app-server-control.sock"
@@ -67,6 +95,19 @@ struct AgentManagedTaskBackendTests {
     }
 
     private enum LiveFailure: Error { case provider(String) }
+}
+
+private struct TaskApprovalBrain: ChiefBrain {
+    func run(_ request: ChiefTurnRequest) -> AsyncThrowingStream<ChiefTurnEvent, any Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield(.session("claude-fixture-session"))
+            continuation.yield(.approvalRequested(id: "permission", prompt: "Write a file?", options: ["allow", "deny"]))
+            continuation.finish()
+        }
+    }
+    func respond(toApproval id: String, choice: String, conversation: ConversationID) async {}
+    func interrupt(conversation: ConversationID) async {}
+    func shutdown() async {}
 }
 
 private actor TaskProtocolFixture: AgentCodexTransport {
