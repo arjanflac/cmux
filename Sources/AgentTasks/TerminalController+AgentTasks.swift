@@ -54,7 +54,8 @@ extension TerminalController {
                     }
                     try await runtime.backend.reportClaude(id: id, session: session, event: event, text: params["text"] as? String)
                 }
-                result = .ok(try Self.taskJSON(await runtime.coordinator.records[id] ?? record))
+                let latest = try await runtime.coordinator.record(id) ?? record
+                result = .ok(try Self.taskJSON(latest))
             default: result = .err(code: "method_not_found", message: String(localized: "cli.agentTask.unknownMethod", defaultValue: "Unknown task method"), data: nil)
             }
         } catch {
