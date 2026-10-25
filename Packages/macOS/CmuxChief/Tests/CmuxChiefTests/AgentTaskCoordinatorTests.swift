@@ -171,21 +171,37 @@ struct AgentTaskCoordinatorTests {
     }
 
     @Test func boundedHistoryRetainsAncestorsOfUnfinishedTasks() async throws {
-        let repository = TaskTestRepository(), views = TaskTestViews()
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let repository = AgentTaskFileRepository(directory: directory), views = TaskTestViews()
         var parent = AgentTaskRecord(id: UUID(), request: request(), now: Date(timeIntervalSince1970: 0))
         parent.phase = .completed
-        await repository.save(parent)
+        try await repository.save(parent)
         let child = AgentTaskRecord(id: UUID(), request: request(.background, parent: parent.id), now: Date(timeIntervalSince1970: 1))
-        await repository.save(child)
+        try await repository.save(child)
         for index in 2..<104 {
             var other = AgentTaskRecord(id: UUID(), request: request(), now: Date(timeIntervalSince1970: Double(index)))
             other.phase = .completed
-            await repository.save(other)
+            try await repository.save(other)
         }
         let coordinator = AgentTaskCoordinator(backend: TaskTestBackend(), repository: repository, present: views.open)
         try await coordinator.restore()
         #expect(coordinator.records[parent.id] != nil)
         #expect(coordinator.records[child.id]?.parentTaskID == parent.id)
+    }
+
+    @Test func parentCompletionCannotHideUnconfirmedChildCancellation() async throws {
+        let backend = TaskTestBackend(), views = TaskTestViews()
+        let coordinator = AgentTaskCoordinator(backend: backend, repository: TaskTestRepository(), present: views.open)
+        let parent = try await coordinator.start(request(.background))
+        let child = try await coordinator.start(request(.background, parent: parent.id))
+        await backend.failCancel(child.id)
+        await backend.beforeCancel(parent.id) { [weak coordinator] in
+            try? await coordinator?.receive(.cancelled, id: parent.id)
+        }
+        await #expect(throws: (any Error).self) { try await coordinator.cancel(parent.id) }
+        #expect(coordinator.records[parent.id]?.phase == .cancelled)
+        #expect(coordinator.records[child.id]?.phase == .disconnected)
     }
 
     @Test func receiptsUsePrivateFilesAndRoundTrip() async throws {
@@ -209,6 +225,8 @@ private actor TaskTestBackend: AgentTaskBackend {
     var attempted: Set<UUID> = []
     var failures: Set<UUID> = []
     func failCancel(_ id: UUID) { failures.insert(id) }
+    var callbacks: [UUID: @Sendable () async -> Void] = [:]
+    func beforeCancel(_ id: UUID, _ callback: @escaping @Sendable () async -> Void) { callbacks[id] = callback }
     private var streams: [UUID: AsyncThrowingStream<AgentTaskEvent, any Error>.Continuation] = [:]
     func start(id: UUID, request: AgentTaskRequest) -> AsyncThrowingStream<AgentTaskEvent, any Error> {
         started.append(id)
@@ -216,9 +234,10 @@ private actor TaskTestBackend: AgentTaskBackend {
         streams[id] = continuation
         return stream
     }
-    func cancel(id: UUID) throws {
+    func cancel(id: UUID) async throws {
         attempted.insert(id)
         if failCancellation || failures.contains(id) { throw CocoaError(.fileWriteUnknown) }
+        if let callback = callbacks.removeValue(forKey: id) { await callback() }
         cancelled.insert(id); streams.removeValue(forKey: id)?.finish()
     }
 }
