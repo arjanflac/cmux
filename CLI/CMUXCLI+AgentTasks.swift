@@ -86,7 +86,7 @@ extension CMUXCLI {
         }
         let data = try JSONSerialization.data(withJSONObject: result, options: [.sortedKeys, .prettyPrinted])
         print(String(decoding: data, as: UTF8.self))
-        if command != "report", ["failed", "cancelled", "disconnected"].contains(result["phase"] as? String ?? "") { throw CLIError(message: String(localized: "cli.agentTask.unsuccessful", defaultValue: "Task did not complete successfully.")) }
+        if wait, ["failed", "cancelled", "disconnected"].contains(result["phase"] as? String ?? "") { throw CLIError(message: String(localized: "cli.agentTask.unsuccessful", defaultValue: "Task did not complete successfully.")) }
     }
 
     private func readAgentTaskInput(_ input: FileHandle, maximum: Int, usage: String) throws -> Data {

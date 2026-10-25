@@ -10,11 +10,26 @@ public actor AgentTaskFileRepository: AgentTaskRepository {
     /// Loads app-owned receipts without reconnecting to any provider.
     public func load() throws -> [AgentTaskRecord] {
         guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
-        return try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])
+        let files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: [.contentModificationDateKey])
             .filter { $0.pathExtension == "json" && UUID(uuidString: $0.deletingPathExtension().lastPathComponent) != nil }
-            .sorted { (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast > (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast }
-            .prefix(100)
-            .map { try JSONDecoder().decode(AgentTaskRecord.self, from: Data(contentsOf: $0)) }
+            .sorted {
+                let lhs = (try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                let rhs = (try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                return lhs > rhs
+            }
+        var records: [AgentTaskRecord] = []
+        var finished = 0
+        for file in files {
+            var record = try JSONDecoder().decode(AgentTaskRecord.self, from: Data(contentsOf: file))
+            // Preserve unfinished task identities and ancestry regardless of
+            // age. Cache only recent result bodies; read older ones on demand.
+            if record.phase.isFinished {
+                finished += 1
+                if finished > 100 { record.result = nil }
+            }
+            records.append(record)
+        }
+        return records
     }
 
     /// Loads an older receipt on demand instead of retaining all results in memory.

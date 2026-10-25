@@ -306,8 +306,16 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
                     default: break
                     }
                 }
-            } catch { await self?.emit(.disconnected(String(describing: error)), id: id) }
+                await self?.backgroundStreamEnded(id, reason: "stream_ended_without_completion")
+            } catch { await self?.backgroundStreamEnded(id, reason: String(describing: error)) }
         }
+    }
+
+    private func backgroundStreamEnded(_ id: UUID, reason: String) {
+        guard running[id] != nil else { return }
+        uncertain.insert(id)
+        emit(.disconnected(reason), id: id)
+        end(id)
     }
 
     private func backgroundSession(_ id: UUID, session: String) {

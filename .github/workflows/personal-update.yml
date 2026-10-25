@@ -32,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'personal' }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.sha || 'personal' }}
           fetch-depth: 0
       - name: Merge the latest stable upstream release into an isolated candidate
         id: merge
@@ -43,6 +43,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          fi
           # A manually selected feature branch gets an exact-source build and
           # artifact without changing personal or merging upstream into it.
           if [[ "$SOURCE_REF" != personal ]]; then

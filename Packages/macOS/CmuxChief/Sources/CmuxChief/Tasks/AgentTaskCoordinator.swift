@@ -49,9 +49,11 @@ public final class AgentTaskCoordinator {
               request.prompt.utf8.count <= 200_000,
               request.workingDirectory.isFileURL, request.workingDirectory.path.hasPrefix("/"),
               exists, directory.boolValue else { throw TaskError.invalid }
+        try await loadParentChain(request.parentTaskID)
         try validateParent(request.parentTaskID)
         let record = AgentTaskRecord(id: id, request: request, now: Date())
         try await save(record)
+        try await loadParentChain(request.parentTaskID)
         try validateParent(request.parentTaskID)
         records[id] = record
         requests[id] = request
@@ -84,13 +86,13 @@ public final class AgentTaskCoordinator {
             guard record.sessionID == nil || record.sessionID == session else { throw TaskError.sessionChanged }
             record.sessionID = session
         case .running: record.phase = .running; record.detail = nil
-        case .needsInput(let detail): record.phase = .needsInput; record.detail = detail
+        case .needsInput(let detail): record.phase = .needsInput; record.detail = String(detail.prefix(8192))
         case .completed(let text):
             record.phase = .completed; record.result = String(text.prefix(65_536))
             record.detail = text.count > 65_536 ? "result_truncated" : nil
         case .cancelled: record.phase = .cancelled; record.detail = nil
-        case .failed(let reason): record.phase = .failed; record.detail = reason
-        case .disconnected(let reason): record.phase = .disconnected; record.detail = reason
+        case .failed(let reason): record.phase = .failed; record.detail = String(reason.prefix(8192))
+        case .disconnected(let reason): record.phase = .disconnected; record.detail = String(reason.prefix(8192))
         }
         record.updatedAt = Date()
         records[id] = record
@@ -139,7 +141,10 @@ public final class AgentTaskCoordinator {
             try await receive(.disconnected("cancellation_unconfirmed: \(error)"), id: id)
             throw error
         }
-        guard var record = records[id], !record.phase.isFinished else { return }
+        guard var record = records[id], !record.phase.isFinished else {
+            if !unconfirmed.isEmpty { throw TaskError.childrenUnconfirmed(unconfirmed) }
+            return
+        }
         record.phase = .cancelled
         if !unconfirmed.isEmpty {
             record.detail = "child_cancellation_unconfirmed:" + unconfirmed.map(\.uuidString).joined(separator: ",")
@@ -171,7 +176,7 @@ public final class AgentTaskCoordinator {
 
     /// Reads a recent or archived receipt without reconnecting to a provider.
     public func record(_ id: UUID) async throws -> AgentTaskRecord? {
-        if let record = records[id] { return record }
+        if let record = records[id], record.phase != .completed || record.result != nil { return record }
         guard var record = try await repository.read(id) else { return nil }
         if !record.phase.isFinished { record.phase = .disconnected; record.detail = "restart_unreconciled" }
         return record
@@ -198,7 +203,10 @@ public final class AgentTaskCoordinator {
         }
         let history = records.values.filter { $0.phase.isFinished }
             .sorted { $0.updatedAt > $1.updatedAt }
-        for old in history.filter({ !ancestors.contains($0.id) }).dropFirst(100) { records.removeValue(forKey: old.id) }
+        for old in history.dropFirst(100) {
+            if ancestors.contains(old.id) { records[old.id]?.result = nil }
+            else { records.removeValue(forKey: old.id) }
+        }
     }
 
     private func validateParent(_ id: UUID?) throws {
@@ -210,6 +218,23 @@ public final class AgentTaskCoordinator {
             guard visited.insert(current).inserted else { throw TaskError.invalid }
             guard !cancelling.contains(current), parent.phase != .cancelled else { throw CancellationError() }
             ancestor = parent.parentTaskID
+        }
+    }
+
+    private func loadParentChain(_ id: UUID?) async throws {
+        var ancestor = id
+        var visited: Set<UUID> = []
+        while let current = ancestor {
+            guard visited.insert(current).inserted else { throw TaskError.invalid }
+            if records[current] == nil {
+                guard var archived = try await repository.read(current) else { throw TaskError.unknownParent }
+                if records[current] == nil {
+                    if !archived.phase.isFinished { archived.phase = .disconnected; archived.detail = "restart_unreconciled" }
+                    archived.result = nil
+                    records[current] = archived
+                }
+            }
+            ancestor = records[current]?.parentTaskID
         }
     }
 
