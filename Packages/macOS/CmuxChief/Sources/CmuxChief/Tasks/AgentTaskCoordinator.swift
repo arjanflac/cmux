@@ -122,7 +122,8 @@ public final class AgentTaskCoordinator {
 
     /// Cancels the task and its known descendants, without touching unrelated agents.
     public func cancel(_ id: UUID) async throws {
-        guard records[id] != nil, cancelling.insert(id).inserted else { return }
+        guard records[id] != nil else { return }
+        guard cancelling.insert(id).inserted else { throw TaskError.providerUnreconciled }
         defer { cancelling.remove(id) }
         var unconfirmed: [UUID] = []
         for child in records.values.filter({ $0.parentTaskID == id }).map(\.id) {
