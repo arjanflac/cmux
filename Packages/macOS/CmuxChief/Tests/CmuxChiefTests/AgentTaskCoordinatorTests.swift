@@ -157,6 +157,37 @@ struct AgentTaskCoordinatorTests {
         #expect(coordinator.records[uncertain.id]?.phase == .disconnected)
     }
 
+    @Test func cancellationTraversesCompletedParentsOfLiveDescendants() async throws {
+        let backend = TaskTestBackend(), views = TaskTestViews()
+        let coordinator = AgentTaskCoordinator(backend: backend, repository: TaskTestRepository(), present: views.open)
+        let root = try await coordinator.start(request(.background))
+        let child = try await coordinator.start(request(.background, parent: root.id))
+        let descendant = try await coordinator.start(request(.background, parent: child.id))
+        try await coordinator.receive(.completed("First turn done"), id: child.id)
+        try await coordinator.cancel(root.id)
+        #expect(await backend.cancelled.contains(descendant.id))
+        #expect(coordinator.records[child.id]?.phase == .completed)
+        try await coordinator.cancel(descendant.id)
+    }
+
+    @Test func boundedHistoryRetainsAncestorsOfUnfinishedTasks() async throws {
+        let repository = TaskTestRepository(), views = TaskTestViews()
+        var parent = AgentTaskRecord(id: UUID(), request: request(), now: Date(timeIntervalSince1970: 0))
+        parent.phase = .completed
+        await repository.save(parent)
+        let child = AgentTaskRecord(id: UUID(), request: request(.background, parent: parent.id), now: Date(timeIntervalSince1970: 1))
+        await repository.save(child)
+        for index in 2..<104 {
+            var other = AgentTaskRecord(id: UUID(), request: request(), now: Date(timeIntervalSince1970: Double(index)))
+            other.phase = .completed
+            await repository.save(other)
+        }
+        let coordinator = AgentTaskCoordinator(backend: TaskTestBackend(), repository: repository, present: views.open)
+        try await coordinator.restore()
+        #expect(coordinator.records[parent.id] != nil)
+        #expect(coordinator.records[child.id]?.parentTaskID == parent.id)
+    }
+
     @Test func receiptsUsePrivateFilesAndRoundTrip() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         defer { try? FileManager.default.removeItem(at: directory) }
