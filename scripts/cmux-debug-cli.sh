@@ -76,6 +76,13 @@ cached_cli_path="${HOME}/Library/Application Support/cmux/tag-app-cache/cmux-${t
 if [[ ! -x "$cli_path" && -x "$cached_cli_path" ]]; then
   cli_path="$cached_cli_path"
 fi
+# Personal packaged builds retain their tagged bundle identity after installation.
+# Accept one only when that identity matches the requested tag exactly.
+installed_app="${CMUX_INSTALLED_APP:-${HOME}/Applications/cmux+.app}"
+installed_bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$installed_app/Contents/Info.plist" 2>/dev/null || true)"
+if [[ ! -x "$cli_path" && "$installed_bundle_id" == "com.cmuxterm.app.debug.${tag_bundle_id}" && -x "$installed_app/Contents/Resources/bin/cmux" ]]; then
+  cli_path="$installed_app/Contents/Resources/bin/cmux"
+fi
 if [[ ! -x "$cli_path" ]]; then
   cat >&2 <<EOF
 Tagged cmux CLI not found:

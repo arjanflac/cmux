@@ -7,6 +7,18 @@ struct RemoteCLIRelayPolicyTests {
     private let tokenHex = "00112233445566778899aabbccddeeff"
     private let relayID = "relay-policy"
 
+    @Test("local managed task commands never cross the remote relay", arguments: [
+        "start", "list", "read", "wait", "cancel", "report"
+    ])
+    func deniesLocalManagedTasks(verb: String) throws {
+        try withServer { port, unixServer in
+            let request = "{\"method\":\"agent.task.\(verb)\",\"params\":{}}"
+            let exchange = try runPolicyRelayExchange(port: port, relayID: relayID,
+                tokenHex: tokenHex, commandLine: request)
+            expectDenial(exchange, unixServer, request)
+        }
+    }
+
     @Test("core discovery uses canonical RPC names and the authenticated relay", arguments: [
         "system.ping", "system.capabilities", "workspace.list"
     ])

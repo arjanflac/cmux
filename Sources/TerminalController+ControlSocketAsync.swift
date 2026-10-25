@@ -314,6 +314,9 @@ extension TerminalController {
             // Parks on the terminal's output stream, never on a worker thread.
             return await surfaceWaitTextChangeResponse(request)
         }
+        if request.method.hasPrefix("agent.task.") {
+            return await agentTaskResponse(request)
+        }
         if request.method.hasPrefix("chief.") {
             // Remote relay requests never reach here (`RemoteRelayCommandPolicy`
             // denies `chief.*`); the handler refuses relay provenance again.

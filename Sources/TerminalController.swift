@@ -128,6 +128,7 @@ nonisolated private func v2RemotePTYUserFacingErrorMessage(_ message: String) ->
 /// Allows automated testing and external control of terminal tabs
 @MainActor
 class TerminalController {
+    var agentTaskRuntime: NativeAgentTaskRuntime?
     static let shared = TerminalController()
     /// Bounded socket-worker deadline around the hosted CodeRouter mint.
     nonisolated static let codeRouterHandoffWorkerTimeoutSeconds: TimeInterval = 22

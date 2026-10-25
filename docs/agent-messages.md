@@ -1,5 +1,46 @@
 # Agent messages
 
+## Personal native task coordinator
+
+The personal build adds `cmux task` for fresh, explicitly delegated local work.
+It opens a terminal tab in an **existing** workspace without changing focus:
+
+```bash
+cmux task start --provider codex --workspace workspace:2 --cwd ~/Projects/example --model gpt-6-luna --wait -- 'Review this project without editing files.'
+cmux task start --provider claude --workspace workspace:2 --cwd ~/Projects/example --model haiku --wait -- 'Review the proposed design.'
+cmux task list
+cmux task read <task-id>
+cmux task wait <task-id>
+cmux task cancel <task-id>
+```
+
+Use `--parent-task <id>` for nested managed work. Use another existing workspace
+and directory for a different project. `--background` must be explicitly
+requested; otherwise the task gets a normal terminal. `--prompt-file -` reads a
+prompt from stdin. Start/read/wait return JSON with `id`, `sessionID`, `surfaceID`,
+`phase`, and the first-turn `result`. A disconnected receipt is uncertainty:
+inspect the existing session before retrying its prompt.
+Lists contain the latest 50 receipts without result bodies. Recent results are
+bounded in memory; older receipts remain readable by ID. Results over 65,536
+characters carry `detail: result_truncated`; their full answer remains in the
+provider session.
+
+Codex tasks use the existing managed daemon, then present normal `codex resume`
+in a terminal. ChatGPT iOS can access that same Codex thread. Claude tasks run
+normal Claude Code with task-scoped SessionStart/Stop/StopFailure/SessionEnd hooks;
+the first Stop hook supplies their result. Existing user hooks remain in place.
+Completion and attention events use cmux's native notification store. Full Access
+is used for these explicitly requested tasks; the coordinator never answers a
+permission or question dialog on the user's behalf.
+
+These receipts cover the managed task's first turn. Follow-up chats continue in
+the normal terminal or phone client. This does not infer the currently selected
+thread in unrelated CLI sessions. Restoring receipts never retries prompts or
+starts a provider; unfinished receipts become disconnected after an app restart.
+The normal `codex` command, its installation, and global hooks are unchanged.
+
+## Hook-delivered messages
+
 `cmux agent message` sends a message to the agent running in another workspace or surface. cmux delivers it through that agent's own hooks, never by typing into its terminal. A message can't land in a prompt someone is halfway through typing, and it can't press Enter for them.
 
 ```bash
