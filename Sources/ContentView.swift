@@ -12019,8 +12019,7 @@ struct VerticalTabsSidebar: View, Equatable {
             canCloseWorkspace: canCloseWorkspace,
             workspaceNumberShortcut: workspaceNumberShortcut,
             tabItemSettings: tabItemSettings,
-            showsAgentActivity: tabItemSettings.details.showAgentActivity
-                && CmuxFeatureFlags.shared.isSidebarWorkspaceAgentSpinnerEnabled,
+            showsAgentActivity: tabItemSettings.details.showAgentActivity,
             pinResolutionContext: pinResolutionContext,
             tabIndexById: tabIndexById,
             numberedWorkspaceIndexById: numberedWorkspaceIndexById,
