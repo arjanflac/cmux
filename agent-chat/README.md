@@ -33,6 +33,23 @@ For a dedicated viewing server, set `CMUX_AGENT_CHAT_READ_ONLY=1` too. This
 rejects model-changing operations and non-GET HTTP requests, and skips provider
 catalog warm-up so the viewing server does not start provider app servers.
 
+## Existing Codex daemon (opt-in)
+
+Set `CMUX_AGENT_CHAT_CODEX_SOCKET` to the absolute path of an already-running
+Codex app-server control socket to use that daemon for graphical Codex chats.
+This transport requires Bun 1.3.13 or later. It uses a Unix WebSocket connection;
+it never starts, restarts, or kills the external daemon. If connection or
+initialization fails, the UI reports an error instead of starting a separate
+backend. Omit the variable to retain the existing standalone stdio adapter.
+
+Start a fresh graphical conversation for testing. This mode does not discover
+or take over conversations already owned by another frontend. The same model,
+effort, streaming, Stop, and multi-turn adapter paths serve both transports.
+Phone visibility must be tested with the user's actual remote client; sharing
+a daemon alone is not proof of remote-client compatibility. Image paste is
+not implemented in this composer yet. The Solid native agent-session panel
+is a separate frontend and is not changed by this option.
+
 ## Model catalog
 
 The sidecar fetches the model catalog from `https://cmux.dev/api/agent-models` (`CMUX_AGENT_MODELS_URL` overrides it for development), revalidates it with ETags after a one-hour TTL, and caches the last-good response at `~/.cache/cmux-agent-chat/models.json` for offline startup. Refreshes happen in the background; changed catalogs are pushed to open pages so model pickers update without reloading.

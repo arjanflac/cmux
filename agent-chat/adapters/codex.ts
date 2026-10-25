@@ -2,6 +2,7 @@ import type { Adapter, CommandEntry, OptionChoice, OptionValue, SessionCtx, Sess
 import { readLines, tryParse, truncate } from "./lines";
 import { prettifyModelLabel } from "./model-label";
 import { agentModelCatalog } from "../catalog";
+import { connectCodexSocket, type CodexSocket } from "./codex-socket";
 
 // Codex: one shared `codex app-server` process (JSON-RPC over NDJSON stdio,
 // the same interface the codex IDE extension uses) hosts a thread per chat
@@ -9,7 +10,8 @@ import { agentModelCatalog } from "../catalog";
 // turn/steer with the active turn id.
 
 interface AppServer {
-  proc: Bun.Subprocess<"pipe", "pipe", "pipe">;
+  proc?: Bun.Subprocess<"pipe", "pipe", "pipe">;
+  socket?: CodexSocket;
   request(method: string, params?: unknown): Promise<any>;
   write(msg: unknown): void;
   sessionsByThread: Map<string, SessionCtx>;
@@ -261,7 +263,7 @@ function forkedCodexState(sourceState: CodexState): CodexState {
 }
 
 async function ensureServer(): Promise<AppServer> {
-  if (shared && shared.proc.exitCode === null && !shared.proc.killed) return shared;
+  if (shared && (shared.socket?.isOpen() || (shared.proc && shared.proc.exitCode === null && !shared.proc.killed))) return shared;
   if (sharedStarting) return sharedStarting;
   sharedStarting = startServer().finally(() => {
     sharedStarting = null;
@@ -270,6 +272,8 @@ async function ensureServer(): Promise<AppServer> {
 }
 
 async function startServer(): Promise<AppServer> {
+  const socketPath = process.env.CMUX_AGENT_CHAT_CODEX_SOCKET;
+  if (socketPath) return startDaemonConnection(socketPath);
   const proc = Bun.spawn(["codex", "app-server"], {
     stdin: "pipe",
     stdout: "pipe",
@@ -361,6 +365,41 @@ async function startServer(): Promise<AppServer> {
     throw initTimedOut ? new Error("codex app-server did not initialize within 30s") : err;
   } finally {
     clearTimeout(initTimer);
+  }
+  shared = srv;
+  return srv;
+}
+
+async function startDaemonConnection(path: string): Promise<AppServer> {
+  let srv: AppServer | undefined;
+  const socket = await connectCodexSocket(path, message => {
+    if (srv) handleServerMessage(srv, message);
+  }, () => {
+    if (!srv) return;
+    for (const sess of srv.sessionsByThread.values()) {
+      const state = codexState(sess);
+      if (!state.turnActive) continue;
+      const generation = state.activeGeneration;
+      state.turnActive = false;
+      state.currentTurnId = undefined;
+      state.activeGeneration = undefined;
+      resolveTurnWaiters(state, null);
+      sess.emit({ kind: "error", message: "Codex connection closed mid-turn" });
+      sess.emit({ kind: "done", generation } as any);
+      sess.setStatus("idle");
+    }
+    if (shared === srv) shared = null;
+  });
+  srv = { socket, request: socket.request, write: socket.write, sessionsByThread: new Map() };
+  try {
+    await socket.request("initialize", {
+      clientInfo: { name: "cmux_agent_chat", title: "cmux+ chat", version: "0.1" },
+      capabilities: { experimentalApi: true },
+    });
+    socket.write({ method: "initialized", params: {} });
+  } catch (error) {
+    socket.close();
+    throw error;
   }
   shared = srv;
   return srv;
@@ -627,7 +666,8 @@ export function codexSetSharedServerForTest(srv: unknown): void {
 export function codexStopSharedServerForTest(): void {
   const srv = shared;
   shared = null;
-  srv?.proc.kill();
+  srv?.socket?.close();
+  srv?.proc?.kill();
 }
 
 // Without `timeoutError` the wait resolves null on expiry and the caller
