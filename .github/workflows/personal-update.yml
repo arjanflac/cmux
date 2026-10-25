@@ -32,16 +32,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: personal
+          ref: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'personal' }}
           fetch-depth: 0
       - name: Merge the latest stable upstream release into an isolated candidate
         id: merge
         env:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
+          SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'personal' }}
         shell: bash
         run: |
           set -euo pipefail
+          # A manually selected feature branch gets an exact-source build and
+          # artifact without changing personal or merging upstream into it.
+          if [[ "$SOURCE_REF" != personal ]]; then
+            echo 'build=true' >> "$GITHUB_OUTPUT"
+            echo "candidate=$SOURCE_REF" >> "$GITHUB_OUTPUT"
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+            echo 'release=custom-source' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           release=$(gh api repos/manaflow-ai/cmux/releases/latest --jq .tag_name)
           [[ "$release" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           git fetch https://github.com/manaflow-ai/cmux.git "refs/tags/$release:refs/tags/$release"
@@ -166,6 +176,7 @@ jobs:
 
   promote:
     needs: [prepare, build]
+    if: github.event_name != 'workflow_dispatch' || github.ref_name == 'personal'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
