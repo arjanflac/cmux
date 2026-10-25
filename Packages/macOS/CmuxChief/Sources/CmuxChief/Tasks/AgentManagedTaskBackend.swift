@@ -60,7 +60,7 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
         }
         if request.provider == .claude {
             if request.presentation == .terminal {
-                let session = UUID().uuidString
+                let session = UUID().uuidString.lowercased()
                 running[id]?.session = session; bySession[session] = id
                 // Claude supports caller-supplied session IDs. Its SessionStart
                 // callback confirms startup; this event only requests presentation.
@@ -281,7 +281,7 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
 
     private func startBackgroundClaude(_ id: UUID, request: AgentTaskRequest) {
         let brain = claudeFactory(.init(model: request.model ?? "opus", effort: request.effort,
-                                                        dangerouslySkipPermissions: true, extraArguments: []))
+                                                        dangerouslySkipPermissions: true, extraArguments: ["--permission-mode", "bypassPermissions"]))
         claudeBrains[id] = brain
         running[id]?.ready = true
         let context = AgentTaskContext.text(id: id, request: request, command: taskCommand)
@@ -299,6 +299,10 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
                     case .textDelta(let text): answer += text
                     case .finished: await self?.emit(.completed(answer), id: id)
                     case .failed(let error): await self?.emit(.failed(error), id: id)
+                    case .approvalRequested, .question:
+                        // Explicit headless execution has no interactive reply
+                        // surface. Preserve the decision; never auto-answer it.
+                        await self?.emit(.failed("background_input_required"), id: id)
                     default: break
                     }
                 }

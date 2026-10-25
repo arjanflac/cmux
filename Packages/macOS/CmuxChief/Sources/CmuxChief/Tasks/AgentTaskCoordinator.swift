@@ -71,6 +71,7 @@ public final class AgentTaskCoordinator {
                 try? await self?.receive(.disconnected(String(describing: error)), id: id)
             }
             self?.consumers.removeValue(forKey: id)
+            self?.requests.removeValue(forKey: id)
         }
         return record
     }
@@ -121,10 +122,18 @@ public final class AgentTaskCoordinator {
     public func cancel(_ id: UUID) async throws {
         guard records[id] != nil, cancelling.insert(id).inserted else { return }
         defer { cancelling.remove(id) }
-        for child in records.values.filter({ $0.parentTaskID == id && !$0.phase.isFinished }).map(\.id) {
-            try await cancel(child)
+        var unconfirmed: [UUID] = []
+        for child in records.values.filter({ $0.parentTaskID == id }).map(\.id) {
+            do { try await cancel(child) }
+            catch { unconfirmed.append(child) }
         }
-        guard let before = records[id], !before.phase.isFinished else { return }
+        guard let before = records[id], !before.phase.isFinished else {
+            if !unconfirmed.isEmpty { throw TaskError.childrenUnconfirmed(unconfirmed) }
+            return
+        }
+        // A restored or disconnected receipt is not a live execution handle.
+        // In particular, the shared Codex daemon can outlive this app.
+        guard requests[id] != nil else { throw TaskError.providerUnreconciled }
         do { try await backend.cancel(id: id) }
         catch {
             try await receive(.disconnected("cancellation_unconfirmed: \(error)"), id: id)
@@ -132,12 +141,16 @@ public final class AgentTaskCoordinator {
         }
         guard var record = records[id], !record.phase.isFinished else { return }
         record.phase = .cancelled
+        if !unconfirmed.isEmpty {
+            record.detail = "child_cancellation_unconfirmed:" + unconfirmed.map(\.uuidString).joined(separator: ",")
+        }
         record.updatedAt = Date()
         records[id] = record
         try await save(record)
         if records[id] == record { publish(record) }
         consumers.removeValue(forKey: id)?.cancel()
         requests.removeValue(forKey: id)
+        if !unconfirmed.isEmpty { throw TaskError.childrenUnconfirmed(unconfirmed) }
     }
 
     /// Parks on native events for at most 15 seconds, returning the latest receipt.
@@ -178,15 +191,26 @@ public final class AgentTaskCoordinator {
     }
 
     private func pruneReceipts() {
+        var ancestors: Set<UUID> = []
+        for active in records.values where !active.phase.isFinished {
+            var parent = active.parentTaskID
+            while let id = parent, ancestors.insert(id).inserted { parent = records[id]?.parentTaskID }
+        }
         let history = records.values.filter { $0.phase.isFinished }
             .sorted { $0.updatedAt > $1.updatedAt }
-        for old in history.dropFirst(100) { records.removeValue(forKey: old.id) }
+        for old in history.filter({ !ancestors.contains($0.id) }).dropFirst(100) { records.removeValue(forKey: old.id) }
     }
 
     private func validateParent(_ id: UUID?) throws {
         guard let id else { return }
-        guard let parent = records[id] else { throw TaskError.unknownParent }
-        guard !cancelling.contains(id), parent.phase != .cancelled else { throw CancellationError() }
+        guard records[id] != nil else { throw TaskError.unknownParent }
+        var ancestor: UUID? = id
+        var visited: Set<UUID> = []
+        while let current = ancestor, let parent = records[current] {
+            guard visited.insert(current).inserted else { throw TaskError.invalid }
+            guard !cancelling.contains(current), parent.phase != .cancelled else { throw CancellationError() }
+            ancestor = parent.parentTaskID
+        }
     }
 
     // Serialize disk writes across main-actor suspension points so a late write
@@ -201,5 +225,5 @@ public final class AgentTaskCoordinator {
         try await next.value
     }
 
-    enum TaskError: Error { case duplicate, invalid, unknownParent, sessionChanged }
+    enum TaskError: Error { case duplicate, invalid, unknownParent, sessionChanged, providerUnreconciled, childrenUnconfirmed([UUID]) }
 }

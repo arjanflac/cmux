@@ -19,6 +19,7 @@ public struct AgentTaskTerminalPlan: Sendable {
             var command = [cmuxExecutable, "--socket", cmuxSocket, "task", "report", record.id.uuidString, "--event", event]
                 .map(Self.shellWord).joined(separator: " ")
             if hook == "SessionStart" { command += " --owner-pid \"$PPID\"" }
+            command += " >/dev/null"
             hooks[hook] = [["hooks": [["type": "command", "command": command, "timeout": 5]]]]
         }
         let settings = try JSONSerialization.data(withJSONObject: ["hooks": hooks], options: [.sortedKeys])
