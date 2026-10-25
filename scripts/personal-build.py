@@ -7,6 +7,8 @@ import shlex
 import shutil
 import subprocess
 import sys
+import threading
+import time
 
 root = Path(__file__).resolve().parent.parent
 tools = Path.home() / 'Library/Caches/cmux-personal-tools'
@@ -37,7 +39,50 @@ env.update(PATH=str(tools) + ':' + str(Path.home() / '.cargo/bin') + ':' + env.g
            CMUX_GHOSTTYKIT_PREPROVISIONED='1', CMUX_RELOAD_NO_GLOBAL_CLI_LINKS='1')
 if not (root / 'GhosttyKit.xcframework').is_dir():
     subprocess.run(['bash', 'scripts/download-prebuilt-ghosttykit.sh'], cwd=root, env=env, check=True)
-sys.exit(subprocess.call(['bash', 'scripts/reload.sh', '--tag', 'workspace-icons',
-                         '--name', 'cmux-custom-build', '--release', '--prod-auth',
-                         '--derived-data', str(Path.home() / 'Library/Developer/Xcode/DerivedData/cmux-personal'),
-                         *sys.argv[1:]], cwd=root, env=env))
+command = ['bash', 'scripts/reload.sh', '--tag', 'workspace-icons',
+           '--name', 'cmux-custom-build', '--release', '--prod-auth',
+           '--derived-data', str(Path.home() / 'Library/Developer/Xcode/DerivedData/cmux-personal'),
+           *sys.argv[1:]]
+if os.environ.get('GITHUB_ACTIONS') != 'true':
+    sys.exit(subprocess.call(command, cwd=root, env=env))
+
+# reload.sh keeps its full compiler log in a file. Publish bounded progress,
+# not exported environment values, so a long CI build is observable live.
+build_log = Path('/tmp/cmux-reload-workspace-icons.log')
+started = time.monotonic()
+finished = threading.Event()
+
+def log_tail():
+    try:
+        with build_log.open('rb') as stream:
+            stream.seek(0, 2)
+            stream.seek(max(0, stream.tell() - 131072))
+            return stream.read().decode('utf-8', errors='replace').splitlines()
+    except OSError:
+        return []
+
+def progress():
+    prefixes = ('Swift', 'Compile', 'PhaseScriptExecution', 'Ld ', 'CodeSign',
+                'Copy', 'Process', 'Generate', 'Link', 'Extract', 'Touch',
+                'Compiling', 'Finished', 'wireguard-go:', '** BUILD')
+    while not finished.wait(30):
+        events = [line.strip() for line in log_tail() if line.strip().startswith(prefixes)]
+        phase = events[-1][:500] if events else 'waiting for the next compiler event'
+        print(f'Build heartbeat [{int(time.monotonic() - started)}s]: {phase}', flush=True)
+
+heartbeat = threading.Thread(target=progress, daemon=True)
+heartbeat.start()
+try:
+    result = subprocess.call(command, cwd=root, env=env)
+finally:
+    finished.set()
+    heartbeat.join(timeout=2)
+
+print(f'Build command finished in {int(time.monotonic() - started)}s (exit {result}).', flush=True)
+lines = log_tail()
+summaries = [index for index, line in enumerate(lines) if line.strip() == 'Build Timing Summary']
+if summaries:
+    for line in lines[summaries[-1]:summaries[-1] + 35]:
+        if not line.lstrip().startswith('export '):
+            print(line[:500], flush=True)
+sys.exit(result)
