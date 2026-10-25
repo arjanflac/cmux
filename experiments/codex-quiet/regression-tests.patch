@@ -75,10 +75,10 @@ index 4638d46b8c0dde7e252cd947f8727ca00cf28de1..c3b036dfad98f962a63be9ad6846d7c3
 +    ));
 +}
 diff --git a/codex-rs/tui/src/transcript_view/layout_tests.rs b/codex-rs/tui/src/transcript_view/layout_tests.rs
-index 366a978f070151122c09a11b6aa8f561c8484cf9..93836ad9f31661739765fb6e6dff9dceb6ea19b8 100644
+index 366a978f070151122c09a11b6aa8f561c8484cf9..54642a85c669f2f935849870d81874041d5aa36b 100644
 --- a/codex-rs/tui/src/transcript_view/layout_tests.rs
 +++ b/codex-rs/tui/src/transcript_view/layout_tests.rs
-@@ -274,3 +274,368 @@ fn fullscreen_image_previews_follow_layout_without_entering_text_surfaces() {
+@@ -274,3 +274,372 @@ fn fullscreen_image_previews_follow_layout_without_entering_text_surfaces() {
      assert_eq!(buf, text_only);
      assert!(view.image_placements().is_empty());
  }
@@ -108,6 +108,7 @@ index 366a978f070151122c09a11b6aa8f561c8484cf9..93836ad9f31661739765fb6e6dff9dce
 +    use crossterm::event::KeyCode;
 +    use crossterm::event::KeyEvent;
 +    use crossterm::event::KeyModifiers;
++    use pretty_assertions::assert_eq;
 +    use serde_json::json;
 +    use std::time::Duration;
 +    use std::time::Instant;
@@ -318,7 +319,10 @@ index 366a978f070151122c09a11b6aa8f561c8484cf9..93836ad9f31661739765fb6e6dff9dce
 +                break;
 +            }
 +        }
-+        assert!(view.search.current.is_some());
++        assert_eq!(
++            view.search.match_anchor().map(|anchor| anchor.index),
++            Some(0)
++        );
 +        render(&mut view, &cells, 100);
 +        assert!(view.layout(&cells, 0).unwrap().text().contains(OUT));
 +    }
