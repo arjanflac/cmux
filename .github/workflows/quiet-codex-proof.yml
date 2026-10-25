@@ -57,7 +57,9 @@ jobs:
             quiet-render-v2-linux-rust1991-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-
             quiet-render-v2-linux-rust1991-6aaac694-
       - name: Require behavioral failure on stock and success after the rendering patch
-        run: python3 lane/experiments/codex-quiet/check.py --source codex --logs proof-logs
+        run: |
+          python3 -m unittest discover -s lane/experiments/codex-quiet -p test_check.py
+          python3 lane/experiments/codex-quiet/check.py --source codex --logs proof-logs
       - uses: actions/cache/save@v4
         if: always() && !cancelled()
         with:

@@ -23,23 +23,25 @@ def run(arguments, directory):
 
 def prepare_release_lock(source, logs):
     root = source / "codex-rs"
-    manifest = tomllib.loads((root / "Cargo.toml").read_text())
-    version = manifest["workspace"]["package"]["version"]
-    inherited = set()
-    for member in manifest["workspace"]["members"]:
-        package = tomllib.loads((root / member / "Cargo.toml").read_text())["package"]
-        if package.get("version") == {"workspace": True}:
-            inherited.add(package["name"])
     before = tomllib.loads((root / "Cargo.lock").read_text())
+    # Cargo includes local path packages that are absent from the explicit members list.
+    discovery = subprocess.run(["cargo", "metadata", "--no-deps", "--format-version", "1"],
+                               cwd=root, text=True, capture_output=True, check=True, timeout=600)
+    (logs / "workspace-metadata.json").write_text(discovery.stdout)
+    metadata = json.loads(discovery.stdout)
+    members = set(metadata["workspace_members"])
+    versions = {package["name"]: package["version"] for package in metadata["packages"]
+                if package["id"] in members and package["source"] is None}
     expected = json.loads(json.dumps(before))
-    updates = {entry["name"]: entry["version"] for entry in before["package"]
-               if "source" not in entry and entry["name"] in inherited and entry["version"] != version}
+    updates = {entry["name"]: (entry["version"], versions[entry["name"]]) for entry in before["package"]
+               if "source" not in entry and entry["name"] in versions
+               and entry["version"] != versions[entry["name"]]}
     for entry in expected["package"]:
         if "source" not in entry and entry["name"] in updates:
-            entry["version"] = version
+            entry["version"] = updates[entry["name"]][1]
         dependencies = entry.get("dependencies", [])
         for index, dependency in enumerate(dependencies):
-            for name, old_version in updates.items():
+            for name, (old_version, version) in updates.items():
                 old = f"{name} {old_version}"
                 if dependency == old or dependency.startswith(old + " "):
                     dependencies[index] = f"{name} {version}" + dependency[len(old):]
