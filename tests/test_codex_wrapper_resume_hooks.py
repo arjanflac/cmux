@@ -398,7 +398,8 @@ def run_quiet_wrapper_case(*,check=0,quiet_exit=0,version='0.164.0',in_cmux=True
   # Use explicit fake binary paths; no inherited shared-daemon context.
   for key in list(env):
    if key.startswith('CMUX_'): del env[key]
-  env.update(EVENTS=str(log),CMUX_CUSTOM_CODEX_PATH=str(stock),CMUX_CODEX_HOOKS_DISABLED='1',CMUX_CODEX_QUIET_FRONTEND='1' if enabled else '0')
+  isolated_home = root / 'home'; isolated_home.mkdir()
+  env.update(HOME=str(isolated_home),CFFIXED_USER_HOME=str(isolated_home),EVENTS=str(log),CMUX_CUSTOM_CODEX_PATH=str(stock),CMUX_CODEX_HOOKS_DISABLED='1',CMUX_CODEX_QUIET_FRONTEND='1' if enabled else '0')
   if in_cmux: env['CMUX_SURFACE_ID']='11111111-1111-1111-1111-111111111111'
   if tty:
    master,slave=pty.openpty()
