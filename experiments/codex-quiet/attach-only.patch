@@ -123,8 +123,19 @@
          ClientRouteClass::Other,
 --- a/codex-rs/tui/src/cmux_quiet.rs
 +++ b/codex-rs/tui/src/cmux_quiet.rs
-@@ -0,0 +1,43 @@
+@@ -0,0 +1,58 @@
 +//! Boundaries for cmux's maintained, attach-only presentation binary.
++
++/// Probe the verified private endpoint, then launch through the advertised
++/// default alias so upstream startup preserves local project/cwd semantics.
++pub fn attachment_endpoints(
++    advertised: codex_utils_absolute_path::AbsolutePathBuf,
++    protected: codex_utils_absolute_path::AbsolutePathBuf,
++) -> (codex_app_server_client::RemoteAppServerEndpoint, codex_app_server_client::RemoteAppServerEndpoint) {
++    use codex_app_server_client::RemoteAppServerEndpoint;
++    (RemoteAppServerEndpoint::UnixSocket { socket_path: protected },
++     RemoteAppServerEndpoint::UnixSocket { socket_path: advertised })
++}
 +
 +pub fn require_embedded_allowed() -> std::io::Result<()> {
 +    if cfg!(feature = "cmux-quiet") {
@@ -150,8 +161,12 @@
 +    #[test]
 +    fn cmux_attach_local_target_preserves_workspace_semantics() {
 +        let protected = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(std::path::PathBuf::from("/tmp/cmux-protected.sock")).unwrap();
-+        // Startup recognizes the advertised alias, verifies it, and passes the
-+        // same pinned socket as both arguments to the actual target resolver.
++        let advertised = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(std::path::PathBuf::from("/tmp/cmux-advertised.sock")).unwrap();
++        let (probe, launch) = attachment_endpoints(advertised.clone(), protected.clone());
++        assert!(matches!(&probe, codex_app_server_client::RemoteAppServerEndpoint::UnixSocket { socket_path } if socket_path == &protected));
++        assert!(matches!(&launch, codex_app_server_client::RemoteAppServerEndpoint::UnixSocket { socket_path } if socket_path == &advertised));
++        // After launch recognizes and verifies that alias, the actual resolver
++        // must retain local semantics without an embedded fallback.
 +        let target = crate::app_server_target_for_launch(
 +            Some(codex_app_server_client::RemoteAppServerEndpoint::UnixSocket { socket_path: protected.clone() }),
 +            Some(protected), false, false, None,
@@ -216,7 +231,7 @@
 +    let advertised = codex_app_server_client::app_server_control_socket_path(&home)?;
 +    let socket_path = codex_app_server_client::verified_local_daemon_socket(advertised.as_path())?
 +        .ok_or_else(|| anyhow::anyhow!("no verified stock daemon socket"))?;
-+    let endpoint = RemoteAppServerEndpoint::UnixSocket { socket_path };
++    let (endpoint, launch_endpoint) = codex_tui::cmux_quiet::attachment_endpoints(advertised, socket_path);
 +    let client = RemoteAppServerClient::connect(RemoteAppServerConnectArgs {
 +        endpoint: endpoint.clone(), client_name: "codex-tui".to_string(),
 +        client_version: env!("CARGO_PKG_VERSION").to_string(), experimental_api: true,
@@ -227,7 +242,7 @@
 +    drop(client);
 +    // Preserve the advertised default alias for upstream's local-daemon
 +    // classification. Startup verifies it again and pins the protected endpoint.
-+    Ok(RemoteAppServerEndpoint::UnixSocket { socket_path: advertised })
++    Ok(launch_endpoint)
 +}
 +
 +#[tokio::main]
