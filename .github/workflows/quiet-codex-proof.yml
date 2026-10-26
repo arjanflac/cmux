@@ -7,6 +7,11 @@ on:
       - '.github/workflows/quiet-codex-proof.yml'
       - 'experiments/codex-quiet/**'
   workflow_dispatch:
+    inputs:
+      build_frontend:
+        type: boolean
+        default: false
+        description: Build and package the attach-only frontend
 
 permissions:
   contents: read
@@ -16,8 +21,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  frontend:
+    if: inputs.build_frontend == true
+    uses: ./.github/workflows/quiet-codex-frontend.yml
   rendering:
-    if: github.repository == 'arjanflac/cmux'
+    if: github.repository == 'arjanflac/cmux' && inputs.build_frontend != true
     runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 90
     env:
