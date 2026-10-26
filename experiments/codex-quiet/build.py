@@ -10,6 +10,7 @@ import platform
 import shutil
 import subprocess
 from check import HERE, prepare_release_lock, run, test
+import source_mtimes
 
 
 def main():
@@ -52,30 +53,45 @@ def main():
             print(text[-6000:]); raise RuntimeError('Unexpected behavioral result')
         print(f"Observed {passed} passed / {failed} failed", flush=True)
 
-    tests('lib', 'cmux_quiet_', 7, feature=False)
-    tests('lib', 'cmux_attach_', 3)
-    tests('bin', 'cmux_attach_', 2)
-    tests('lib', 'cmux_binding_', manifest['bindingTestCount'])
-    tests('lib', 'cmux_focus_', manifest['focusTestCount'], should_fail=True, label='focus-before')
-    run(['git', 'apply', '--check', str(HERE / 'focus-mode.patch')], source)
-    run(['git', 'apply', str(HERE / 'focus-mode.patch')], source)
-    tests('lib', 'cmux_focus_', manifest['focusTestCount'], label='focus-after')
-    print('Building the installable quiet frontend', flush=True)
-    with (output / 'build.log').open('w') as log:
-        subprocess.run(['cargo', 'build', '--locked', '--release', '-p', 'codex-tui', '--bin', 'cmux-codex-quiet', '--features', 'cmux-quiet'], cwd=root, check=True, stdout=log, stderr=subprocess.STDOUT)
-    target = Path(os.environ.get('CARGO_TARGET_DIR', root / 'target')) / 'release' / 'cmux-codex-quiet'
-    binary = output / 'cmux-codex-quiet'
-    shutil.copy2(target, binary)
-    if platform.system() == 'Darwin':
-        subprocess.run(['codesign', '--force', '--sign', '-', str(binary)], check=True)
-    payload = dict(manifest, platform=platform.system(), architecture=platform.machine(),
-                   binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
-                   patches={name: hashlib.sha256((HERE / name).read_bytes()).hexdigest() for name in patches},
-                   cmux_commit=os.environ.get('GITHUB_SHA'), attach_only=True)
-    (output / 'manifest.json').write_text(json.dumps(payload, indent=2) + '\n')
-    for name in ['LICENSE', 'NOTICE']:
-        if (source / name).exists(): shutil.copy2(source / name, output / name)
-    print('Built and staged cmux-only frontend; no local installation or model request', flush=True)
+    # A checkout gives unchanged local crates new timestamps. Reuse only
+    # content-verified timestamps from this compiler cache, before any build.
+    # Never restore again after mutating focus-before into focus-after.
+    mtime_cache = Path(os.environ.get('CARGO_TARGET_DIR', root / 'target')) / '.cmux-source-mtimes.json'
+    print(f'Restored {source_mtimes.restore(source, mtime_cache)} identical source timestamps', flush=True)
+    try:
+        tests('lib', 'cmux_quiet_', 7, feature=False)
+        tests('lib', 'cmux_attach_', 3)
+        tests('bin', 'cmux_attach_', 2)
+        tests('lib', 'cmux_binding_', manifest['bindingTestCount'])
+        tests('lib', 'cmux_focus_', manifest['focusTestCount'], should_fail=True, label='focus-before')
+        run(['git', 'apply', '--check', str(HERE / 'focus-mode.patch')], source)
+        run(['git', 'apply', str(HERE / 'focus-mode.patch')], source)
+        tests('lib', 'cmux_focus_', manifest['focusTestCount'], label='focus-after')
+        print('Building the installable quiet frontend', flush=True)
+        with (output / 'build.log').open('w') as log:
+            outcome = subprocess.run(['cargo', 'build', '--locked', '--release', '-p', 'codex-tui', '--bin', 'cmux-codex-quiet', '--features', 'cmux-quiet'], cwd=root, stdout=log, stderr=subprocess.STDOUT)
+        if outcome.returncode:
+            print((output / 'build.log').read_text()[-6000:], flush=True)
+            raise RuntimeError('Optimized frontend compilation failed; see build.log')
+        target = Path(os.environ.get('CARGO_TARGET_DIR', root / 'target')) / 'release' / 'cmux-codex-quiet'
+        binary = output / 'cmux-codex-quiet'
+        shutil.copy2(target, binary)
+        if platform.system() == 'Darwin':
+            subprocess.run(['codesign', '--force', '--sign', '-', str(binary)], check=True)
+        payload = dict(manifest, platform=platform.system(), architecture=platform.machine(),
+                       binary_sha256=hashlib.sha256(binary.read_bytes()).hexdigest(),
+                       patches={name: hashlib.sha256((HERE / name).read_bytes()).hexdigest() for name in patches},
+                       cmux_commit=os.environ.get('GITHUB_SHA'), attach_only=True)
+        (output / 'manifest.json').write_text(json.dumps(payload, indent=2) + '\n')
+        for name in ['LICENSE', 'NOTICE']:
+            if (source / name).exists(): shutil.copy2(source / name, output / name)
+        print('Built and staged cmux-only frontend; no local installation or model request', flush=True)
+    finally:
+        try:
+            print(f'Recorded {source_mtimes.save(source, mtime_cache)} source timestamps for the next build', flush=True)
+        except (OSError, subprocess.SubprocessError) as error:
+            print(f'Source timestamp cache was not saved: {error}', flush=True)
+
 
 
 if __name__ == '__main__': main()

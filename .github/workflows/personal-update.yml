@@ -161,6 +161,52 @@ jobs:
         run: python3 scripts/personal-build.py
       - name: Record incremental build cache size
         run: du -sh "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal"
+      - name: Preserve the compiled native app independently of frontend packaging
+        env:
+          NATIVE_SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          mkdir -p dist/native
+          ditto -c -k --sequesterRsrc --keepParent "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux-custom-build.app" dist/native/cmux-native-unpackaged-arm64.zip
+          printf '%s\n' "$NATIVE_SOURCE_SHA" > dist/native/source-commit.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cmux-native-unpackaged-arm64-${{ github.run_id }}
+          path: dist/native/*
+          compression-level: 0
+          retention-days: 7
+      - name: Keep failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: personal-build-log-${{ github.run_id }}
+          path: /tmp/cmux-reload-workspace-icons.log
+          retention-days: 7
+
+  package:
+    needs: [prepare, build]
+    if: needs.prepare.outputs.build == 'true'
+    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'macos-26' || vars.MACOS_RUNNER_26 || 'blacksmith-6vcpu-macos-26' }}
+    timeout-minutes: 90
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - name: Select the pinned Xcode
+        run: ./scripts/select-ci-xcode.sh
+      - uses: actions/download-artifact@v4
+        with:
+          name: cmux-native-unpackaged-arm64-${{ github.run_id }}
+          path: ${{ runner.temp }}/cmux-native-archive
+      - name: Verify native source identity and extract the compiled app
+        env:
+          NATIVE_SOURCE_SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          test "$(cat "$RUNNER_TEMP/cmux-native-archive/source-commit.txt")" = "$NATIVE_SOURCE_SHA"
+          mkdir -p "$RUNNER_TEMP/cmux-native"
+          ditto -x -k "$RUNNER_TEMP/cmux-native-archive/cmux-native-unpackaged-arm64.zip" "$RUNNER_TEMP/cmux-native"
       - name: Download the explicitly selected quiet frontend
         if: github.event_name == 'workflow_dispatch' && inputs.quiet_frontend_run != ''
         env:
@@ -189,7 +235,7 @@ jobs:
           if [[ -d "$RUNNER_TEMP/cmux-quiet-frontend" ]]; then
             quiet_args=(--quiet-artifact "$RUNNER_TEMP/cmux-quiet-frontend")
           fi
-          python3 scripts/personal-package.py "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux-custom-build.app" "${quiet_args[@]}"
+          python3 scripts/personal-package.py "$RUNNER_TEMP/cmux-native/cmux-custom-build.app" "${quiet_args[@]}"
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent "$HOME/Applications/cmux+.app" dist/cmux-personal-arm64.zip
           shasum -a 256 dist/cmux-personal-arm64.zip > dist/cmux-personal-arm64.zip.sha256
@@ -198,16 +244,9 @@ jobs:
           name: cmux-personal-arm64-${{ github.run_id }}
           path: dist/*
           retention-days: 7
-      - name: Keep failure diagnostics
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: personal-build-log-${{ github.run_id }}
-          path: /tmp/cmux-reload-workspace-icons.log
-          retention-days: 7
 
   promote:
-    needs: [prepare, build]
+    needs: [prepare, package]
     if: github.event_name != 'workflow_dispatch' || github.ref_name == 'personal'
     runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 10
