@@ -6,9 +6,28 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
+import re
 
 ROOT = Path(__file__).resolve().parents[1]
 PROOF = ROOT / 'experiments/codex-quiet'
+
+
+def validate_native_reuse(native_sha: str, frontend_sha: str, comparison: dict) -> None:
+    """Reuse a compiled app only when its descendant changed frontend-proof files alone."""
+    if not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in [native_sha, frontend_sha]):
+        raise ValueError('Expected immutable source commit identities')
+    if native_sha == frontend_sha:
+        return
+    files = comparison.get('files')
+    if (comparison.get('status') != 'ahead'
+            or comparison.get('merge_base_commit', {}).get('sha') != native_sha
+            or not isinstance(files, list) or len(files) >= 300):
+        raise ValueError('Cannot establish a complete descendant source comparison')
+    for item in files:
+        for name in [item.get('filename'), item.get('previous_filename', item.get('filename'))]:
+            if (not isinstance(name, str) or not name.startswith('experiments/codex-quiet/')
+                    or '..' in Path(name).parts):
+                raise ValueError('Native inputs changed; compile a new app instead of reusing this artifact')
 
 
 def validate_artifact(artifact: Path, proof: Path = PROOF) -> Path:
@@ -54,3 +73,20 @@ def stage_artifact(artifact: Path, resources: Path, verify_binary=verify_macos_b
         source = artifact / name
         if source.is_file() and not source.is_symlink():
             shutil.copyfile(source, licenses / name)
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Check an explicit native/frontend artifact pairing.')
+    parser.add_argument('repository')
+    parser.add_argument('native_sha')
+    parser.add_argument('frontend_sha')
+    args = parser.parse_args()
+    if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', args.repository):
+        parser.error('Expected an owner/repository identifier')
+    if not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in [args.native_sha, args.frontend_sha]):
+        parser.error('Expected immutable source commit identities')
+    comparison = {} if args.native_sha == args.frontend_sha else json.loads(subprocess.check_output([
+        'gh', 'api', f'repos/{args.repository}/compare/{args.native_sha}...{args.frontend_sha}'], text=True))
+    validate_native_reuse(args.native_sha, args.frontend_sha, comparison)
+    print('Verified native source is unchanged outside the maintained frontend proof.')

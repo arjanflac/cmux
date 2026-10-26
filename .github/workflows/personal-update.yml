@@ -41,6 +41,7 @@ jobs:
       release: ${{ steps.merge.outputs.release }}
       native_run: ${{ steps.merge.outputs.native_run || github.run_id }}
       reuse_native: ${{ steps.merge.outputs.reuse_native }}
+      quiet_sha: ${{ steps.merge.outputs.quiet_sha || steps.merge.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -53,6 +54,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'personal' }}
           NATIVE_ARTIFACT_RUN: ${{ inputs.native_artifact_run }}
+          QUIET_FRONTEND_RUN: ${{ inputs.quiet_frontend_run }}
         shell: bash
         run: |
           set -euo pipefail
@@ -74,6 +76,16 @@ jobs:
             [[ "$producer_path" == .github/workflows/personal-update.yml ]]
             test "$(gh run view "$NATIVE_ARTIFACT_RUN" --repo "$GITHUB_REPOSITORY" --json jobs --jq 'any(.jobs[]; .name == "build" and .conclusion == "success")')" = true
             git cat-file -e "$native_sha^{commit}"
+            quiet_sha="$native_sha"
+            if [[ -n "$QUIET_FRONTEND_RUN" ]]; then
+              [[ "$QUIET_FRONTEND_RUN" =~ ^[0-9]+$ ]]
+              quiet_producer="repos/$GITHUB_REPOSITORY/actions/runs/$QUIET_FRONTEND_RUN"
+              quiet_sha=$(gh api "$quiet_producer" --jq .head_sha)
+              quiet_path=$(gh api "$quiet_producer" --jq .path)
+              [[ "$quiet_path" == .github/workflows/quiet-codex-proof.yml || "$quiet_path" == .github/workflows/quiet-codex-frontend.yml ]]
+              python3 scripts/quiet_codex_bundle.py "$GITHUB_REPOSITORY" "$native_sha" "$quiet_sha"
+            fi
+            echo "quiet_sha=$quiet_sha" >> "$GITHUB_OUTPUT"
             echo 'build=false' >> "$GITHUB_OUTPUT"
             echo 'reuse_native=true' >> "$GITHUB_OUTPUT"
             echo "native_run=$NATIVE_ARTIFACT_RUN" >> "$GITHUB_OUTPUT"
@@ -244,8 +256,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           QUIET_RUN: ${{ inputs.quiet_frontend_run }}
           QUIET_REPOSITORY: ${{ github.repository }}
+          QUIET_SOURCE_SHA: ${{ needs.prepare.outputs.quiet_sha }}
         run: |
           [[ "$QUIET_RUN" =~ ^[0-9]+$ ]]
+          test "$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json headSha --jq .headSha)" = "$QUIET_SOURCE_SHA"
+          # Prepare verified a frontend-only descendant before allowing this
+          # overlay. Preserve the native archive's original source identity.
+          if [[ "$(git rev-parse HEAD)" != "$QUIET_SOURCE_SHA" ]]; then
+            git fetch --no-tags --depth=1 origin "$QUIET_SOURCE_SHA"
+            git restore --source="$QUIET_SOURCE_SHA" --worktree -- experiments/codex-quiet
+          fi
           # Native and Rust builds may run concurrently. Wait only for this
           # explicit frontend run, without dispatching or replaying anything.
           for attempt in $(seq 1 120); do

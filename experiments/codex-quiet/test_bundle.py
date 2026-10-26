@@ -12,6 +12,21 @@ spec.loader.exec_module(bundle)
 
 
 class BundleTests(unittest.TestCase):
+    def test_reuses_only_a_complete_frontend_only_descendant(self):
+        native, frontend = '1' * 40, '2' * 40
+        comparison = dict(status='ahead', merge_base_commit={'sha': native},
+                          files=[{'filename': 'experiments/codex-quiet/orchestration.patch'}])
+        bundle.validate_native_reuse(native, frontend, comparison)
+        bundle.validate_native_reuse(native, native, {})
+        for changed in [dict(status='diverged'), dict(merge_base_commit={'sha': frontend}),
+                        dict(files=[{'filename': 'CLI/cmux.swift'}]),
+                        dict(files=[{'filename': 'experiments/codex-quiet/new.patch', 'previous_filename': 'Sources/AppDelegate.swift'}]),
+                        dict(files=[{'filename': 'experiments/codex-quiet/../../Sources/AppDelegate.swift'}]),
+                        dict(files=[{'filename': 'experiments/codex-quiet/a.patch'}] * 300),
+                        dict(files=None)]:
+            with self.subTest(changed=changed), self.assertRaises(ValueError):
+                bundle.validate_native_reuse(native, frontend, dict(comparison, **changed))
+
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
