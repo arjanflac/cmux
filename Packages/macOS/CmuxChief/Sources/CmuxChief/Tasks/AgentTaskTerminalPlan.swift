@@ -31,6 +31,18 @@ public struct AgentTaskTerminalPlan: Sendable {
         return arguments
     }
 
+    /// Describes current surface presence independently of the provider receipt.
+    ///
+    /// - Parameters:
+    ///   - record: The saved task receipt.
+    ///   - surfaceIsPresent: Whether the app currently has its mapped terminal surface.
+    /// - Returns: A wire status; surface presence does not imply a connected provider.
+    public func liveSurfaceStatus(record: AgentTaskRecord, surfaceIsPresent: Bool) -> String {
+        guard record.presentation == .terminal else { return "headless" }
+        guard record.surfaceID != nil else { return "not_created" }
+        return surfaceIsPresent ? "surface_present" : "surface_missing"
+    }
+
     /// Quotes a shell word without evaluating task text or command substitutions.
     public static func shellWord(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 }

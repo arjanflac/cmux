@@ -37,6 +37,20 @@ struct AgentTaskTerminalPlanTests {
             cmuxExecutable: "cmux", cmuxSocket: "/tmp/test.sock") == ["codex", "resume", "managed-session", "--model", "gpt-6-luna"])
     }
 
+    @Test func aSavedSurfaceIDDoesNotClaimALiveTerminal() {
+        let request = AgentTaskRequest(provider: .codex, prompt: "Review", workspaceID: UUID(), workingDirectory: URL(fileURLWithPath: "/tmp"))
+        var record = AgentTaskRecord(id: UUID(), request: request, now: Date())
+        let plan = AgentTaskTerminalPlan()
+        #expect(plan.liveSurfaceStatus(record: record, surfaceIsPresent: false) == "not_created")
+        record.surfaceID = UUID()
+        record.phase = .running
+        #expect(plan.liveSurfaceStatus(record: record, surfaceIsPresent: false) == "surface_missing")
+        #expect(plan.liveSurfaceStatus(record: record, surfaceIsPresent: true) == "surface_present")
+        #expect(record.phase == .running)
+        record.presentation = .background
+        #expect(plan.liveSurfaceStatus(record: record, surfaceIsPresent: false) == "headless")
+    }
+
     @Test func shellWordPreservesTaskTextAsData() throws {
         let input = "quotes ' and $HOME and $(false); `false`\nnext line"
         let process = Process(), pipe = Pipe()

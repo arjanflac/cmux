@@ -31,13 +31,14 @@ extension TerminalController {
                     presentation: (params["background"] as? Bool) == true ? .background : .terminal,
                     parentTaskID: (params["parent_task_id"] as? String).flatMap(UUID.init(uuidString:)))
                 let record = try await runtime.coordinator.start(task)
-                result = .ok(try Self.taskJSON(record))
+                result = .ok(try await taskPayload(record))
             case "agent.task.list":
                 let records = await runtime.coordinator.records.values.sorted { $0.createdAt > $1.createdAt }
-                let rows = try records.prefix(50).map { record in
-                    var row = try Self.taskJSON(record)
+                var rows: [[String: Any]] = []
+                for record in records.prefix(50) {
+                    var row = try await taskPayload(record)
                     row.removeValue(forKey: "result")
-                    return row
+                    rows.append(row)
                 }
                 result = .ok(["tasks": rows, "has_more": records.count > 50])
             case "agent.task.read", "agent.task.wait", "agent.task.cancel", "agent.task.report":
@@ -55,7 +56,7 @@ extension TerminalController {
                     try await runtime.backend.reportClaude(id: id, session: session, event: event, text: params["text"] as? String)
                 }
                 let latest = try await runtime.coordinator.record(id) ?? record
-                result = .ok(try Self.taskJSON(latest))
+                result = .ok(try await taskPayload(latest))
             default: result = .err(code: "method_not_found", message: String(localized: "cli.agentTask.unknownMethod", defaultValue: "Unknown task method"), data: nil)
             }
         } catch {
@@ -69,6 +70,18 @@ extension TerminalController {
         let runtime = NativeAgentTaskRuntime()
         agentTaskRuntime = runtime
         return runtime
+    }
+
+    /// Runtime diagnostics never rewrite a saved receipt or retry accepted work.
+    private nonisolated func taskPayload(_ record: AgentTaskRecord) async throws -> [String: Any] {
+        let present = await MainActor.run {
+            guard let surface = record.surfaceID,
+                  let workspace = AppDelegate.shared?.workspaceFor(tabId: record.workspaceID) else { return false }
+            return workspace.terminalPanel(for: surface) != nil && workspace.surfaceIdFromPanelId(surface) != nil
+        }
+        var payload = try Self.taskJSON(record)
+        payload["live_surface_status"] = AgentTaskTerminalPlan().liveSurfaceStatus(record: record, surfaceIsPresent: present)
+        return payload
     }
 
     private nonisolated static func taskJSON(_ record: AgentTaskRecord) throws -> [String: Any] {
