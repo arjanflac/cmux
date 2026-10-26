@@ -9530,7 +9530,7 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
         // startup cwd, then workspace currentDirectory.
         // Only user splits follow Ghostty's split key; layout and restore
         // scaffolds keep inheriting their anchor's directory.
-        let launchWorkingDirectory = launchDirectoryForNewTerminal(explicit: workingDirectory, hasStartupWork: startupCommand != nil || initialInput != nil || restoredSurfaceId != nil)
+        let launchWorkingDirectory = launchDirectoryForNewTerminal(explicit: workingDirectory, hasStartupWork: startupCommand != nil || initialInput != nil || tmuxStartCommand != nil)
         let ghosttyDefaultWorkingDirectory = honorsGhosttySplitInheritance
             ? ghosttyDefaultWorkingDirectoryIfNotInheriting(\.split, requestedWorkingDirectory: launchWorkingDirectory, isRemoteStartup: remoteStartupCommandForEnvironment != nil)
             : nil
@@ -9883,7 +9883,7 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
         }
         let fallbackSourcePanelId = workingDirectoryFallbackSourcePanelId
             ?? bonsplitController.selectedTab(inPane: paneId).map(\.id).flatMap(panelIdFromSurfaceId)
-        let launchWorkingDirectory = launchDirectoryForNewTerminal(explicit: workingDirectory, hasStartupWork: startupCommand != nil || initialInput != nil || restoredSurfaceId != nil)
+        let launchWorkingDirectory = launchDirectoryForNewTerminal(explicit: workingDirectory, hasStartupWork: startupCommand != nil || initialInput != nil || tmuxStartCommand != nil || startupRestoreAgent != nil || restoredSurfaceId != nil)
         let ghosttyDefaultWorkingDirectory = inheritWorkingDirectoryFallback
             ? ghosttyDefaultWorkingDirectoryIfNotInheriting(\.tab, requestedWorkingDirectory: launchWorkingDirectory, isRemoteStartup: remoteStartupCommandForEnvironment != nil)
             : nil

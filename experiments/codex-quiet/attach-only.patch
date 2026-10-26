@@ -123,7 +123,7 @@
          ClientRouteClass::Other,
 --- a/codex-rs/tui/src/cmux_quiet.rs
 +++ b/codex-rs/tui/src/cmux_quiet.rs
-@@ -0,0 +1,31 @@
+@@ -0,0 +1,43 @@
 +//! Boundaries for cmux's maintained, attach-only presentation binary.
 +
 +pub fn require_embedded_allowed() -> std::io::Result<()> {
@@ -148,6 +148,18 @@
 +        assert!(require_embedded_allowed().is_err());
 +    }
 +    #[test]
++    fn cmux_attach_local_target_preserves_workspace_semantics() {
++        let protected = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(std::path::PathBuf::from("/tmp/cmux-protected.sock")).unwrap();
++        // Startup recognizes the advertised alias, verifies it, and passes the
++        // same pinned socket as both arguments to the actual target resolver.
++        let target = crate::app_server_target_for_launch(
++            Some(codex_app_server_client::RemoteAppServerEndpoint::UnixSocket { socket_path: protected.clone() }),
++            Some(protected), false, false, None,
++        ).unwrap();
++        assert!(matches!(&target, crate::AppServerTarget::LocalDaemon { allow_embedded_fallback: false, .. }));
++        assert!(!target.uses_remote_workspace());
++    }
++    #[test]
 +    fn cmux_attach_requires_exact_server_version() {
 +        assert!(require_server_version(Some(env!("CARGO_PKG_VERSION"))).is_ok());
 +        for version in [None, Some("0.163.0"), Some("0.164.1"), Some("unknown")] {
@@ -157,7 +169,7 @@
 +}
 --- a/codex-rs/tui/src/bin/cmux-quiet.rs
 +++ b/codex-rs/tui/src/bin/cmux-quiet.rs
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,98 @@
 +//! A deliberately narrow entrypoint. The cmux wrapper handles stock fallback
 +//! before calling this binary. Errors here never replay input through stock.
 +use clap::Parser;
@@ -213,7 +225,9 @@
 +    codex_tui::cmux_quiet::require_server_version(client.server_version())?;
 +    // Dropping this client closes only its transport. No daemon lifecycle RPC.
 +    drop(client);
-+    Ok(endpoint)
++    // Preserve the advertised default alias for upstream's local-daemon
++    // classification. Startup verifies it again and pins the protected endpoint.
++    Ok(RemoteAppServerEndpoint::UnixSocket { socket_path: advertised })
 +}
 +
 +#[tokio::main]

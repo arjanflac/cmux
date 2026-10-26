@@ -342,6 +342,11 @@ enum TerminalSettingsFileMapping {
             invalidPath: terminal.predictiveLocalEcho.id
         ),
         .init(
+            jsonKey: "codexQuietFrontend",
+            defaultsKey: terminal.codexQuietFrontend.userDefaultsKey,
+            invalidPath: terminal.codexQuietFrontend.id
+        ),
+        .init(
             jsonKey: "autoResumeAgentSessions",
             defaultsKey: AgentSessionAutoResumeSettings.autoResumeAgentSessionsKey,
             invalidPath: "terminal.autoResumeAgentSessions"

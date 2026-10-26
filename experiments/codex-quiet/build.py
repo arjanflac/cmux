@@ -31,7 +31,7 @@ def main():
     root = source / 'codex-rs'
     command = ['cargo', 'test', '--locked', '-p', 'codex-tui', '--features', 'cmux-quiet']
     # Require executed tests, not a successful compilation or an unmatched filter.
-    for target, selector, count in [('--lib', 'cmux_quiet_', 7), ('--lib', 'cmux_attach_', 2), ('--bin', 'cmux_attach_', 2)]:
+    for target, selector, count in [('--lib', 'cmux_quiet_', 7), ('--lib', 'cmux_attach_', 3), ('--bin', 'cmux_attach_', 2)]:
         arguments = command + ([target, 'cmux-codex-quiet'] if target == '--bin' else [target])
         with (output / f'{target[2:]}-{selector}.log').open('w') as log:
             subprocess.run(arguments + [selector, '--', '--test-threads=1'], cwd=root, check=True, stdout=log, stderr=subprocess.STDOUT)
