@@ -16,7 +16,7 @@ FORK_LINUX_BRANCH = "github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04'"
 # A fork running CI in its own repository compiles on GitHub-hosted macos-26,
 # the image and Xcode main compiles with, so it can hit main's public caches.
 FORK_MACOS_BRANCH = "github.repository_owner != 'manaflow-ai' && 'macos-26'"
-# Only jobs that need the macOS 15 image itself keep a macos-15 fork branch.
+# SDK/runtime coverage and explicitly guarded packaging jobs may use macos-15.
 FORK_MACOS_15_BRANCH = "github.repository_owner != 'manaflow-ai' && 'macos-15'"
 MACOS_15_FORK_JOBS = {
     # Builds the release Ghostty CLI helper against the macOS 15 SDK.
@@ -29,6 +29,8 @@ MACOS_15_FORK_JOBS = {
     ("plain-paste-worker.yml", "macos-15"),
     # Seeds the macOS 15 pool's SwiftPM manifest cache, keyed on its Xcode.
     ("seed-swiftpm-manifests.yml", "seed"),
+    # Only assembles existing ARM64 artifacts; no compiler cache is involved.
+    ("personal-update.yml", "package"),
 }
 # A matrix job may instead pick a hosted label per row, e.g. to spread
 # app-host shards over macos-15 and macos-26. Accepted only when every
@@ -921,6 +923,26 @@ class ForkRunnerRoutingTests(unittest.TestCase):
                 if FORK_MACOS_15_BRANCH in line and (path.name, job) not in MACOS_15_FORK_JOBS:
                     wrong.append(f"{path.name}:{number} ({job})")
         self.assertEqual(wrong, [], "fork branches compile on macos-26 so they can reuse main's caches")
+
+    def test_personal_package_runner_exception_only_assembles_existing_artifacts(self) -> None:
+        text = (WORKFLOWS / "personal-update.yml").read_text(encoding="utf-8")
+        package = re.search(r"(?ms)^  package:\n(.*?)(?=^  [\w-]+:|\Z)", text)
+        self.assertIsNotNone(package)
+        block = package.group(1)
+        self.assertIn("needs: [prepare, build]", block)
+        self.assertIn("actions/download-artifact@", block)
+        self.assertIn("cmux-native-unpackaged-arm64-", block)
+        self.assertIn("python3 scripts/personal-package.py", block)
+        compiler = re.compile(
+            r"(?i)\b(?:xcodebuild|swift\s+(?:build|test)|cargo|zig\s+build)\b"
+            r"|scripts/(?:reload(?:\.sh)?|personal-build\.(?:py|sh))\b"
+        )
+        self.assertIsNone(compiler.search(block))
+        for command in ("python3 scripts/personal-build.py", "./scripts/reload.sh", "xcodebuild test"):
+            with self.subTest(command=command):
+                self.assertIsNotNone(compiler.search(block + "\n        run: " + command))
+        # No opaque local action may turn this exception into a build lane.
+        self.assertNotRegex(block, r"uses:\s*\./")
 
     def test_every_fork_exercised_runner_has_a_hosted_path(self) -> None:
         """No fork PR may queue forever on organization-only capacity."""
