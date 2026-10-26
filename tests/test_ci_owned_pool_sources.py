@@ -37,6 +37,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,6 +48,12 @@ import owned_pool_sources as sources  # noqa: E402
 FEAT = "feat-cmux-next"
 BRANCHES = {"main": "origin/main", FEAT: "origin/feat-cmux-next"}
 ON_CI = os.environ.get("GITHUB_ACTIONS") == "true"
+
+
+def requires_other_branch() -> bool:
+    # Only upstream owns a fleet spanning main and feat-cmux-next. Forks
+    # still validate their local workflows and run the detector fixtures.
+    return ON_CI and os.environ.get("GITHUB_REPOSITORY", "manaflow-ai/cmux") == "manaflow-ai/cmux"
 
 
 def git(*args: str, stdin: str | None = None) -> subprocess.CompletedProcess:
@@ -110,7 +117,7 @@ class OwnedPoolSources(unittest.TestCase):
             raise unittest.SkipTest("cannot tell whether this tree is main or feat-cmux-next (a ref is missing); "
                                     "set CMUX_OWNED_POOL_BRANCH")
         cls.ref = other_ref()
-        if not has_ref(cls.ref) and ON_CI:
+        if not has_ref(cls.ref) and requires_other_branch():
             fetch(cls.ref)
         cls.other = sources.Tree(ROOT, cls.ref) if has_ref(cls.ref) else None
         here = sources.Tree(ROOT)
@@ -124,7 +131,7 @@ class OwnedPoolSources(unittest.TestCase):
     def test_the_other_branch_is_read(self) -> None:
         if self.other is None:
             message = f"{self.ref} is not available, so its workflows were not checked"
-            if ON_CI:
+            if requires_other_branch():
                 self.fail(f"{message}; the guard job must be able to fetch it")
             self.skipTest(message)
 
@@ -294,6 +301,37 @@ class OwnedPoolSources(unittest.TestCase):
         if feat is None:
             self.skipTest("feat-cmux-next's workflows are not readable here")
         self.assertIn(".github/workflows/cmux-next-base-autofix.yml", self.owned[str(feat)])
+
+class ForkBranchAvailability(unittest.TestCase):
+    def check_missing_branch(self, repository: str) -> tuple[unittest.TestResult, int]:
+        class Probe(OwnedPoolSources):
+            pass
+
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": repository}), \
+                patch(__name__ + ".ON_CI", True), \
+                patch(__name__ + ".branch", return_value="main"), \
+                patch(__name__ + ".has_ref", return_value=False), \
+                patch(__name__ + ".fetch") as fetch_branch:
+            Probe.setUpClass()
+            result = unittest.TestResult()
+            Probe("test_the_other_branch_is_read").run(result)
+        return result, fetch_branch.call_count
+
+    def test_a_fork_does_not_require_or_fetch_the_upstream_fleet_branch(self) -> None:
+        result, fetch_count = self.check_missing_branch("arjanflac/cmux")
+        self.assertEqual(fetch_count, 0)
+        self.assertFalse(result.failures)
+        self.assertFalse(result.errors)
+        self.assertEqual(len(result.skipped), 1)
+
+    def test_upstream_still_requires_and_fetches_its_fleet_branch(self) -> None:
+        result, fetch_count = self.check_missing_branch("manaflow-ai/cmux")
+        self.assertEqual(fetch_count, 1)
+        self.assertEqual(len(result.failures), 1)
+        self.assertIn("guard job must be able to fetch it", result.failures[0][1])
+        self.assertFalse(result.errors)
+        self.assertFalse(result.skipped)
+
 
 if __name__ == "__main__":
     unittest.main()
