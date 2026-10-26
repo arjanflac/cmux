@@ -1,6 +1,6 @@
 --- a/codex-rs/tui/src/cmux_orchestration.rs
 +++ b/codex-rs/tui/src/cmux_orchestration.rs
-@@ -17,37 +17,400 @@
+@@ -17,37 +17,406 @@
  struct Panel { snapshot_path: PathBuf, scope_file: PathBuf }
  #[derive(Clone)]
  pub(crate) struct Proof { route: Route, panel: Panel, session: String, pub generation: u64 }
@@ -315,8 +315,14 @@
 +    let mut stdout=child.stdout.take()?;
 +    let mut stdin=child.stdin.take();
 +    let operation=async {
-+        let write=async {
-+            if let (Some(bytes),Some(stream))=(input,stdin.as_mut()) { stream.write_all(&bytes).await.ok()?; stream.shutdown().await.ok()?; }
++        let write=async move {
++            if let (Some(bytes),Some(mut stream))=(input,stdin.take()) {
++                stream.write_all(&bytes).await.ok()?;
++                stream.shutdown().await.ok()?;
++                // ChildStdin shutdown does not close a Unix pipe. Release its
++                // owned writer before awaiting stdout: JSON readers need EOF.
++                drop(stream);
++            }
 +            Some(())
 +        };
 +        let read=async {
