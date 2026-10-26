@@ -1,0 +1,453 @@
+diff --git a/codex-rs/tui/src/chatwidget/tests/tool_activity_tests.rs b/codex-rs/tui/src/chatwidget/tests/tool_activity_tests.rs
+index 4638d46b8c0dde7e252cd947f8727ca00cf28de1..c3b036dfad98f962a63be9ad6846d7c372518370 100644
+--- a/codex-rs/tui/src/chatwidget/tests/tool_activity_tests.rs
++++ b/codex-rs/tui/src/chatwidget/tests/tool_activity_tests.rs
+@@ -32,3 +32,71 @@ async fn image_result_live_and_replay_render_in_the_owning_call() {
+     assert_eq!(outputs[0], outputs[1]);
+     insta::assert_snapshot!(outputs[0]);
+ }
++
++#[tokio::test]
++async fn cmux_quiet_live_projection_preserves_auxiliary_and_full_transcript() {
++    use crate::exec_cell::ExecCall;
++    use crate::exec_cell::ExecCell;
++    use crate::history_cell::PlainHistoryCell;
++    use std::time::Instant;
++
++    let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
++    let mut active = ExecCell::new(
++        ExecCall {
++            call_id: "quiet-live".into(),
++            command: vec!["bash".into(), "-lc".into(), "LIVE_ARGS ".repeat(1024)],
++            parsed: Vec::new(),
++            output: None,
++            source: ExecCommandSource::Agent,
++            start_time: Some(Instant::now()),
++            duration: None,
++            interaction_input: None,
++        },
++        false,
++    );
++    assert!(active.append_output("quiet-live", &"LIVE_OUTPUT\n".repeat(512)));
++    chat.transcript.active_cell = Some(Box::new(active));
++    chat.realtime_conversation
++        .pending_history_cells
++        .push_back(Box::new(PlainHistoryCell::new(vec![
++            "AUXILIARY_TEXT must remain visible.".into(),
++        ])));
++
++    let full_before = chat.active_cell_transcript_hyperlink_lines(100).unwrap();
++    for width in [1, 8, 24, 100] {
++        let compact = chat
++            .active_cell_owned_transcript_lines(width, false)
++            .unwrap();
++        assert_eq!(compact.activity.len(), 1);
++        assert!(compact.activity[0].width() <= usize::from(width));
++        let text = compact.activity[0].line.to_string();
++        assert!(!text.contains("LIVE_ARGS"));
++        assert!(!text.contains("LIVE_OUTPUT"));
++        assert!(compact.disclosure.is_some());
++        if width == 100 {
++            assert!(
++                compact
++                    .auxiliary
++                    .iter()
++                    .any(|line| line.line.to_string().contains("AUXILIARY_TEXT"))
++            );
++        }
++        let expanded = chat
++            .active_cell_owned_transcript_lines(width, true)
++            .unwrap();
++        assert_eq!(expanded.auxiliary, compact.auxiliary);
++    }
++    let expanded = chat.active_cell_owned_transcript_lines(100, true).unwrap();
++    let text = expanded
++        .activity
++        .iter()
++        .map(|line| line.line.to_string())
++        .collect::<Vec<_>>()
++        .join("\n");
++    assert!(text.contains("LIVE_ARGS"));
++    assert!(text.contains("LIVE_OUTPUT"));
++    assert!(crate::terminal_hyperlinks::lines_with_sources_eq(
++        &chat.active_cell_transcript_hyperlink_lines(100).unwrap(),
++        &full_before,
++    ));
++}
+diff --git a/codex-rs/tui/src/transcript_view/layout_tests.rs b/codex-rs/tui/src/transcript_view/layout_tests.rs
+index 366a978f070151122c09a11b6aa8f561c8484cf9..54642a85c669f2f935849870d81874041d5aa36b 100644
+--- a/codex-rs/tui/src/transcript_view/layout_tests.rs
++++ b/codex-rs/tui/src/transcript_view/layout_tests.rs
+@@ -274,3 +274,372 @@ fn fullscreen_image_previews_follow_layout_without_entering_text_surfaces() {
+     assert_eq!(buf, text_only);
+     assert!(view.image_placements().is_empty());
+ }
++
++// These tests use only stock 0.164.0 fullscreen entrypoints: the baseline failure should
++// describe presentation behavior, not a missing renderer API.
++mod quiet_fullscreen {
++    use super::*;
++    use crate::exec_cell::CommandOutput;
++    use crate::exec_cell::ExecCall;
++    use crate::exec_cell::ExecCell;
++    use crate::history_cell::ApprovalDecisionActor;
++    use crate::history_cell::ApprovalDecisionSubject;
++    use crate::history_cell::DynamicToolCallCell;
++    use crate::history_cell::McpInvocation;
++    use crate::history_cell::McpToolCallCell;
++    use crate::history_cell::PlainHistoryCell;
++    use crate::history_cell::RequestUserInputResultCell;
++    use crate::history_cell::ReviewDecision;
++    use crate::history_cell::new_approval_decision_cell;
++    use codex_app_server_protocol::CommandExecutionSource;
++    use codex_app_server_protocol::DynamicToolCallOutputContentItem;
++    use codex_app_server_protocol::DynamicToolCallStatus;
++    use codex_app_server_protocol::ThreadItem;
++    use codex_app_server_protocol::ToolRequestUserInputQuestion;
++    use codex_protocol::parse_command::ParsedCommand;
++    use crossterm::event::KeyCode;
++    use crossterm::event::KeyEvent;
++    use crossterm::event::KeyModifiers;
++    use pretty_assertions::assert_eq;
++    use serde_json::json;
++    use std::time::Duration;
++    use std::time::Instant;
++
++    const ARG: &str = "ARG_PAYLOAD";
++    const OUT: &str = "OUTPUT_PAYLOAD";
++
++    fn mcp(status: Option<bool>) -> McpToolCallCell {
++        let mut cell = McpToolCallCell::new(
++            "quiet-mcp".into(),
++            McpInvocation {
++                server: "工具".into(),
++                tool: "inspect".into(),
++                arguments: Some(json!({"script": ARG.repeat(1024)})),
++            },
++            /*animations_enabled*/ false,
++        );
++        if let Some(success) = status {
++            cell.complete(
++                Duration::from_millis(1),
++                Ok(serde_json::from_value(json!({
++                    "content": [{"type": "text", "text": format!("{OUT}\n").repeat(512)}],
++                    "isError": !success,
++                }))
++                .unwrap()),
++            );
++        }
++        cell
++    }
++
++    fn dynamic_item(status: DynamicToolCallStatus) -> ThreadItem {
++        ThreadItem::DynamicToolCall {
++            id: "quiet-dynamic".into(),
++            namespace: Some("工具".into()),
++            tool: "inspect".into(),
++            arguments: json!({"script": ARG.repeat(1024)}),
++            status,
++            content_items: Some(vec![DynamicToolCallOutputContentItem::InputText {
++                text: format!("{OUT}\n").repeat(512),
++            }]),
++            success: None,
++            duration_ms: None,
++        }
++    }
++
++    fn exec(status: Option<i32>, source: CommandExecutionSource, search: bool) -> ExecCell {
++        let script = format!("rg {}", ARG.repeat(1024));
++        let mut cell = ExecCell::new(
++            ExecCall {
++                call_id: "quiet-exec".into(),
++                command: vec!["bash".into(), "-lc".into(), script.clone()],
++                parsed: if search {
++                    vec![ParsedCommand::Search {
++                        cmd: script,
++                        query: Some(ARG.repeat(1024)),
++                        path: None,
++                    }]
++                } else {
++                    Vec::new()
++                },
++                output: None,
++                source,
++                start_time: Some(Instant::now()),
++                duration: None,
++                interaction_input: None,
++            },
++            /*animations_enabled*/ false,
++        );
++        let output = format!("{OUT}\n").repeat(512);
++        if let Some(code) = status {
++            assert!(cell.complete_call(
++                "quiet-exec",
++                CommandOutput::new(code, output),
++                Duration::from_millis(1),
++            ));
++        } else {
++            assert!(cell.append_output("quiet-exec", &output));
++        }
++        cell
++    }
++
++    fn render(view: &mut TranscriptView, cells: &[Arc<dyn HistoryCell>], width: u16) {
++        let area = Rect::new(0, 0, width, 36);
++        view.render(area, &mut Buffer::empty(area), cells);
++    }
++
++    fn assert_quiet(cell: Arc<dyn HistoryCell>, status: &str, has_output: bool) {
++        let original = cell.raw_lines();
++        let original_transcript = cell.transcript_hyperlink_lines(100);
++        let cells = [Arc::clone(&cell)];
++        let mut view = TranscriptView::default();
++        for width in [100, 1, 8, 24, 100] {
++            render(&mut view, &cells, width);
++            let layout = view.entry_layout(&cells, 0, false).unwrap();
++            assert_eq!(layout.text().lines().count(), 1, "{:?}", layout.text());
++            // One source row plus the existing disclosure control; never an invisible cell.
++            assert!((1..=2).contains(&layout.row_count()));
++            assert!(!layout.text().contains(ARG));
++            assert!(!layout.text().contains(OUT));
++            assert!(layout.disclosure_row().is_some());
++            if width == 100 {
++                assert!(layout.text().contains(status), "{:?}", layout.text());
++            }
++        }
++        let mut view = TranscriptView::default();
++        render(&mut view, &cells, 100);
++        // Find requests full_content while the normal view remains compact.
++        let full = view.entry_layout(&cells, 0, true).unwrap();
++        assert!(full.text().contains(ARG));
++        assert_eq!(full.text().contains(OUT), has_output);
++        view.set_presentation(true, HistoryRenderMode::Rich);
++        render(&mut view, &cells, 100);
++        let detailed = view.layout(&cells, 0).unwrap();
++        assert!(detailed.text().contains(ARG));
++        assert_eq!(detailed.text().contains(OUT), has_output);
++        view.set_presentation(false, HistoryRenderMode::Raw);
++        render(&mut view, &cells, 100);
++        assert!(view.layout(&cells, 0).unwrap().text().contains(ARG));
++        assert_eq!(cell.raw_lines(), original);
++        assert!(crate::terminal_hyperlinks::lines_with_sources_eq(
++            &cell.transcript_hyperlink_lines(100),
++            &original_transcript,
++        ));
++        assert!(Arc::ptr_eq(&cell, &cells[0]));
++    }
++
++    #[test]
++    fn cmux_quiet_mcp_and_dynamic_states_hide_giant_payloads() {
++        for (state, status) in [
++            (None, "Calling"),
++            (Some(true), "Called"),
++            (Some(false), "Failed"),
++        ] {
++            assert_quiet(Arc::new(mcp(state)), status, state.is_some());
++        }
++        for (state, status) in [
++            (DynamicToolCallStatus::InProgress, "Calling"),
++            (DynamicToolCallStatus::Completed, "Called"),
++            (DynamicToolCallStatus::Failed, "Failed"),
++        ] {
++            assert_quiet(
++                Arc::new(DynamicToolCallCell::from_item(dynamic_item(state)).unwrap()),
++                status,
++                true,
++            );
++        }
++        let mut interrupted = mcp(None);
++        interrupted.mark_failed();
++        assert_quiet(Arc::new(interrupted), "Failed", false);
++    }
++
++    #[test]
++    fn cmux_quiet_exec_streaming_success_and_nonzero_exit_hide_commands_and_output() {
++        for source in [
++            CommandExecutionSource::Agent,
++            CommandExecutionSource::UnifiedExecStartup,
++        ] {
++            for search in [false, true] {
++                for (code, status) in [
++                    (None, "Running"),
++                    (Some(0), "Completed"),
++                    (Some(1), "exit 1"),
++                ] {
++                    assert_quiet(Arc::new(exec(code, source.clone(), search)), status, true);
++                }
++            }
++        }
++    }
++
++    #[test]
++    fn cmux_quiet_f4_expansion_and_search_bypass_the_compact_projection() {
++        let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(exec(
++            Some(1),
++            CommandExecutionSource::Agent,
++            false,
++        ))];
++        let mut view = TranscriptView::default();
++        render(&mut view, &cells, 100);
++        assert!(!view.layout(&cells, 0).unwrap().text().contains(OUT));
++        assert!(
++            view.handle_key(KeyEvent::new(KeyCode::F(4), KeyModifiers::NONE), &cells)
++                .is_some()
++        );
++        assert!(
++            view.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &cells)
++                .is_some()
++        );
++        render(&mut view, &cells, 100);
++        let expanded = view.layout(&cells, 0).unwrap();
++        assert!(expanded.text().contains(ARG));
++        assert!(expanded.text().contains(OUT));
++        assert!(
++            view.handle_key(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE), &cells)
++                .is_some()
++        );
++        render(&mut view, &cells, 100);
++        assert!(!view.layout(&cells, 0).unwrap().text().contains(OUT));
++        assert!(
++            view.entry_layout(&cells, 0, true)
++                .unwrap()
++                .text()
++                .contains(OUT)
++        );
++        view.begin_search();
++        assert!(view.paste_search(OUT));
++        for _ in 0..32 {
++            if !view.advance_search(&cells) {
++                break;
++            }
++        }
++        assert_eq!(
++            view.search.match_anchor().map(|anchor| anchor.index),
++            Some(0)
++        );
++        render(&mut view, &cells, 100);
++        assert!(view.layout(&cells, 0).unwrap().text().contains(OUT));
++    }
++
++    #[test]
++    fn cmux_quiet_short_exec_results_still_offer_disclosure() {
++        let cell = ExecCell::new(
++            ExecCall {
++                call_id: "short".into(),
++                command: vec!["echo".into(), "short".into()],
++                parsed: Vec::new(),
++                output: Some(CommandOutput::new(0, "short\n".into())),
++                source: CommandExecutionSource::Agent,
++                start_time: None,
++                duration: Some(Duration::from_millis(1)),
++                interaction_input: None,
++            },
++            false,
++        );
++        let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(cell)];
++        let mut view = TranscriptView::default();
++        render(&mut view, &cells, 100);
++        let layout = view.layout(&cells, 0).unwrap();
++        assert!(!layout.text().contains("short"));
++        assert!(layout.disclosure_row().is_some());
++    }
++
++    #[test]
++    fn cmux_quiet_retained_dynamic_status_refreshes_without_replacing_the_cell() {
++        let cell = Arc::new(
++            DynamicToolCallCell::from_item(dynamic_item(DynamicToolCallStatus::InProgress))
++                .unwrap(),
++        );
++        let cells = [cell.clone() as Arc<dyn HistoryCell>];
++        let mut view = TranscriptView::default();
++        render(&mut view, &cells, 100);
++        let active = view.layout(&cells, 0).unwrap();
++        assert!(active.text().contains("Calling"));
++        assert!(cell.update_from_item(dynamic_item(DynamicToolCallStatus::Failed)));
++        render(&mut view, &cells, 100);
++        let failed = view.layout(&cells, 0).unwrap();
++        assert!(failed.text().contains("Failed"));
++        assert!(!failed.text().contains(OUT));
++        assert_eq!(failed.text().lines().count(), 1);
++        assert!(!Arc::ptr_eq(&active, &failed));
++        assert!(Arc::ptr_eq(&(cell as Arc<dyn HistoryCell>), &cells[0]));
++    }
++
++    #[test]
++    fn cmux_quiet_unknown_attention_user_shell_and_nontext_results_keep_their_existing_display() {
++        #[derive(Debug)]
++        struct UnknownActivity;
++        impl HistoryCell for UnknownActivity {
++            fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
++                vec!["Unknown activity".into(), "Keep all of its payload.".into()]
++            }
++            fn raw_lines(&self) -> Vec<Line<'static>> {
++                self.display_lines(100)
++            }
++            fn activity_ids(&self) -> Vec<String> {
++                vec!["exec:unknown-future-cell".into()]
++            }
++        }
++        let mut cells: Vec<Arc<dyn HistoryCell>> = vec![
++            Arc::new(UnknownActivity),
++            Arc::new(PlainHistoryCell::new(vec![
++                "Assistant prose: Called a tool; Ran a command.".into(),
++                "Warning: attention must remain visible.".into(),
++            ])),
++            Arc::new(exec(Some(1), CommandExecutionSource::UserShell, false)),
++            Arc::new(exec(
++                Some(0),
++                CommandExecutionSource::UnifiedExecInteraction,
++                false,
++            )),
++            Arc::from(new_approval_decision_cell(
++                ApprovalDecisionSubject::Command(vec!["approval-marker".into()]),
++                ReviewDecision::Denied,
++                ApprovalDecisionActor::User,
++            )),
++            Arc::new(RequestUserInputResultCell {
++                questions: vec![ToolRequestUserInputQuestion {
++                    id: "question".into(),
++                    header: "Scope".into(),
++                    question: "Keep this question visible?".into(),
++                    is_other: false,
++                    is_secret: false,
++                    options: None,
++                }],
++                answers: Default::default(),
++                interrupted: false,
++            }),
++        ];
++        for block in [
++            json!({"type": "image", "data": "", "mimeType": "image/png"}),
++            json!({"type": "resource_link", "uri": "file:///artifact", "name": "artifact"}),
++            json!({"type": "futureArtifact", "value": "unknown-artifact"}),
++        ] {
++            let mut cell = mcp(None);
++            cell.complete(
++                Duration::from_millis(1),
++                Ok(serde_json::from_value(json!({"content": [block]})).unwrap()),
++            );
++            cells.push(Arc::new(cell));
++        }
++        for content in [
++            DynamicToolCallOutputContentItem::InputImage {
++                image_url: "data:image/png;base64,".into(),
++            },
++            DynamicToolCallOutputContentItem::InputAudio {
++                audio_url: "data:audio/wav;base64,".into(),
++            },
++        ] {
++            let mut item = dynamic_item(DynamicToolCallStatus::Completed);
++            if let ThreadItem::DynamicToolCall { content_items, .. } = &mut item {
++                *content_items = Some(vec![content]);
++            }
++            cells.push(Arc::new(DynamicToolCallCell::from_item(item).unwrap()));
++        }
++        for cell in cells {
++            let expected = TextLayout::new(cell.compact_hyperlink_lines(100), 100);
++            let mut view = TranscriptView::default();
++            let cells = [cell];
++            render(&mut view, &cells, 100);
++            assert_eq!(view.layout(&cells, 0).unwrap().text(), expected.text());
++        }
++    }
++}
