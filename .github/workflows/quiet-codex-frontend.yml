@@ -13,7 +13,7 @@ concurrency:
 jobs:
   frontend:
     if: github.repository == 'arjanflac/cmux'
-    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'macos-26' || vars.MACOS_RUNNER || 'blacksmith-6vcpu-macos-26' }}
+    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'macos-26' || vars.MACOS_RUNNER_26 || 'blacksmith-6vcpu-macos-26' }}
     timeout-minutes: 120
     env:
       CARGO_BUILD_JOBS: '3'

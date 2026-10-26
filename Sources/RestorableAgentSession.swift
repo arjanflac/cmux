@@ -1749,7 +1749,9 @@ struct RestorableAgentSessionIndex: Sendable {
                     processPresenceProvider: {
                         processSnapshot.process(pid: $0) == nil ? .absent : .present
                     },
-                    validator: validator
+                    validator: validator,
+                    codexHookOwner: liveSessionOwners.owner(kind: "codex", sessionID: entry.snapshot.sessionId,
+                        processIdentityProvider: processIdentityProvider)
                 )
                 return (processID, processMatch)
             })
@@ -2322,7 +2324,7 @@ struct RestorableAgentSessionIndex: Sendable {
                     }
                     return currentProcessIdentity
                 }
-                if let liveOwner = LiveAgentSessionOwnerObservation.validatingHookRecord(
+                let liveOwner = LiveAgentSessionOwnerObservation.validatingHookRecord(
                     snapshot: snapshot,
                     record: effectiveRecord,
                     workspaceID: workspaceId,
@@ -2330,9 +2332,8 @@ struct RestorableAgentSessionIndex: Sendable {
                     processArgumentsProvider: processArgumentsForRecord,
                     processIdentityProvider: processIdentityForRecord,
                     validator: cachedAgentProcessValidator
-                ) {
-                    liveSessionOwnerObservations.append(liveOwner)
-                }
+                )
+                if let liveOwner { liveSessionOwnerObservations.append(liveOwner) }
                 let processObservation = RestorableAgentProcessObservation(
                     recordedProcessID: effectiveRecord.pid
                 ) { pid in
@@ -2346,7 +2347,8 @@ struct RestorableAgentSessionIndex: Sendable {
                         processArgumentsProvider: processArgumentsForRecord,
                         processPresenceProvider: processPresenceProvider,
                         validator: cachedAgentProcessValidator,
-                        hermesSessionValidation: .currentHookRecord
+                        hermesSessionValidation: .currentHookRecord,
+                        codexHookOwner: liveOwner?.owner
                     )
                 }
                 let liveProcessID = processObservation.processID
@@ -3897,7 +3899,7 @@ struct RestorableAgentSessionIndex: Sendable {
         regularFileState(atPath: path, fileManager: fileManager) == .nonEmpty
     }
 
-    private static func scopedProcessMatch(
+    static func scopedProcessMatch(
         for snapshot: SessionRestorableAgentSnapshot,
         workspaceId: UUID,
         panelId: UUID,
@@ -3907,14 +3909,30 @@ struct RestorableAgentSessionIndex: Sendable {
         processArgumentsProvider: (Int) -> CmuxTopProcessArguments?,
         processPresenceProvider: (Int) -> PIDPresence,
         validator: CachedAgentProcessIdentityValidator,
-        hermesSessionValidation: CachedAgentProcessIdentityValidator.HermesSessionValidation = .cachedSnapshot
+        hermesSessionValidation: CachedAgentProcessIdentityValidator.HermesSessionValidation = .cachedSnapshot,
+        codexHookOwner: LiveAgentSessionOwner? = nil
     ) -> RestorableAgentProcessMatch {
         let process = processArgumentsProvider(processID)
         let scopeMatches = process.map {
             $0.matchesCMUXScope(workspaceId: workspaceId, surfaceId: panelId)
         }
+        // The bundled derived TUI restores through stock argv, and its live
+        // argv can still name a previously selected chat. Only its latest
+        // verified hook owner may vouch for that mismatch. Pane scope and PID
+        // generation still pass through the ordinary matcher below.
+        let quietOwnerMatches: Bool = {
+            guard snapshot.kind == .codex, let owner = codexHookOwner,
+                  owner.kind == "codex", owner.hermesSessionValidation == .currentHookRecord,
+                  owner.sessionID == snapshot.sessionId, owner.workspaceID == workspaceId,
+                  owner.surfaceID == panelId, owner.processID == processID,
+                  owner.processIdentity == recordedProcessIdentity,
+                  owner.processIdentity == currentProcessIdentity,
+                  let executable = process?.arguments.first, executable.hasPrefix("/"),
+                  let expected = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux-codex-quiet") else { return false }
+            return URL(fileURLWithPath: executable).standardizedFileURL == expected.standardizedFileURL
+        }()
         let matchesExpectedProcess = process.map {
-            validator.currentProcess(
+            quietOwnerMatches || validator.currentProcess(
                 $0,
                 matches: snapshot,
                 hermesSessionValidation: hermesSessionValidation

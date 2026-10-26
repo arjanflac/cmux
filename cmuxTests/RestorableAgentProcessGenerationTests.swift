@@ -1,4 +1,5 @@
 import CmuxFoundation
+import CmuxWorkspaces
 import Foundation
 import os
 import Testing
