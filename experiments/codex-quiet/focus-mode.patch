@@ -118,12 +118,19 @@
              active
 --- a/codex-rs/tui/src/app/owned_transcript.rs
 +++ b/codex-rs/tui/src/app/owned_transcript.rs
-@@ -107,7 +107,7 @@
+@@ -101,13 +101,14 @@
+         let search_changed = view.sync_search_live_tail(transcript_width, active_key, |width| {
+             chat_widget.active_cell_transcript_hyperlink_lines(width)
+         });
++        let cmux_quiet = view.is_cmux_quiet();
+         let changed = if detailed {
+             view.sync_live_tail(transcript_width, active_key, |width| {
+                 chat_widget.active_cell_transcript_hyperlink_lines(width)
              })
          } else {
              view.sync_live_activity_tail(transcript_width, active_key, expanded, |width| {
 -                chat_widget.active_cell_owned_transcript_lines(width, expanded)
-+                chat_widget.active_cell_owned_transcript_lines_with_focus(width, expanded, view.is_cmux_quiet())
++                chat_widget.active_cell_owned_transcript_lines_with_focus(width, expanded, cmux_quiet)
              })
          };
          changed || search_changed

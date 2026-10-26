@@ -227,7 +227,7 @@
 +}
 +
 +async fn endpoint() -> anyhow::Result<RemoteAppServerEndpoint> {
-+    let home = codex_core::config::find_codex_home()?;
++    let home = codex_utils_home_dir::find_codex_home()?;
 +    let advertised = codex_app_server_client::app_server_control_socket_path(&home)?;
 +    let socket_path = codex_app_server_client::verified_local_daemon_socket(advertised.as_path())?
 +        .ok_or_else(|| anyhow::anyhow!("no verified stock daemon socket"))?;
@@ -260,7 +260,7 @@
 +    if check { return Ok(()); }
 +    let paths = Arg0DispatchPaths { codex_self_exe: Some(stock), ..Default::default() };
 +    let exit = Box::pin(codex_tui::run_main(cli, paths, LoaderOverrides::default(), Some(endpoint))).await?;
-+    for line in exit.format_exit_messages(false) { println!("{line}"); }
++    for line in exit.clone().format_exit_messages(false) { println!("{line}"); }
 +    if let ExitReason::Fatal(message) = exit.exit_reason { anyhow::bail!(message); }
 +    Ok(())
 +}

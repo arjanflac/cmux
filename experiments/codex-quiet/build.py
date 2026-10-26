@@ -55,6 +55,7 @@ def main():
     tests('lib', 'cmux_quiet_', 7, feature=False)
     tests('lib', 'cmux_attach_', 3)
     tests('bin', 'cmux_attach_', 2)
+    tests('lib', 'cmux_binding_', manifest['bindingTestCount'])
     tests('lib', 'cmux_focus_', manifest['focusTestCount'], should_fail=True, label='focus-before')
     run(['git', 'apply', '--check', str(HERE / 'focus-mode.patch')], source)
     run(['git', 'apply', str(HERE / 'focus-mode.patch')], source)

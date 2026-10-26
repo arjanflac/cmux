@@ -8,8 +8,10 @@
     "regression-tests.patch",
     "quiet-fullscreen.patch",
     "attach-only.patch",
+    "session-binding.patch",
     "focus-tests.patch",
     "focus-mode.patch"
   ],
-  "focusTestCount": 4
+  "focusTestCount": 4,
+  "bindingTestCount": 4
 }
