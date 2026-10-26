@@ -39,6 +39,25 @@ struct TerminalScrollSpeedSettingsFileStoreTests {
         }
     }
 
+    @Test
+    func settingsFileImportsCmuxOnlyLaunchPreferences() throws {
+        let suiteName = "cmux-launch-settings-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("cmux.json")
+        let workspace = UUID().uuidString
+        try """
+        {"terminal":{"codexQuietFrontend":true,"workspaceLaunchDirectories":{"\(workspace)":"/products/lightwell"}}}
+        """.write(to: file, atomically: true, encoding: .utf8)
+        _ = KeyboardShortcutSettingsFileStore(primaryPath: file.path, fallbackPath: nil,
+            additionalFallbackPaths: [], notificationCenter: NotificationCenter(),
+            userDefaults: defaults, startWatching: false, isUserDefaultsKeyForcedByProfile: { _ in false })
+        #expect(defaults.object(forKey: "terminal.codexQuietFrontend") as? Bool == true)
+        #expect(defaults.dictionary(forKey: "terminal.workspaceLaunchDirectories") as? [String: String] == [workspace: "/products/lightwell"])
+    }
+
     private func loadScrollSpeedSetting(_ value: Double, verify: (UserDefaults) throws -> Void) throws {
         // Keep the import separate from the running app's managed defaults and
         // observers, which can restore their own settings during these writes.
