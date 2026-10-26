@@ -1,0 +1,172 @@
+--- a/codex-rs/tui/src/transcript_view.rs
++++ b/codex-rs/tui/src/transcript_view.rs
+@@ -115,6 +115,7 @@
+     held_reading: Option<ViewSnapshot>,
+     search: Search,
+     detailed: bool,
++    cmux_quiet: bool,
+     mode: HistoryRenderMode,
+     pub(crate) history: TranscriptHistoryState,
+     highlight: Option<usize>,
+@@ -155,6 +156,7 @@
+             held_reading: None,
+             search: Search::default(),
+             detailed: false,
++            cmux_quiet: cfg!(feature = "cmux-quiet"),
+             mode: HistoryRenderMode::Rich,
+             history: TranscriptHistoryState::Idle,
+             highlight: None,
+@@ -421,6 +423,20 @@
+             || self.selection.is_some()
+             || self.search.is_active()
+             || self.is_activity_focused()
++    }
++
++    pub(crate) fn is_cmux_quiet(&self) -> bool {
++        cfg!(feature = "cmux-quiet") && self.cmux_quiet && !self.detailed
++    }
++
++    pub(crate) fn toggle_cmux_quiet(&mut self) {
++        self.cmux_quiet = !self.cmux_quiet;
++        self.cache.clear();
++        self.live_key = None;
++        self.selection = None;
++        self.select_mode = None;
++        self.copy_mode = None;
++        self.release_live_reading();
+     }
+ 
+     pub(crate) fn is_detailed(&self) -> bool {
+--- a/codex-rs/tui/src/chatwidget/activity_presentation.rs
++++ b/codex-rs/tui/src/chatwidget/activity_presentation.rs
+@@ -17,6 +17,12 @@
+         &self,
+         width: u16,
+         expanded: bool,
++    ) -> Option<ActivityTranscriptLines> {
++        self.active_cell_owned_transcript_lines_with_focus(width, expanded, false)
++    }
++
++    pub(crate) fn active_cell_owned_transcript_lines_with_focus(
++        &self, width: u16, expanded: bool, _quiet: bool,
+     ) -> Option<ActivityTranscriptLines> {
+         let active = self.transcript.active_cell.as_deref();
+         let mode = self.history_render_mode();
+--- a/codex-rs/tui/src/transcript_view/layout_tests.rs
++++ b/codex-rs/tui/src/transcript_view/layout_tests.rs
+@@ -642,4 +642,57 @@
+             assert_eq!(view.layout(&cells, 0).unwrap().text(), expected.text());
+         }
+     }
++    #[cfg(feature = "cmux-quiet")]
++    #[test]
++    fn cmux_focus_hides_routine_tools_and_toggle_restores_current_compact_view() {
++        let cells: Vec<Arc<dyn HistoryCell>> = vec![
++            Arc::new(exec(Some(0), CommandExecutionSource::Agent, false)),
++            Arc::new(exec(None, CommandExecutionSource::Agent, false)),
++            Arc::new(mcp(Some(true))),
++            Arc::new(DynamicToolCallCell::from_item(dynamic_item(DynamicToolCallStatus::Completed)).unwrap()),
++        ];
++        let mut view = TranscriptView::default();
++        render(&mut view, &cells, 100);
++        for index in 0..cells.len() { assert!(view.entry_layout(&cells, index, false).unwrap().text().is_empty()); }
++        view.toggle_cmux_quiet();
++        render(&mut view, &cells, 100);
++        let compact = view.entry_layout(&cells, 0, false).unwrap();
++        assert!(compact.text().contains(ARG), "current compact mode should restore invocation text");
++        view.toggle_cmux_quiet();
++        render(&mut view, &cells, 100);
++        for index in 0..cells.len() { assert!(view.entry_layout(&cells, index, false).unwrap().text().is_empty()); }
++    }
++
++    #[cfg(feature = "cmux-quiet")]
++    #[test]
++    fn cmux_focus_failures_stay_visible_and_full_content_remains_available() {
++        let cells: Vec<Arc<dyn HistoryCell>> = vec![
++            Arc::new(exec(Some(1), CommandExecutionSource::Agent, false)),
++            Arc::new(mcp(Some(false))),
++            Arc::new(DynamicToolCallCell::from_item(dynamic_item(DynamicToolCallStatus::Failed)).unwrap()),
++        ];
++        let mut view = TranscriptView::default();
++        render(&mut view, &cells, 100);
++        for index in 0..cells.len() {
++            let visible = view.entry_layout(&cells, index, false).unwrap();
++            assert!(!visible.text().is_empty());
++            assert!(!visible.text().contains(ARG));
++            assert!(!visible.text().contains(OUT));
++            assert!(view.entry_layout(&cells, index, true).unwrap().text().contains(ARG));
++        }
++    }
++
++    #[cfg(feature = "cmux-quiet")]
++    #[test]
++    fn cmux_focus_preserves_user_commands_and_unknown_content() {
++        let cells: Vec<Arc<dyn HistoryCell>> = vec![
++            Arc::new(exec(Some(0), CommandExecutionSource::User, false)),
++            Arc::new(crate::history_cell::PlainHistoryCell::new(vec!["ASSISTANT_TEXT".into()])),
++        ];
++        let mut view = TranscriptView::default();
++        render(&mut view, &cells, 100);
++        assert!(!view.entry_layout(&cells, 0, false).unwrap().text().is_empty());
++        assert!(view.entry_layout(&cells, 1, false).unwrap().text().contains("ASSISTANT_TEXT"));
++    }
++
+ }
+--- a/codex-rs/tui/src/chatwidget/tests/tool_activity_tests.rs
++++ b/codex-rs/tui/src/chatwidget/tests/tool_activity_tests.rs
+@@ -100,3 +100,55 @@
+         &full_before,
+     ));
+ }
++
++#[cfg(feature = "cmux-quiet")]
++#[tokio::test]
++async fn cmux_focus_live_activity_preserves_assistant_text_and_full_transcript() {
++    use crate::exec_cell::ExecCall;
++    use crate::exec_cell::ExecCell;
++    use crate::history_cell::PlainHistoryCell;
++    use std::time::Instant;
++
++    let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
++    let mut active = ExecCell::new(
++        ExecCall {
++            call_id: "quiet-live".into(),
++            command: vec!["bash".into(), "-lc".into(), "LIVE_ARGS ".repeat(1024)],
++            parsed: Vec::new(),
++            output: None,
++            source: ExecCommandSource::Agent,
++            start_time: Some(Instant::now()),
++            duration: None,
++            interaction_input: None,
++        },
++        false,
++    );
++    assert!(active.append_output("quiet-live", &"LIVE_OUTPUT\n".repeat(512)));
++    chat.transcript.active_cell = Some(Box::new(active));
++    chat.realtime_conversation
++        .pending_history_cells
++        .push_back(Box::new(PlainHistoryCell::new(vec![
++            "AUXILIARY_TEXT must remain visible.".into(),
++        ])));
++
++    let full_before = chat.active_cell_transcript_hyperlink_lines(100).unwrap();
++    let focus = chat.active_cell_owned_transcript_lines_with_focus(100, false, true).unwrap();
++    assert!(focus.activity.is_empty());
++    assert!(focus.disclosure.is_none());
++    assert!(focus.auxiliary.iter().any(|line| line.line.to_string().contains("AUXILIARY_TEXT")));
++    let details = chat.active_cell_owned_transcript_lines_with_focus(100, false, false).unwrap();
++    assert!(details.activity.iter().any(|line| line.line.to_string().contains("LIVE_ARGS")));
++    let expanded = chat.active_cell_owned_transcript_lines(100, true).unwrap();
++    let text = expanded
++        .activity
++        .iter()
++        .map(|line| line.line.to_string())
++        .collect::<Vec<_>>()
++        .join("\n");
++    assert!(text.contains("LIVE_ARGS"));
++    assert!(text.contains("LIVE_OUTPUT"));
++    assert!(crate::terminal_hyperlinks::lines_with_sources_eq(
++        &chat.active_cell_transcript_hyperlink_lines(100).unwrap(),
++        &full_before,
++    ));
++}
