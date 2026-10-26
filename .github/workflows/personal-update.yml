@@ -10,6 +10,10 @@ on:
     - cron: '31 17 * * 1'
   workflow_dispatch:
     inputs:
+      native_artifact_run:
+        description: Previous exact-source feature build to package without recompiling
+        type: string
+        required: false
       quiet_frontend_run:
         description: Optional successful Quiet Codex frontend run to bundle
         type: string
@@ -35,6 +39,8 @@ jobs:
       candidate: ${{ steps.merge.outputs.candidate }}
       sha: ${{ steps.merge.outputs.sha }}
       release: ${{ steps.merge.outputs.release }}
+      native_run: ${{ steps.merge.outputs.native_run || github.run_id }}
+      reuse_native: ${{ steps.merge.outputs.reuse_native }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,11 +52,34 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           EVENT_NAME: ${{ github.event_name }}
           SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'personal' }}
+          NATIVE_ARTIFACT_RUN: ${{ inputs.native_artifact_run }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          fi
+          # Packaging can retry a retained native artifact without another compile.
+          # The artifact must come from this repository's native workflow, with
+          # a successful build job; package checks its exact source stamp again.
+          if [[ -n "$NATIVE_ARTIFACT_RUN" ]]; then
+            [[ "$EVENT_NAME" == workflow_dispatch ]]
+            [[ "$NATIVE_ARTIFACT_RUN" =~ ^[0-9]+$ ]]
+            producer="repos/$GITHUB_REPOSITORY/actions/runs/$NATIVE_ARTIFACT_RUN"
+            native_sha=$(gh api "$producer" --jq .head_sha)
+            producer_path=$(gh api "$producer" --jq .path)
+            test "$(gh api "$producer" --jq .event)" = workflow_dispatch
+            test "$(gh api "$producer" --jq .head_branch)" != personal
+            [[ "$native_sha" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$producer_path" == .github/workflows/personal-update.yml ]]
+            test "$(gh run view "$NATIVE_ARTIFACT_RUN" --repo "$GITHUB_REPOSITORY" --json jobs --jq 'any(.jobs[]; .name == "build" and .conclusion == "success")')" = true
+            git cat-file -e "$native_sha^{commit}"
+            echo 'build=false' >> "$GITHUB_OUTPUT"
+            echo 'reuse_native=true' >> "$GITHUB_OUTPUT"
+            echo "native_run=$NATIVE_ARTIFACT_RUN" >> "$GITHUB_OUTPUT"
+            echo "sha=$native_sha" >> "$GITHUB_OUTPUT"
+            echo 'release=packaging-only' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
           # A manually selected feature branch gets an exact-source build and
           # artifact without changing personal or merging upstream into it.
@@ -184,8 +213,8 @@ jobs:
 
   package:
     needs: [prepare, build]
-    if: needs.prepare.outputs.build == 'true'
-    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'macos-26' || vars.MACOS_RUNNER_26 || 'blacksmith-6vcpu-macos-26' }}
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.build.result == 'success' || needs.prepare.outputs.reuse_native == 'true') }}
+    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'macos-15' || vars.MACOS_RUNNER_26 || 'blacksmith-6vcpu-macos-26' }}
     timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
@@ -198,7 +227,9 @@ jobs:
         run: ./scripts/select-ci-xcode.sh
       - uses: actions/download-artifact@v4
         with:
-          name: cmux-native-unpackaged-arm64-${{ github.run_id }}
+          name: cmux-native-unpackaged-arm64-${{ needs.prepare.outputs.native_run }}
+          github-token: ${{ github.token }}
+          run-id: ${{ needs.prepare.outputs.native_run }}
           path: ${{ runner.temp }}/cmux-native-archive
       - name: Verify native source identity and extract the compiled app
         env:
@@ -247,7 +278,7 @@ jobs:
 
   promote:
     needs: [prepare, package]
-    if: github.event_name != 'workflow_dispatch' || github.ref_name == 'personal'
+    if: inputs.native_artifact_run == '' && (github.event_name != 'workflow_dispatch' || github.ref_name == 'personal')
     runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 10
     permissions:
