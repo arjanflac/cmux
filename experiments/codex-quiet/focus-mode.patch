@@ -18,7 +18,7 @@
  impl HistoryCell for ExecCell {
 +    fn quiet_fullscreen_is_routine(&self) -> bool {
 +        !self.group.calls.is_empty() && self.iter_calls().all(|call| {
-+            matches!(call.source, ExecCommandSource::Agent | ExecCommandSource::UnifiedExecStartup)
++            matches!(call.source, ExecCommandSource::Agent | ExecCommandSource::UnifiedExecStartup | ExecCommandSource::UnifiedExecInteraction)
 +                && call.output.as_ref().is_none_or(|output| output.exit_code == 0)
 +        })
 +    }

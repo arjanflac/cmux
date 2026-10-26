@@ -54,7 +54,7 @@
          let mode = self.history_render_mode();
 --- a/codex-rs/tui/src/transcript_view/layout_tests.rs
 +++ b/codex-rs/tui/src/transcript_view/layout_tests.rs
-@@ -642,4 +642,57 @@
+@@ -642,4 +642,58 @@
              assert_eq!(view.layout(&cells, 0).unwrap().text(), expected.text());
          }
      }
@@ -64,6 +64,7 @@
 +        let cells: Vec<Arc<dyn HistoryCell>> = vec![
 +            Arc::new(exec(Some(0), CommandExecutionSource::Agent, false)),
 +            Arc::new(exec(None, CommandExecutionSource::Agent, false)),
++            Arc::new(exec(Some(0), CommandExecutionSource::UnifiedExecInteraction, false)),
 +            Arc::new(mcp(Some(true))),
 +            Arc::new(DynamicToolCallCell::from_item(dynamic_item(DynamicToolCallStatus::Completed)).unwrap()),
 +        ];
@@ -102,7 +103,7 @@
 +    #[test]
 +    fn cmux_focus_preserves_user_commands_and_unknown_content() {
 +        let cells: Vec<Arc<dyn HistoryCell>> = vec![
-+            Arc::new(exec(Some(0), CommandExecutionSource::User, false)),
++            Arc::new(exec(Some(0), CommandExecutionSource::UserShell, false)),
 +            Arc::new(crate::history_cell::PlainHistoryCell::new(vec!["ASSISTANT_TEXT".into()])),
 +        ];
 +        let mut view = TranscriptView::default();
