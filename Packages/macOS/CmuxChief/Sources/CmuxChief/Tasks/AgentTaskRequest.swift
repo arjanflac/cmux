@@ -13,6 +13,8 @@ public struct AgentTaskRequest: Codable, Equatable, Sendable {
     public var prompt: String
     /// An existing target workspace; the coordinator never creates one.
     public var workspaceID: UUID
+    /// Persisted workspace identity, independent of a runtime window/session.
+    public var workspaceStableID: UUID?
     /// Absolute local directory used by both provider and terminal.
     public var workingDirectory: URL
     /// Optional provider model identifier.
@@ -27,10 +29,11 @@ public struct AgentTaskRequest: Codable, Equatable, Sendable {
     /// Creates a task. Background execution must be explicitly selected.
     public init(provider: Provider, prompt: String, workspaceID: UUID, workingDirectory: URL,
                 model: String? = nil, effort: String? = nil,
-                presentation: Presentation = .terminal, parentTaskID: UUID? = nil) {
+                presentation: Presentation = .terminal, parentTaskID: UUID? = nil, workspaceStableID: UUID? = nil) {
         self.provider = provider
         self.prompt = prompt
         self.workspaceID = workspaceID
+        self.workspaceStableID = workspaceStableID
         self.workingDirectory = workingDirectory
         self.model = model
         self.effort = effort

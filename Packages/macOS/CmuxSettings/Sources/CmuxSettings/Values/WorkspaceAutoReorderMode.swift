@@ -16,6 +16,8 @@ public enum WorkspaceAutoReorderMode: String, CaseIterable, Sendable, SettingCod
     /// transitions (turn finished, needs input, error, new prompt), throttled
     /// and deferred while the user is looking at or pointing into the sidebar.
     case agentActivity
+    /// Stable working-before-idle order, preserving pinned and selected rows.
+    case workingFirst
 
     /// Whether any automatic reordering is enabled.
     public var isEnabled: Bool { self != .off }
@@ -42,7 +44,7 @@ public enum WorkspaceAutoReorderMode: String, CaseIterable, Sendable, SettingCod
         switch self {
         case .off: false
         case .notifications: true
-        case .agentActivity: rawValue
+        case .agentActivity, .workingFirst: rawValue
         }
     }
 }

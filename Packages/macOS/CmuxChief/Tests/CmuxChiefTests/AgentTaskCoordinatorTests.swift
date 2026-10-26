@@ -10,6 +10,51 @@ struct AgentTaskCoordinatorTests {
                          presentation: presentation, parentTaskID: parent)
     }
 
+    @Test func stableWorkspaceIdentitySurvivesReceiptCodingAndLegacyReceipts() async throws {
+        var input = request(.background); input.workspaceStableID = UUID()
+        let coordinator = AgentTaskCoordinator(backend: TaskTestBackend(), repository: TaskTestRepository(), present: { _, _ in UUID() })
+        let record = try await coordinator.start(input)
+        let data = try JSONEncoder().encode(record)
+        #expect(try JSONDecoder().decode(AgentTaskRecord.self, from: data).workspaceStableID == input.workspaceStableID)
+        var legacy = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        legacy.removeValue(forKey: "workspaceStableID")
+        #expect(try JSONDecoder().decode(AgentTaskRecord.self, from: JSONSerialization.data(withJSONObject: legacy)).workspaceStableID == nil)
+    }
+
+    @Test func attachmentFailureDoesNotCancelAcceptedProviderWork() async throws {
+        let backend = TaskTestBackend()
+        let coordinator = AgentTaskCoordinator(backend: backend, repository: TaskTestRepository(), present: { _, _ in
+            throw CocoaError(.fileWriteUnknown)
+        })
+        let record = try await coordinator.start(request())
+        try await coordinator.receive(.session("accepted-session"), id: record.id)
+        #expect(await backend.cancelled.isEmpty)
+        #expect(coordinator.records[record.id]?.sessionID == "accepted-session")
+        #expect(coordinator.records[record.id]?.detail?.hasPrefix("terminal_attachment_failed:") == true)
+        try await coordinator.receive(.running, id: record.id)
+        #expect(coordinator.records[record.id]?.detail?.hasPrefix("terminal_attachment_failed:") == true)
+        try await coordinator.receive(.completed("provider-result"), id: record.id)
+        #expect(coordinator.records[record.id]?.result == "provider-result")
+    }
+
+    @Test func attachOnlyChangesTheViewOfAnExistingSession() async throws {
+        let backend = TaskTestBackend(), views = TaskTestViews()
+        let coordinator = AgentTaskCoordinator(backend: backend, repository: TaskTestRepository(),
+            present: { _, _ in throw CocoaError(.fileWriteUnknown) }, reconnect: views.open)
+        let record = try await coordinator.start(request(.background))
+        try await coordinator.receive(.session("known-session"), id: record.id)
+        try await coordinator.receive(.completed("saved-result"), id: record.id)
+        let workspace = UUID()
+        let attached = try await coordinator.attach(record.id, workspaceID: workspace)
+        #expect(attached.sessionID == "known-session")
+        #expect(attached.phase == .completed)
+        #expect(attached.result == "saved-result")
+        #expect(attached.workspaceID == workspace)
+        #expect(attached.surfaceID != nil)
+        #expect(views.opened.count == 1)
+        #expect(await backend.cancelled.isEmpty)
+    }
+
     @Test func visibleTaskOpensOneTabOnlyAfterProviderSession() async throws {
         let backend = TaskTestBackend(), repository = TaskTestRepository(), views = TaskTestViews()
         let coordinator = AgentTaskCoordinator(backend: backend, repository: repository, present: views.open)

@@ -12,6 +12,7 @@ cmux task list
 cmux task read <task-id>
 cmux task wait <task-id>
 cmux task cancel <task-id>
+cmux task attach <task-id> [--workspace <existing-id-or-ref>]
 ```
 
 Use `--parent-task <id>` for nested managed work. Use another existing workspace
@@ -20,6 +21,13 @@ requested; otherwise the task gets a normal terminal. `--prompt-file -` reads a
 prompt from stdin. Start/read/wait return JSON with `id`, `sessionID`, `surfaceID`,
 `phase`, and the first-turn `result`. A disconnected receipt is uncertainty:
 inspect the existing session before retrying its prompt.
+`live_surface_status` reports current terminal presence separately from provider
+execution. `task attach` opens only a view of the saved session through the normal
+restore admission path; it never retries the task prompt or starts a provider turn.
+An attachment failure retains accepted provider work and an attention receipt.
+New receipts save stable workspace identity for relaunch. Older receipts whose
+runtime workspace no longer exists need an explicit `--workspace` target.
+
 Lists contain the latest 50 receipts without result bodies. Recent results are
 bounded in memory; older receipts remain readable by ID. Results over 65,536
 characters carry `detail: result_truncated`; their full answer remains in the

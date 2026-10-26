@@ -11,6 +11,7 @@ public final class AgentTaskCoordinator {
     private let backend: any AgentTaskBackend
     private let repository: any AgentTaskRepository
     private let present: Present
+    private let reconnect: Present?
     private var consumers: [UUID: Task<Void, Never>] = [:]
     private var subscribers: [UUID: AsyncStream<AgentTaskRecord>.Continuation] = [:]
     private var requests: [UUID: AgentTaskRequest] = [:]
@@ -20,10 +21,11 @@ public final class AgentTaskCoordinator {
     private var persistence: Task<Void, any Error>?
 
     /// Injects execution, persistence, and native window presentation.
-    public init(backend: any AgentTaskBackend, repository: any AgentTaskRepository, present: @escaping Present) {
+    public init(backend: any AgentTaskBackend, repository: any AgentTaskRepository, present: @escaping Present, reconnect: Present? = nil) {
         self.backend = backend
         self.repository = repository
         self.present = present
+        self.reconnect = reconnect
     }
 
     /// Restores receipts as disconnected when their previous provider state is unknown.
@@ -85,7 +87,9 @@ public final class AgentTaskCoordinator {
         case .session(let session):
             guard record.sessionID == nil || record.sessionID == session else { throw TaskError.sessionChanged }
             record.sessionID = session
-        case .running: record.phase = .running; record.detail = nil
+        case .running:
+            record.phase = .running
+            if record.detail?.hasPrefix("terminal_attachment_failed:") != true { record.detail = nil }
         case .needsInput(let detail): record.phase = .needsInput; record.detail = String(detail.prefix(8192))
         case .completed(let text):
             record.phase = .completed; record.result = String(text.prefix(65_536))
@@ -106,9 +110,16 @@ public final class AgentTaskCoordinator {
             let surface: UUID
             do { surface = try await present(record, request) }
             catch {
-                // A requested visible task must not silently continue headless.
-                try await cancel(id)
-                throw error
+                // The provider may already have accepted work. A missing view
+                // must never cancel it or replay its initial prompt.
+                if var current = records[id], !current.phase.isFinished {
+                    current.detail = "terminal_attachment_failed: " + String(String(describing: error).prefix(1024))
+                    current.updatedAt = Date()
+                    records[id] = current
+                    try await save(current)
+                    if records[id] == current { publish(current) }
+                }
+                return
             }
             // Cancellation during presentation must not restore a stale running state.
             guard var current = records[id], !current.phase.isFinished else { return }
@@ -118,6 +129,39 @@ public final class AgentTaskCoordinator {
             try await save(current)
             if records[id] == current { publish(current) }
         }
+    }
+
+    /// Reconnects only a terminal view of a known session; never invokes the backend.
+    ///
+    /// - Parameters:
+    ///   - id: An existing saved task with a provider session identity.
+    ///   - workspaceID: The explicitly resolved existing workspace for this view.
+    /// - Returns: The receipt with its new surface identity and unchanged provider phase.
+    public func attach(_ id: UUID, workspaceID: UUID, workspaceStableID: UUID? = nil) async throws -> AgentTaskRecord {
+        guard let existing = try await record(id), existing.sessionID != nil,
+              let reconnect, presenting.insert(id).inserted else { throw TaskError.invalid }
+        defer { presenting.remove(id) }
+        var directory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: existing.workingDirectory.path, isDirectory: &directory), directory.boolValue else { throw TaskError.invalid }
+        var viewRecord = existing
+        viewRecord.workspaceID = workspaceID
+        viewRecord.workspaceStableID = workspaceStableID ?? existing.workspaceStableID
+        viewRecord.presentation = .terminal
+        let request = AgentTaskRequest(provider: existing.provider, prompt: existing.title,
+            workspaceID: workspaceID, workingDirectory: existing.workingDirectory,
+            model: existing.model, presentation: .terminal, parentTaskID: existing.parentTaskID)
+        let surface = try await reconnect(viewRecord, request)
+        guard var current = records[id] else { throw TaskError.invalid }
+        current.workspaceID = workspaceID
+        current.workspaceStableID = viewRecord.workspaceStableID
+        current.surfaceID = surface
+        current.presentation = .terminal
+        current.updatedAt = Date()
+        if current.detail?.hasPrefix("terminal_attachment_failed:") == true { current.detail = nil }
+        records[id] = current
+        try await save(current)
+        if records[id] == current { publish(current) }
+        return current
     }
 
     /// Cancels the task and its known descendants, without touching unrelated agents.

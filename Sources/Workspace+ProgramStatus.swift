@@ -3,6 +3,33 @@ import CmuxSidebar
 import Foundation
 
 extension Workspace {
+    /// Exact daemon identities complement OSC/hook activity even while the terminal sleeps.
+    var workingCodexSessionIDs: Set<String> {
+        Set(observedCodexActivityBySessionID.compactMap { $0.value == "working" ? $0.key : nil })
+    }
+
+    var observedCodexActivityByPanelID: [UUID: Bool] {
+        var result: [UUID: Bool] = [:]
+        for (panel, binding) in surfaceResumeBindingsByPanelId where binding.kind == "codex" {
+            guard let session = binding.checkpointId, let phase = observedCodexActivityBySessionID[session], phase != "unknown" else { continue }
+            result[panel] = phase == "working"
+        }
+        return result
+    }
+
+    var unboundWorkingCodexCount: Int {
+        let bound = Set(surfaceResumeBindingsByPanelId.values.filter { $0.kind == "codex" }.compactMap(\.checkpointId))
+        return workingCodexSessionIDs.subtracting(bound).count
+    }
+
+    var hasWorkingAgent: Bool {
+        unboundWorkingCodexCount > 0 || SidebarAgentActivitySummary.activeCodingAgentCount(
+            statesByPanelId: agentLifecycleStatesByPanelId,
+            workingProgramPanelIds: Set(programStatusStoresByPanelId.compactMap { panel, store in store.records.contains { $0.state == .working } ? panel : nil }),
+            authoritativeActivityByPanelID: observedCodexActivityByPanelID
+        ) > 0
+    }
+
     static let programStatusKey = "program_status"
 
     /// Applies one OSC 7501 report and publishes the resulting safe snapshot.

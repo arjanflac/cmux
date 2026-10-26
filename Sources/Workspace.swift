@@ -3526,7 +3526,15 @@ final class Workspace: Identifiable, ObservableObject, FilePreviewTabMetadataHos
     var restoredAgentSnapshotsByPanelId: [UUID: SessionRestorableAgentSnapshot] {
         restoredAgentLifecycle.snapshotsByPanelId
     }
-    var surfaceResumeBindingsByPanelId: [UUID: SurfaceResumeBindingSnapshot] = [:]
+    var surfaceResumeBindingsByPanelId: [UUID: SurfaceResumeBindingSnapshot] = [:] {
+        didSet {
+            Task { @MainActor [weak self] in
+                guard let self, !isRemoteWorkspace else { return }
+                TerminalController.shared.agentTaskRuntimeForControl().observe(workspace: self)
+            }
+        }
+    }
+    @Published var observedCodexActivityBySessionID: [String: String] = [:]
     /// Restored notifications of panes whose agent died with the previous app
     /// process; pruned by `pruneOrphanedRestoredAgentNotifications(store:)`.
     var restoredAgentNotificationIdsByPanelId: [UUID: Set<UUID>] = [:]

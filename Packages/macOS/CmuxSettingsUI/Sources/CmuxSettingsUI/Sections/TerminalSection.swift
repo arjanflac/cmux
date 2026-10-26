@@ -34,6 +34,8 @@ public struct TerminalSection: View {
     @State private var predictiveLocalEcho: DefaultsValueModel<Bool>
     @State private var adaptiveDefaultTheme: DefaultsValueModel<Bool>
     @State private var autoResume: DefaultsValueModel<Bool>
+    @State private var quietStatus: QuietCodexStatus?
+    @State private var checkingQuiet = false
     @State private var codexQuiet: DefaultsValueModel<Bool>
     @State private var hibernation: DefaultsValueModel<Bool>
     @State private var idleSeconds: DefaultsValueModel<Double>
@@ -529,13 +531,35 @@ public struct TerminalSection: View {
             SettingsCardDivider()
             SettingsCardRow(
                 configurationReview: .json("terminal.codexQuietFrontend"),
-                String(localized: "settings.terminal.codexQuiet", defaultValue: "Quiet Codex Frontend"),
-                subtitle: String(localized: "settings.terminal.codexQuiet.subtitle", defaultValue: "New terminals use the bundled quiet TUI when compatible. Other launches use stock Codex.")
+                String(localized: "settings.terminal.codexQuiet", defaultValue: "Hide Codex Tool Calls"),
+                subtitle: String(localized: "settings.terminal.codexQuiet.subtitle", defaultValue: "New terminals start quiet. Ctrl+T shows or hides tool details. Errors and approvals stay visible. Incompatible launches use stock Codex.")
             ) {
                 Toggle("", isOn: Binding(get: { codexQuiet.current }, set: { codexQuiet.set($0) }))
                     .labelsHidden().controlSize(.small)
                     .accessibilityIdentifier("SettingsTerminalCodexQuietToggle")
             }
+            VStack(alignment: .leading, spacing: 8) {
+                if let status = quietStatus {
+                    Text(String.localizedStringWithFormat(String(localized: "settings.terminal.codexQuiet.versions", defaultValue: "Bundled: %@ · Installed Codex: %@"), status.bundledVersion ?? "—", status.stockVersion ?? "—"))
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(status.compatible
+                        ? String(localized: "settings.terminal.codexQuiet.ready", defaultValue: "Compatible. New Codex terminals can use quiet mode.")
+                        : String(localized: "settings.terminal.codexQuiet.fallback", defaultValue: "Stock Codex will be used. The quiet frontend needs a compatible build and a running stock daemon."))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                HStack {
+                    Button(String(localized: "settings.terminal.codexQuiet.check", defaultValue: "Check Compatibility")) {
+                        checkingQuiet = true
+                        tasks.replaceOnMainActor("quiet-status") {
+                            quietStatus = await hostActions.quietCodexStatus(); checkingQuiet = false
+                        }
+                    }.disabled(checkingQuiet)
+                    Button(String(localized: "settings.terminal.codexQuiet.builds", defaultValue: "Build / Update…")) { hostActions.openQuietCodexBuilds() }
+                }
+                Text(String(localized: "settings.terminal.codexQuiet.maintenance", defaultValue: "Codex updates normally. A new version may need its quiet patch reviewed and rebuilt. Build / Update opens GitHub; it never replaces a running app or updates Codex."))
+                    .font(.caption).foregroundStyle(.secondary)
+            }.padding(.horizontal, 16).padding(.bottom, 12)
+            .task { quietStatus = await hostActions.quietCodexStatus() }
             SettingsCardDivider()
             SettingsCardRow(
                 configurationReview: .json("terminal.autoResumeAgentSessions"),

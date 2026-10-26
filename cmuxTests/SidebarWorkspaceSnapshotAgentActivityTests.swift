@@ -9,6 +9,19 @@ import Testing
 #endif
 
 extension SidebarWorkspaceSnapshotTests {
+    @Test func authoritativeDaemonIdleOverridesStaleTerminalActivity() {
+        let panel = UUID()
+        #expect(SidebarAgentActivitySummary.activeCodingAgentCount(
+            statesByPanelId: [panel: ["codex": .running]], workingProgramPanelIds: [],
+            authoritativeActivityByPanelID: [panel: false]) == 0)
+        #expect(SidebarAgentActivitySummary.activeCodingAgentCount(
+            statesByPanelId: [:], workingProgramPanelIds: [panel],
+            authoritativeActivityByPanelID: [panel: false]) == 1)
+        #expect(SidebarAgentActivitySummary.activeCodingAgentCount(
+            statesByPanelId: [panel: ["codex": .running]], workingProgramPanelIds: [panel],
+            authoritativeActivityByPanelID: [panel: true]) == 1)
+    }
+
     @Test func nativeWorkingPaneShowsActivityWithoutHookState() {
         #expect(SidebarAgentActivitySummary.activeCodingAgentCount(
             statesByPanelId: [:], workingProgramPanelIds: [UUID()]

@@ -19,6 +19,8 @@ final class WorkspaceActivityReorderController {
     static let interactionRecheckInterval: TimeInterval = 0.5
 
     private var gate: WorkspaceActivityReorderGate
+    private var workingOrderRequests: Set<UUID> = []
+    private var nextWorkingOrder = Date.distantPast
     private var drainTimer: Timer?
     private let now: @MainActor () -> Date
     private let mode: @MainActor () -> WorkspaceAutoReorderMode
@@ -60,11 +62,24 @@ final class WorkspaceActivityReorderController {
         request(workspaceId: workspaceId, trigger: .agentActivity)
     }
 
+    /// Initial idle snapshots and transport uncertainty do not count as activity.
+    func observedSessionActivityChanged(workspaceId: UUID, previous: String?, current: String?) {
+        if mode() == .workingFirst || current == "working" || current == "attention"
+            || (previous == "working" && current == "idle") {
+            nativeProgramActivity(workspaceId: workspaceId)
+        }
+    }
+
     /// Releases deferred moves that may run now. Also runs on a timer while
     /// any move is deferred.
     func drainPendingMoves() {
         drainTimer?.invalidate()
         drainTimer = nil
+        if mode() == .workingFirst {
+            drainWorkingOrder()
+            return
+        }
+        workingOrderRequests.removeAll()
         let ready = gate.drain(mode: mode(), now: now()) { [self] workspaceId in
             context(for: workspaceId)
         }
@@ -74,10 +89,15 @@ final class WorkspaceActivityReorderController {
         scheduleDrainIfNeeded()
     }
 
-    var pendingWorkspaceIds: Set<UUID> { gate.pendingWorkspaceIds }
+    var pendingWorkspaceIds: Set<UUID> { gate.pendingWorkspaceIds.union(workingOrderRequests) }
 
     private func request(workspaceId: UUID, trigger: WorkspaceActivityReorderGate.Trigger) {
         let currentMode = mode()
+        if currentMode == .workingFirst {
+            workingOrderRequests.insert(workspaceId)
+            drainPendingMoves()
+            return
+        }
         guard currentMode == .agentActivity else { return }
         guard let context = context(for: workspaceId) else { return }
         if gate.admit(workspaceId: workspaceId, trigger: trigger, mode: currentMode, context: context, now: now()) == .moveNow {
@@ -85,6 +105,26 @@ final class WorkspaceActivityReorderController {
         }
         // Give other deferred moves a chance whenever anything happens.
         drainPendingMoves()
+    }
+
+    private func drainWorkingOrder() {
+        guard !workingOrderRequests.isEmpty else { return }
+        let current = now()
+        if isSidebarInteracting() || current < nextWorkingOrder {
+            let fireAt = isSidebarInteracting() ? current.addingTimeInterval(Self.interactionRecheckInterval) : nextWorkingOrder
+            let timer = Timer(fire: fireAt, interval: 0, repeats: false) { [weak self] _ in
+                MainActor.assumeIsolated { self?.drainPendingMoves() }
+            }
+            RunLoop.main.add(timer, forMode: .common); drainTimer = timer
+            return
+        }
+        var seen: Set<ObjectIdentifier> = []
+        for id in workingOrderRequests {
+            guard let manager = tabManagerForWorkspace(id), seen.insert(ObjectIdentifier(manager)).inserted else { continue }
+            manager.workspaceReordering.orderWorkingFirst(workingWorkspaceIds: Set(manager.tabs.filter(\.hasWorkingAgent).map(\.id)))
+        }
+        workingOrderRequests.removeAll()
+        nextWorkingOrder = current.addingTimeInterval(gate.cooldown)
     }
 
     private func move(_ workspaceId: UUID) {

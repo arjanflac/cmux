@@ -253,6 +253,42 @@ final class HostSettingsActions: SettingsHostActions {
         LanguageSettingsStore(defaults: .standard, domainName: ProcessDefaultsDomain.name).applyLanguageOverride(language)
     }
 
+    func quietCodexStatus() async -> QuietCodexStatus {
+        let resources = Bundle.main.resourceURL
+        let stock = try? AgentExecutableResolver().resolve(.codex).executableURL
+        return await Task.detached(priority: .utility) {
+            guard let resources else { return QuietCodexStatus(bundledVersion: nil, stockVersion: nil, compatible: false) }
+            let manifestURL = resources.appendingPathComponent("licenses/codex-quiet/manifest.json")
+            let manifest = (try? Data(contentsOf: manifestURL)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+            let version = (manifest?["release"] as? String)?.replacingOccurrences(of: "rust-v", with: "")
+            func probe(_ executable: URL, _ arguments: [String]) -> (Bool, String?) {
+                let process = Process(); let output = Pipe()
+                process.executableURL = executable; process.arguments = arguments
+                process.standardOutput = output; process.standardError = FileHandle.nullDevice
+                var environment = ProcessInfo.processInfo.environment
+                environment["CMUX_QUIET_STOCK_CODEX"] = stock?.path
+                process.environment = environment
+                do { try process.run() } catch { return (false, nil) }
+                // This deadline owns only the short-lived read-only probe.
+                let deadline = DispatchWorkItem { if process.isRunning { process.terminate() } }
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 4, execute: deadline)
+                process.waitUntilExit(); deadline.cancel()
+                let text = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return (process.terminationStatus == 0, text)
+            }
+            let stockVersion = stock.flatMap { probe($0, ["--version"]).1 }?.replacingOccurrences(of: "codex-cli ", with: "")
+            let frontend = resources.appendingPathComponent("bin/cmux-codex-quiet")
+            let compatible = version != nil && stockVersion == version && probe(frontend, ["--cmux-check"]).0
+            return QuietCodexStatus(bundledVersion: version, stockVersion: stockVersion, compatible: compatible)
+        }.value
+    }
+
+    func openQuietCodexBuilds() {
+        guard let url = URL(string: "https://github.com/arjanflac/cmux/actions/workflows/quiet-codex-proof.yml") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     func openConfigInExternalEditor() {
         // Honor the user's configured editor (`preferredEditorCommand`),
         // falling back to the OS default. Opening the config file directly

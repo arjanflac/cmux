@@ -63,6 +63,9 @@ public protocol SettingsHostActions: AnyObject, CloudMachinesSettingsActions {
     /// external editor. The package's inline editor still works;
     /// this is the escape hatch for users who prefer their own
     /// editor.
+    func quietCodexStatus() async -> QuietCodexStatus
+    func openQuietCodexBuilds()
+
     func openConfigInExternalEditor()
 
     /// Reads the existing config-backed automation rules for Settings status.
@@ -451,7 +454,18 @@ public struct RightSidebarTabSettingsItem: Identifiable, Equatable, Sendable {
     }
 }
 
+public struct QuietCodexStatus: Sendable {
+    public let bundledVersion: String?
+    public let stockVersion: String?
+    public let compatible: Bool
+    public init(bundledVersion: String?, stockVersion: String?, compatible: Bool) {
+        self.bundledVersion = bundledVersion; self.stockVersion = stockVersion; self.compatible = compatible
+    }
+}
+
 public extension SettingsHostActions {
+    func quietCodexStatus() async -> QuietCodexStatus { .init(bundledVersion: nil, stockVersion: nil, compatible: false) }
+    func openQuietCodexBuilds() {}
     /// Returns the registry-backed agent choices shown by notification sound settings.
     func notificationSoundAgentOptions() -> [NotificationSoundAgentOption] { [] }
 

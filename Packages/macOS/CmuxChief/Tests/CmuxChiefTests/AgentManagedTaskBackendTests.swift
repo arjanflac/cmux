@@ -11,6 +11,55 @@ struct AgentManagedTaskBackendTests {
                          presentation: .background)
     }
 
+    @Test func boundSessionsObservePhoneActivityWithoutLoadingOrStartingWork() async throws {
+        let session = "01a176fc-d044-7e62-92bb-de6c5c50c0d1"
+        let transport = TaskProtocolFixture()
+        let backend = AgentManagedTaskBackend(connection: transport)
+        let stream = await backend.sessionActivityChanges()
+        var iterator = stream.makeAsyncIterator()
+        await backend.observeSession(session)
+        #expect(await iterator.next() == .init(sessionID: session, phase: .idle))
+        await transport.status(session: session, type: "active")
+        #expect(await iterator.next() == .init(sessionID: session, phase: .working))
+        await transport.status(session: session, type: "active", flags: ["waitingOnApproval"])
+        #expect(await iterator.next() == .init(sessionID: session, phase: .attention))
+        await transport.status(session: session, type: "idle")
+        #expect(await iterator.next() == .init(sessionID: session, phase: .idle))
+        await backend.observeSession(session)
+        await backend.observeSession("not-an-identity")
+        #expect(await transport.methods == ["initialize", "thread/read"])
+        await transport.loseConnection()
+        #expect(await iterator.next() == .init(sessionID: session, phase: .unknown))
+    }
+
+    @Test(.timeLimit(.minutes(1))) func aFailedSnapshotCannotOverwriteANewerAuthoritativeNotification() async throws {
+        let session = "01a176fc-d044-7e62-92bb-de6c5c50c0d1"
+        let transport = TaskProtocolFixture(holdRead: true)
+        let backend = AgentManagedTaskBackend(connection: transport)
+        var iterator = await backend.sessionActivityChanges().makeAsyncIterator()
+        let read = Task { await backend.observeSession(session) }
+        await transport.waitForRead()
+        await transport.status(session: session, type: "active")
+        #expect(await iterator.next() == .init(sessionID: session, phase: .working))
+        await transport.failRead()
+        await read.value
+        #expect(await backend.sessionActivitySnapshot(session)?.phase == .working)
+        await transport.status(session: session, type: "notLoaded")
+        #expect(await iterator.next() == .init(sessionID: session, phase: .idle))
+    }
+
+    @Test(.timeLimit(.minutes(1))) func initialConnectionFailureRetriesOnlyMetadata() async throws {
+        let session = "01a176fc-d044-7e62-92bb-de6c5c50c0d1"
+        let transport = TaskProtocolFixture(connectFailures: 1)
+        let backend = AgentManagedTaskBackend(connection: transport)
+        var iterator = await backend.sessionActivityChanges().makeAsyncIterator()
+        await backend.observeSession(session)
+        #expect(await iterator.next() == .init(sessionID: session, phase: .unknown))
+        #expect(await iterator.next() == .init(sessionID: session, phase: .idle))
+        #expect(await transport.connectCount == 2)
+        #expect(await transport.methods == ["initialize", "thread/read"])
+    }
+
     @Test func completionBeforeTurnAcknowledgmentPreservesIdentityAndResult() async throws {
         let transport = TaskProtocolFixture()
         let backend = AgentManagedTaskBackend(connection: transport)
@@ -136,18 +185,49 @@ private actor TaskProtocolFixture: AgentCodexTransport {
     nonisolated let messages: AsyncThrowingStream<ChiefJSON, any Error>
     private let sink: AsyncThrowingStream<ChiefJSON, any Error>.Continuation
     private let failAcceptance: Bool
+    private let holdRead: Bool
+    private var connectFailures: Int
+    private var readWaiters: [CheckedContinuation<Void, Never>] = []
+    private var pendingRead: CheckedContinuation<ChiefJSON, any Error>?
+    private(set) var connectCount = 0
+    private var connected = false
     var methods: [String] = []
 
-    init(failAcceptance: Bool = false) {
+    init(failAcceptance: Bool = false, holdRead: Bool = false, connectFailures: Int = 0) {
         let pair = AsyncThrowingStream.makeStream(of: ChiefJSON.self)
         messages = pair.stream; sink = pair.continuation
         self.failAcceptance = failAcceptance
+        self.holdRead = holdRead; self.connectFailures = connectFailures
     }
-    func connect() {}
-    func close() { sink.finish() }
+    func connect() throws {
+        connectCount += 1
+        if connectFailures > 0 { connectFailures -= 1; throw URLError(.cannotConnectToHost) }
+        connected = true
+    }
+    func close() { if connected { sink.finish() } }
+    func waitForRead() async {
+        if pendingRead != nil { return }
+        await withCheckedContinuation { readWaiters.append($0) }
+    }
+    func failRead() {
+        pendingRead?.resume(throwing: URLError(.timedOut)); pendingRead = nil
+    }
     func notify(_ method: String, _ params: ChiefJSON) {}
-    func request(_ method: String, _ params: ChiefJSON) throws -> ChiefJSON {
+    func status(session: String, type: String, flags: [String] = []) {
+        sink.yield(.object(["method": .string("thread/status/changed"), "params": .object([
+            "threadId": .string(session), "status": .object(["type": .string(type), "activeFlags": .array(flags.map(ChiefJSON.string))])])]))
+    }
+    func loseConnection() { sink.finish(throwing: URLError(.networkConnectionLost)) }
+    func request(_ method: String, _ params: ChiefJSON) async throws -> ChiefJSON {
         methods.append(method)
+        if method == "thread/read" {
+            if holdRead {
+                return try await withCheckedThrowingContinuation { pendingRead = $0
+                    for waiter in readWaiters { waiter.resume() }; readWaiters.removeAll()
+                }
+            }
+            return .object(["thread": .object(["status": .object(["type": .string("idle")])])])
+        }
         if method == "thread/start" { return .object(["thread": .object(["id": .string("fixture-session")])]) }
         if method == "turn/start" {
             if failAcceptance { throw URLError(.networkConnectionLost) }

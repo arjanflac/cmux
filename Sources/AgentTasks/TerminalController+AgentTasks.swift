@@ -25,13 +25,35 @@ extension TerminalController {
                 if let parent = params["parent_task_id"] as? String, UUID(uuidString: parent) == nil {
                     throw CocoaError(.validationMissingMandatoryProperty)
                 }
+                let stableID = await MainActor.run { AppDelegate.shared?.workspaceFor(tabId: workspaceID)?.stableId }
                 let task = AgentTaskRequest(provider: provider, prompt: prompt, workspaceID: workspaceID,
                     workingDirectory: URL(fileURLWithPath: cwd), model: params["model"] as? String,
                     effort: params["effort"] as? String,
                     presentation: (params["background"] as? Bool) == true ? .background : .terminal,
-                    parentTaskID: (params["parent_task_id"] as? String).flatMap(UUID.init(uuidString:)))
+                    parentTaskID: (params["parent_task_id"] as? String).flatMap(UUID.init(uuidString:)), workspaceStableID: stableID)
                 let record = try await runtime.coordinator.start(task)
                 result = .ok(try await taskPayload(record))
+            case "agent.task.attach":
+                guard let id = (params["task_id"] as? String).flatMap(UUID.init(uuidString:)),
+                      let record = try await runtime.coordinator.record(id) else { throw CocoaError(.fileNoSuchFile) }
+                if let raw = params["workspace_id"], (raw as? String).flatMap(UUID.init(uuidString:)) == nil {
+                    throw CocoaError(.validationMissingMandatoryProperty)
+                }
+                let resolved = await runtime.workspaceID(for: record)
+                guard let workspace = (params["workspace_id"] as? String).flatMap(UUID.init(uuidString:)) ?? resolved else { throw CocoaError(.fileNoSuchFile) }
+                let stableID = await MainActor.run { AppDelegate.shared?.workspaceFor(tabId: workspace)?.stableId }
+                let alreadyAttached = try await MainActor.run {
+                    guard let target = AppDelegate.shared?.workspaceFor(tabId: workspace), !target.isRemoteWorkspace else {
+                        throw CocoaError(.fileNoSuchFile)
+                    }
+                    guard let surface = record.surfaceID, target.terminalPanel(for: surface) != nil,
+                          target.surfaceIdFromPanelId(surface) != nil else { return false }
+                    return target.surfaceResumeBindingsByPanelId[surface]?.checkpointId == record.sessionID
+                }
+                let attached: AgentTaskRecord
+                if alreadyAttached { attached = record }
+                else { attached = try await runtime.coordinator.attach(id, workspaceID: workspace, workspaceStableID: stableID) }
+                result = .ok(try await taskPayload(attached))
             case "agent.task.list":
                 let records = await runtime.coordinator.records.values.sorted { $0.createdAt > $1.createdAt }
                 var rows: [[String: Any]] = []
@@ -65,7 +87,7 @@ extension TerminalController {
         return Self.v2Encoder.response(id: request.id, Self.controlCallResult(fromLegacy: result))
     }
 
-    private func agentTaskRuntimeForControl() -> NativeAgentTaskRuntime {
+    func agentTaskRuntimeForControl() -> NativeAgentTaskRuntime {
         if let agentTaskRuntime { return agentTaskRuntime }
         let runtime = NativeAgentTaskRuntime()
         agentTaskRuntime = runtime

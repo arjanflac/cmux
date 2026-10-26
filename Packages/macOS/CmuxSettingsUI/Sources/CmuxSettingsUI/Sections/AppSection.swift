@@ -636,13 +636,14 @@ public struct AppSection: View {
             SettingsCardRow(
                 configurationReview: .json("app.reorderOnNotification"),
                 String(localized: "settings.app.reorderOnNotification", defaultValue: "Reorder on Notification"),
-                subtitle: String(localized: "settings.app.reorderOnNotification.modeSubtitle", defaultValue: "Move workspaces to the top when they receive a notification. Agent Activity also moves them when you send a prompt or an agent finishes a turn, needs input, or fails, but never while you point at the sidebar. Off keeps shortcut positions stable."),
+                subtitle: String(localized: "settings.app.reorderOnNotification.modeSubtitle", defaultValue: "Notifications and Agent Activity move recently active workspaces up. Working First keeps working workspaces above idle ones, preserving pinned and selected rows. Ordering waits while you point at the sidebar."),
                 controlWidth: Self.columnWidth
             ) {
                 Picker("", selection: Binding(get: { reorder.current }, set: { reorder.set($0) })) {
                     Text(String(localized: "settings.app.reorderOnNotification.mode.off", defaultValue: "Off")).tag(WorkspaceAutoReorderMode.off)
                     Text(String(localized: "settings.app.reorderOnNotification.mode.notifications", defaultValue: "Notifications")).tag(WorkspaceAutoReorderMode.notifications)
                     Text(String(localized: "settings.app.reorderOnNotification.mode.agentActivity", defaultValue: "Agent Activity")).tag(WorkspaceAutoReorderMode.agentActivity)
+                    Text(String(localized: "settings.app.reorderOnNotification.mode.workingFirst", defaultValue: "Working First")).tag(WorkspaceAutoReorderMode.workingFirst)
                 }
                 .labelsHidden()
                 .pickerStyle(.menu)

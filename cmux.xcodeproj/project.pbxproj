@@ -2795,6 +2795,7 @@
 		2A292E6305A503C02973DB82 /* MuseVaultRegistrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA4CD7C689E9A08DB5112238 /* MuseVaultRegistrationTests.swift */; };
 		E05E36509344691CA085F0CC /* NarrowWindowSidePanelFitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D0C6C5413708B2C95D6C1CC3 /* NarrowWindowSidePanelFitTests.swift */; };
 		5111780F5609BAEDEF3265C0 /* NativeAgentTaskHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07345A6458DA79EA13AF87FF /* NativeAgentTaskHost.swift */; };
+		53FE7880DC8F7953C9C78A73 /* NativeAgentTaskRestoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8E482EF725EBDF06DC294D1 /* NativeAgentTaskRestoreTests.swift */; };
 		4C1715CE18B48D6AF66F1211 /* NativeAgentTaskRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC7F80DF9404B4DB5888C747 /* NativeAgentTaskRuntime.swift */; };
 		596100000000000000000003 /* NativeNotificationDeliveryHooks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 596100000000000000000004 /* NativeNotificationDeliveryHooks.swift */; };
 		596100000000000000000001 /* NativeNotificationFallbackCommandTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 596100000000000000000002 /* NativeNotificationFallbackCommandTests.swift */; };
@@ -7467,6 +7468,7 @@
 		FA4CD7C689E9A08DB5112238 /* MuseVaultRegistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MuseVaultRegistrationTests.swift"; sourceTree = "<group>"; };
 		D0C6C5413708B2C95D6C1CC3 /* NarrowWindowSidePanelFitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NarrowWindowSidePanelFitTests.swift"; sourceTree = "<group>"; };
 		07345A6458DA79EA13AF87FF /* NativeAgentTaskHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTasks/NativeAgentTaskHost.swift; sourceTree = "<group>"; };
+		A8E482EF725EBDF06DC294D1 /* NativeAgentTaskRestoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "NativeAgentTaskRestoreTests.swift"; sourceTree = "<group>"; };
 		DC7F80DF9404B4DB5888C747 /* NativeAgentTaskRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTasks/NativeAgentTaskRuntime.swift; sourceTree = "<group>"; };
 		596100000000000000000004 /* NativeNotificationDeliveryHooks.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNotificationDeliveryHooks.swift; sourceTree = "<group>"; };
 		596100000000000000000002 /* NativeNotificationFallbackCommandTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeNotificationFallbackCommandTests.swift; sourceTree = "<group>"; };
@@ -14284,6 +14286,7 @@
 				E4287F92FA9BEFC300BBCD4F /* ClaudeDroppedLaunchCaptureAccountTests.swift */,
 				FC3A7A2296352040E3EF9441 /* WorkspaceProjectIconTests.swift */,
 				C6E7D9A567344F9933D75859 /* SidebarDividerTrackingTests.swift */,
+				A8E482EF725EBDF06DC294D1 /* NativeAgentTaskRestoreTests.swift */,
 			);
 			path = cmuxTests;
 			sourceTree = "<group>";
@@ -19132,6 +19135,7 @@
 				13AB1A2E5DA6AD02DCAE971D /* MockBridgeInputCapture.swift in Sources */,
 				2A292E6305A503C02973DB82 /* MuseVaultRegistrationTests.swift in Sources */,
 				E05E36509344691CA085F0CC /* NarrowWindowSidePanelFitTests.swift in Sources */,
+				53FE7880DC8F7953C9C78A73 /* NativeAgentTaskRestoreTests.swift in Sources */,
 				596100000000000000000001 /* NativeNotificationFallbackCommandTests.swift in Sources */,
 				5982D1310AE6439692D7E945 /* NewCloudWorkspaceShortcutTests.swift in Sources */,
 				001BEAAF850238E93D30046A /* NewCloudWorkspaceShortcutWindowFixture.swift in Sources */,

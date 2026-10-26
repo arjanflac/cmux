@@ -169,6 +169,18 @@ jobs:
           QUIET_REPOSITORY: ${{ github.repository }}
         run: |
           [[ "$QUIET_RUN" =~ ^[0-9]+$ ]]
+          # Native and Rust builds may run concurrently. Wait only for this
+          # explicit frontend run, without dispatching or replaying anything.
+          for attempt in $(seq 1 120); do
+            status=$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json status --jq .status)
+            if [[ "$status" == completed ]]; then
+              conclusion=$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json conclusion --jq .conclusion)
+              [[ "$conclusion" == success ]] || { echo "::error::Quiet frontend run $QUIET_RUN finished: $conclusion"; exit 1; }
+              break
+            fi
+            [[ "$attempt" != 120 ]] || { echo "::error::Quiet frontend did not finish within 60 minutes"; exit 1; }
+            sleep 30
+          done
           gh run download "$QUIET_RUN" --repo "$QUIET_REPOSITORY" \
             --name "quiet-codex-ARM64-$QUIET_RUN" --dir "$RUNNER_TEMP/cmux-quiet-frontend"
       - name: Package candidate without official auto-updates

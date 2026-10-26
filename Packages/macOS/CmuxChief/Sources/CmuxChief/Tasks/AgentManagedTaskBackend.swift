@@ -1,6 +1,14 @@
 import Foundation
 import CmuxHomeCore
 
+/// Authoritative status of an explicitly bound cmux-owned Codex chat.
+public struct AgentSessionActivity: Sendable, Equatable {
+    public enum Phase: String, Sendable { case working, attention, idle, unknown }
+    public let sessionID: String
+    public let phase: Phase
+    public init(sessionID: String, phase: Phase) { self.sessionID = sessionID; self.phase = phase }
+}
+
 /// Executes explicit Codex tasks on the existing daemon and Claude tasks through Claude Code.
 public actor AgentManagedTaskBackend: AgentTaskBackend {
     private struct Running {
@@ -24,6 +32,13 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
     private var reader: Task<Void, Never>?
     private var connectionID = UUID()
     private var running: [UUID: Running] = [:]
+    private var observationRecovery: Task<Void, Never>?
+    private var recoveryGeneration = UUID()
+    private var desiredObservedSessions: Set<String> = []
+    private var observedSessions: Set<String> = []
+    private var observationVersions: [String: Int] = [:]
+    private var activitySinks: [UUID: AsyncStream<AgentSessionActivity>.Continuation] = [:]
+    private var lastActivities: [String: AgentSessionActivity.Phase] = [:]
     private var bySession: [String: UUID] = [:]
     private var cancelled: Set<UUID> = []
     private var uncertain: Set<UUID> = []
@@ -47,6 +62,59 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
         cancelTerminal = { _ in throw CocoaError(.featureUnsupported) }
         connectionFactory = { _ in connection }
         self.claudeFactory = claudeFactory
+    }
+
+    /// One event stream on the existing transport; never loads/resumes a thread or starts work.
+    public func sessionActivityChanges() -> AsyncStream<AgentSessionActivity> {
+        let token = UUID()
+        let pair = AsyncStream.makeStream(of: AgentSessionActivity.self, bufferingPolicy: .bufferingNewest(256))
+        activitySinks[token] = pair.continuation
+        for (session, phase) in lastActivities { pair.continuation.yield(.init(sessionID: session, phase: phase)) }
+        pair.continuation.onTermination = { [weak self] _ in Task { await self?.removeActivitySink(token) } }
+        return pair.stream
+    }
+
+    public func sessionActivitySnapshot(_ session: String) -> AgentSessionActivity? {
+        lastActivities[session].map { AgentSessionActivity(sessionID: session, phase: $0) }
+    }
+
+    private func removeActivitySink(_ token: UUID) { activitySinks.removeValue(forKey: token) }
+
+    /// Reads only an exact saved session's metadata. Concurrent notifications win over the snapshot.
+    public func observeSession(_ session: String) async {
+        guard UUID(uuidString: session) != nil else { return }
+        desiredObservedSessions.insert(session)
+        guard observedSessions.insert(session).inserted else { return }
+        var version = observationVersions[session, default: 0]
+        var readConnection: UUID?
+        do {
+            let server = try await server()
+            readConnection = connectionID
+            version = observationVersions[session, default: 0]
+            let result = try await server.request("thread/read", .object(["threadId": .string(session), "includeTurns": .bool(false)]))
+            guard readConnection == connectionID, observationVersions[session, default: 0] == version else { return }
+            publishActivity(session, status: result["thread"]?["status"])
+        } catch {
+            guard observationVersions[session, default: 0] == version,
+                  readConnection == nil || readConnection == connectionID else { return }
+            observedSessions.remove(session)
+            publishActivity(session, status: nil)
+            if readConnection == nil, observationRecovery == nil { scheduleObservationRecovery() }
+        }
+    }
+
+    private func publishActivity(_ session: String, status: ChiefJSON?) {
+        let phase: AgentSessionActivity.Phase
+        switch status?["type"]?.string {
+        case "active":
+            let flags = status?["activeFlags"]?.array ?? []
+            phase = flags.contains { ["waitingOnApproval", "waitingOnUserInput"].contains($0.string ?? "") } ? .attention : .working
+        case "idle", "notLoaded": phase = .idle
+        default: phase = .unknown
+        }
+        guard lastActivities[session] != phase else { return }
+        lastActivities[session] = phase
+        for sink in activitySinks.values { sink.yield(.init(sessionID: session, phase: phase)) }
     }
 
     /// Accepts one task without retrying its prompt or changing the normal launcher.
@@ -199,6 +267,10 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
     private func receive(_ value: ChiefJSON) {
         guard let method = value["method"]?.string, let params = value["params"] else { return }
         let session = params["threadId"]?.string ?? params["thread"]?["id"]?.string
+        if let session, method == "thread/status/changed", observedSessions.contains(session) {
+            observationVersions[session, default: 0] += 1
+            publishActivity(session, status: params["status"])
+        }
         guard let session, let id = bySession[session], running[id] != nil else { return }
         switch method {
         case "turn/started":
@@ -266,9 +338,34 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
         guard token == connectionID else { return }
         connectionID = UUID()
         startup = nil; connection = nil
+        let observed = observedSessions
+        observedSessions.removeAll()
+        for session in observed { observationVersions[session, default: 0] += 1; publishActivity(session, status: nil) }
+        scheduleObservationRecovery()
         for (id, task) in running where task.request.provider == .codex {
             uncertain.insert(id)
             emit(.disconnected(reason), id: id); end(id)
+        }
+    }
+
+    /// A bounded transport reconnect, never a prompt/turn retry or a daemon restart.
+    private func scheduleObservationRecovery() {
+        guard !desiredObservedSessions.isEmpty else { return }
+        observationRecovery?.cancel()
+        let generation = UUID(); recoveryGeneration = generation
+        observationRecovery = Task { [weak self] in await self?.recoverObservations(generation) }
+    }
+
+    private func recoverObservations(_ generation: UUID) async {
+        defer { if recoveryGeneration == generation { observationRecovery = nil } }
+        for delay in [1, 3, 10] {
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard recoveryGeneration == generation else { return }
+            do {
+                _ = try await server()
+                for session in desiredObservedSessions { await observeSession(session) }
+                return
+            } catch { /* Keep status unknown; no work is replayed. */ }
         }
     }
 

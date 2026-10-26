@@ -865,7 +865,7 @@ enum CmuxEmbeddedConfigSchema {
             },
             {
               "type": "string",
-              "enum": ["off", "notifications", "agentActivity"]
+              "enum": ["off", "notifications", "agentActivity", "workingFirst"]
             }
           ],
           "default": true,

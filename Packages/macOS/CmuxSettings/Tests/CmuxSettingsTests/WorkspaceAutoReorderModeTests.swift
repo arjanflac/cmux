@@ -50,4 +50,10 @@ struct WorkspaceAutoReorderModeTests {
         let client = UserDefaultsSettingsClient(defaults: defaults)
         #expect(client.value(for: SettingCatalog().app.reorderOnNotification) == .notifications)
     }
+    @Test func workingFirstRoundTripsWithoutChangingLegacyModes() {
+        #expect(WorkspaceAutoReorderMode.decodeFromJSON("workingFirst") == .workingFirst)
+        #expect(WorkspaceAutoReorderMode.workingFirst.encodeForJSON() as? String == "workingFirst")
+        #expect(WorkspaceAutoReorderMode.decodeFromUserDefaults(true) == .notifications)
+    }
+
 }

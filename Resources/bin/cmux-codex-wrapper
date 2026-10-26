@@ -702,6 +702,61 @@ cmux_codex_read_computer_use_args() {
     return 0
 }
 
+cmux_codex_export_launch_capture() {
+    # Export launch identity so the hook subprocesses and cmux's agent-pid /
+    # ended-detection can bind this Codex to its surface and pid. Because we exec
+    # codex below, $$ becomes the real codex pid. The invocation token is owned by
+    # this wrapper generation. A wrapper launched from another Codex keeps the
+    # inherited token as an explicit parent token, then gets a fresh child token;
+    # a direct `codex exec` that bypasses this wrapper retains the outer token and
+    # is distinguished by its live hook-process identity.
+    CMUX_CODEX_PARENT_INVOCATION_ID="${CMUX_CODEX_INVOCATION_ID:-}"
+    # A hook callback records its own immediate Codex parent. Never let a wrapper
+    # launched from inside a callback inherit that callback's observation as if it
+    # were the new process's identity.
+    unset CMUX_CODEX_HOOK_PID
+    if command -v uuidgen >/dev/null 2>&1; then
+        CMUX_CODEX_INVOCATION_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+    else
+        CMUX_CODEX_INVOCATION_ID="cmux-codex-$$-$(date +%s)"
+    fi
+    export CMUX_CODEX_INVOCATION_ID
+    if [[ -n "$CMUX_CODEX_PARENT_INVOCATION_ID" ]]; then
+        export CMUX_CODEX_PARENT_INVOCATION_ID
+    else
+        unset CMUX_CODEX_PARENT_INVOCATION_ID
+    fi
+    export CMUX_CODEX_PID=$$
+    if codex_launch_is_headless "$@"; then
+        export CMUX_CODEX_HEADLESS=1
+    else
+        export CMUX_CODEX_HEADLESS=0
+    fi
+    export CMUX_CODEX_HOOK_CMUX_BIN="$(resolve_hook_cmux_bin)"
+    export CMUX_AGENT_LAUNCH_KIND="codex"
+    export CMUX_AGENT_LAUNCH_EXECUTABLE="$REAL_CODEX"
+    export CMUX_AGENT_LAUNCH_CWD="$PWD"
+    unset CMUX_AGENT_LAUNCH_SUBROUTER_CODEX_RESUME_COMMAND
+    if codex_launch_has_subrouter_provider "$@"; then
+        case "${SUBROUTER_CODEX_RESUME_COMMAND:-}" in
+            "sr codex resume"|"subrouter codex resume"|"cx codex resume")
+                export CMUX_AGENT_LAUNCH_SUBROUTER_CODEX_RESUME_COMMAND="$SUBROUTER_CODEX_RESUME_COMMAND"
+                ;;
+        esac
+    fi
+    {
+        cmux_codex_argv_b64="$(
+            {
+                printf '%s\0' "$REAL_CODEX"
+                if (( $# > 0 )); then
+                    printf '%s\0' "$@"
+                fi
+            } | base64 | tr -d '\n'
+        )"
+        [[ -n "$cmux_codex_argv_b64" ]] && export CMUX_AGENT_LAUNCH_ARGV_B64="$cmux_codex_argv_b64"
+    }
+}
+
 # Quiet presentation is a separate, explicit cmux setting. Check compatibility
 # before exec; the derived process never falls back or replays accepted input.
 # This is independent of hook injection so stock shared-daemon sessions stay intact.
@@ -709,6 +764,7 @@ if [[ "$IN_CMUX" == "1" && "${CMUX_CODEX_QUIET_FRONTEND:-0}" == "1" && -t 0 && -
     quiet_frontend="$(cd "$(dirname "$0")" && pwd)/cmux-codex-quiet"
     if [[ -x "$quiet_frontend" && "$("$REAL_CODEX" --version 2>/dev/null)" == "codex-cli 0.164.0" ]] &&
        CMUX_QUIET_STOCK_CODEX="$REAL_CODEX" "$quiet_frontend" --cmux-check "$@" >/dev/null 2>&1; then
+        cmux_codex_export_launch_capture "$@"
         export CMUX_QUIET_STOCK_CODEX="$REAL_CODEX"
         exec "$quiet_frontend" "$@"
         exit 126
@@ -750,58 +806,7 @@ if cmux_codex_computer_use_enabled_for_invocation "$@"; then
     cmux_codex_native_computer_use_args=(--disable computer_use)
 fi
 
-# Export launch identity so the hook subprocesses and cmux's agent-pid /
-# ended-detection can bind this Codex to its surface and pid. Because we exec
-# codex below, $$ becomes the real codex pid. The invocation token is owned by
-# this wrapper generation. A wrapper launched from another Codex keeps the
-# inherited token as an explicit parent token, then gets a fresh child token;
-# a direct `codex exec` that bypasses this wrapper retains the outer token and
-# is distinguished by its live hook-process identity.
-CMUX_CODEX_PARENT_INVOCATION_ID="${CMUX_CODEX_INVOCATION_ID:-}"
-# A hook callback records its own immediate Codex parent. Never let a wrapper
-# launched from inside a callback inherit that callback's observation as if it
-# were the new process's identity.
-unset CMUX_CODEX_HOOK_PID
-if command -v uuidgen >/dev/null 2>&1; then
-    CMUX_CODEX_INVOCATION_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
-else
-    CMUX_CODEX_INVOCATION_ID="cmux-codex-$$-$(date +%s)"
-fi
-export CMUX_CODEX_INVOCATION_ID
-if [[ -n "$CMUX_CODEX_PARENT_INVOCATION_ID" ]]; then
-    export CMUX_CODEX_PARENT_INVOCATION_ID
-else
-    unset CMUX_CODEX_PARENT_INVOCATION_ID
-fi
-export CMUX_CODEX_PID=$$
-if codex_launch_is_headless "$@"; then
-    export CMUX_CODEX_HEADLESS=1
-else
-    export CMUX_CODEX_HEADLESS=0
-fi
-export CMUX_CODEX_HOOK_CMUX_BIN="$(resolve_hook_cmux_bin)"
-export CMUX_AGENT_LAUNCH_KIND="codex"
-export CMUX_AGENT_LAUNCH_EXECUTABLE="$REAL_CODEX"
-export CMUX_AGENT_LAUNCH_CWD="$PWD"
-unset CMUX_AGENT_LAUNCH_SUBROUTER_CODEX_RESUME_COMMAND
-if codex_launch_has_subrouter_provider "$@"; then
-    case "${SUBROUTER_CODEX_RESUME_COMMAND:-}" in
-        "sr codex resume"|"subrouter codex resume"|"cx codex resume")
-            export CMUX_AGENT_LAUNCH_SUBROUTER_CODEX_RESUME_COMMAND="$SUBROUTER_CODEX_RESUME_COMMAND"
-            ;;
-    esac
-fi
-{
-    cmux_codex_argv_b64="$(
-        {
-            printf '%s\0' "$REAL_CODEX"
-            if (( $# > 0 )); then
-                printf '%s\0' "$@"
-            fi
-        } | base64 | tr -d '\n'
-    )"
-    [[ -n "$cmux_codex_argv_b64" ]] && export CMUX_AGENT_LAUNCH_ARGV_B64="$cmux_codex_argv_b64"
-}
+cmux_codex_export_launch_capture "$@"
 
 cmux_codex_start_fork_session_watch
 # The monitor received a private copy of these launch markers in its argv.

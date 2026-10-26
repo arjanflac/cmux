@@ -144,12 +144,13 @@ struct SidebarWorkspaceSnapshotFactory {
                 : [],
             compacts: settings.compactsAgentStatus
         )
-        let activeCodingAgentCount = SidebarAgentActivitySummary.visibleActiveCodingAgentCount(
+        let activeCodingAgentCount = (showsAgentActivity ? workspace.unboundWorkingCodexCount : 0) + SidebarAgentActivitySummary.visibleActiveCodingAgentCount(
             showsAgentActivity: showsAgentActivity,
             statesByPanelId: workspace.agentLifecycleStatesByPanelId,
             workingProgramPanelIds: Set(workspace.programStatusStoresByPanelId.compactMap { panelId, store in
                 store.records.contains { $0.state == .working } ? panelId : nil
-            })
+            }),
+            authoritativeActivityByPanelID: workspace.observedCodexActivityByPanelID
         )
         let compactStatusGlyph = settings.compactsAgentStatus
             ? SidebarCompactStatusGlyph.resolve(compactStatusInput(

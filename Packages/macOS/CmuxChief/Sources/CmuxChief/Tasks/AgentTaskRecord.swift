@@ -14,6 +14,8 @@ public struct AgentTaskRecord: Codable, Equatable, Sendable {
     public var provider: AgentTaskRequest.Provider
     /// Requested existing workspace.
     public var workspaceID: UUID
+    /// Persisted workspace identity, independent of a runtime window/session.
+    public var workspaceStableID: UUID?
     /// Provider and terminal directory.
     public var workingDirectory: URL
     /// Whether this task requested a terminal.
@@ -43,6 +45,7 @@ public struct AgentTaskRecord: Codable, Equatable, Sendable {
         self.id = id
         provider = request.provider
         workspaceID = request.workspaceID
+        workspaceStableID = request.workspaceStableID
         workingDirectory = request.workingDirectory
         presentation = request.presentation
         parentTaskID = request.parentTaskID

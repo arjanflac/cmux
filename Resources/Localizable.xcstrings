@@ -574223,115 +574223,115 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "ينقل مساحات العمل إلى الأعلى عندما تتلقى إشعارًا. مع نشاط الوكيل، ينقلها أيضًا عندما ترسل مطالبة أو ينهي وكيل دورة أو يحتاج إلى إدخال أو يفشل، لكن ليس أبدًا أثناء وجود المؤشر فوق الشريط الجانبي. الإيقاف يحافظ على ثبات مواضع الاختصارات."
+            "value": "ترفع الإشعارات ونشاط الوكيل مساحات العمل النشطة حديثاً. يضع وضع الجاري عملها أولاً المساحات العاملة فوق الخاملة مع الحفاظ على الصفوف المثبتة والمحددة. ينتظر الترتيب أثناء توجيه المؤشر إلى الشريط الجانبي."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pomjera radne prostore na vrh kada prime obavještenje. Aktivnost agenata ih pomjera i kada pošaljete upit ili agent završi potez, treba unos ili ne uspije, ali nikad dok je pokazivač iznad bočne trake. Isključeno čuva stabilne pozicije prečica."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flytter arbejdsområder til toppen, når de modtager en notifikation. Agentaktivitet flytter dem også, når du sender en prompt eller en agent afslutter en tur, har brug for input eller fejler, men aldrig mens markøren er over sidepanelet. Fra holder genvejspositionerne stabile."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Verschiebt Workspaces nach oben, wenn sie eine Benachrichtigung erhalten. Mit Agentenaktivität auch dann, wenn Sie einen Prompt senden oder ein Agent einen Durchlauf beendet, eine Eingabe braucht oder fehlschlägt, aber nie, während der Zeiger über der Seitenleiste ist. Aus hält die Positionen der Tastenkürzel stabil."
+            "value": "Benachrichtigungen und Agentenaktivität verschieben kürzlich aktive Arbeitsbereiche nach oben. Aktive zuerst ordnet arbeitende vor ruhenden Bereichen an und behält angeheftete und ausgewählte Zeilen bei. Unter dem Mauszeiger wird nicht umgeordnet."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Move workspaces to the top when they receive a notification. Agent Activity also moves them when you send a prompt or an agent finishes a turn, needs input, or fails, but never while you point at the sidebar. Off keeps shortcut positions stable."
+            "value": "Notifications and Agent Activity move recently active workspaces up. Working First keeps working workspaces above idle ones, preserving pinned and selected rows. Ordering waits while you point at the sidebar."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mueve los espacios de trabajo arriba cuando reciben una notificación. Con Actividad de agentes, también cuando envías un prompt o un agente termina un turno, necesita una respuesta o falla, pero nunca mientras el puntero está sobre la barra lateral. Desactivado mantiene estables las posiciones de los atajos."
+            "value": "Notificaciones y Actividad del agente suben los espacios activos recientemente. Activos primero coloca los que trabajan antes que los inactivos, conservando las filas fijadas y seleccionadas. El orden espera mientras apunta a la barra lateral."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Place les espaces de travail en haut lorsqu’ils reçoivent une notification. Avec Activité des agents, aussi lorsque vous envoyez un prompt ou qu’un agent termine un tour, attend une saisie ou échoue, mais jamais pendant que le pointeur survole la barre latérale. Désactivé garde les positions des raccourcis stables."
+            "value": "Notifications et Activité de l’agent remontent les espaces récemment actifs. Actifs d’abord place ceux qui travaillent avant les inactifs, en préservant les lignes épinglées et sélectionnées. Le tri attend si vous pointez la barre latérale."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sposta gli spazi di lavoro in cima quando ricevono una notifica. Attività degli agenti li sposta anche quando invii un prompt o un agente termina un turno, attende un input o fallisce, ma mai mentre il puntatore è sulla barra laterale. Disattivato mantiene stabili le posizioni delle scorciatoie."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "通知を受け取ったワークスペースを先頭に移動します。「エージェントのアクティビティ」では、プロンプトを送信したときや、エージェントがターンを終えたとき、入力を待っているとき、失敗したときにも移動しますが、ポインタがサイドバー上にある間は移動しません。「オフ」ではショートカットの位置が変わりません。"
+            "value": "通知とエージェントのアクティビティは最近の作業領域を上に移動します。「作業中を優先」は固定・選択された行を保ち、作業中の領域を待機中の領域より上に並べます。サイドバーにポインタがある間は並べ替えを待ちます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "알림을 받으면 워크스페이스를 맨 위로 옮깁니다. 에이전트 활동을 선택하면 프롬프트를 보내거나 에이전트가 턴을 마치거나 입력이 필요하거나 실패할 때도 옮기지만, 포인터가 사이드바 위에 있을 때는 옮기지 않습니다. 끔은 단축키 위치를 고정합니다."
+            "value": "알림과 에이전트 활동은 최근 활성 작업 공간을 위로 옮깁니다. 작업 중 우선은 고정 및 선택된 행을 유지하면서 작업 중인 공간을 유휴 공간보다 위에 놓습니다. 사이드바를 가리키는 동안에는 정렬을 기다립니다."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flytter arbeidsområder til toppen når de mottar et varsel. Agentaktivitet flytter dem også når du sender en ledetekst eller en agent fullfører en runde, trenger input eller feiler, men aldri mens pekeren er over sidefeltet. Av holder snarveisposisjonene stabile."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Przenosi obszary robocze na górę, gdy otrzymają powiadomienie. Aktywność agentów przenosi je także, gdy wyślesz prompt lub agent zakończy turę, potrzebuje danych lub zakończy się błędem, ale nigdy, gdy wskaźnik jest nad paskiem bocznym. Wyłączone zachowuje stałe pozycje skrótów."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Move os espaços de trabalho para o topo quando recebem uma notificação. Atividade dos agentes também os move quando você envia um prompt ou um agente termina um turno, precisa de uma resposta ou falha, mas nunca enquanto o ponteiro está sobre a barra lateral. Desativado mantém as posições dos atalhos estáveis."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Перемещает рабочие области наверх, когда они получают уведомление. «Активность агентов» также перемещает их, когда вы отправляете запрос или агент завершает ход, ждёт ввода или завершается с ошибкой, но никогда, пока указатель находится над боковой панелью. «Выкл.» сохраняет позиции сочетаний клавиш."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ย้ายเวิร์กสเปซขึ้นด้านบนเมื่อได้รับการแจ้งเตือน กิจกรรมของเอเจนต์จะย้ายเมื่อคุณส่งพรอมต์หรือเอเจนต์จบรอบ ต้องการข้อมูล หรือล้มเหลวด้วย แต่จะไม่ย้ายขณะที่ตัวชี้อยู่เหนือแถบด้านข้าง ปิดจะคงตำแหน่งของทางลัดไว้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bildirim aldıklarında çalışma alanlarını en üste taşır. Ajan etkinliği, bir istem gönderdiğinizde, bir ajan turunu bitirdiğinde, girdi beklediğinde veya başarısız olduğunda da taşır, ancak işaretçi kenar çubuğunun üzerindeyken asla taşımaz. Kapalı, kısayol konumlarını sabit tutar."
           }
         },
         "uk": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Переміщує робочі області вгору, коли вони отримують сповіщення. «Активність агентів» також переміщує їх, коли ви надсилаєте запит або агент завершує хід, чекає на введення або завершується з помилкою, але ніколи, поки вказівник над бічною панеллю. «Вимкнено» зберігає позиції скорочень."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "工作区收到通知时移到顶部。选择“代理活动”时，你发送提示词或代理完成一轮、需要输入或失败时也会移动，但指针停在侧边栏上时绝不移动。关闭可让快捷键位置保持不变。"
+            "value": "“通知”与“代理活动”会将最近活跃的工作区上移。“工作中优先”将工作中的工作区排在闲置工作区之前，保留固定及选中的行。指针位于侧边栏时会等待再排序。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "工作區收到通知時移到頂部。選擇「代理活動」時，你送出提示詞或代理完成一輪、需要輸入或失敗時也會移動，但指標停在側邊欄上時絕不移動。關閉可讓快捷鍵位置保持不變。"
+            "value": "「通知」與「代理程式活動」會將最近活躍的工作區上移。「工作中優先」將工作中的工作區排在閒置工作區之前，保留釘選及選取的列。指標位於側邊欄時會等待再排序。"
           }
         }
       }
@@ -671409,55 +671409,55 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Quiet Codex Frontend"
+            "value": "Hide Codex Tool Calls"
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ruhige Codex-Oberfläche"
+            "value": "Codex-Werkzeugaufrufe ausblenden"
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Interface Codex discrète"
+            "value": "Masquer les appels d’outils Codex"
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "واجهة Codex هادئة"
+            "value": "إخفاء استدعاءات أدوات Codex"
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Interfaz discreta de Codex"
+            "value": "Ocultar llamadas a herramientas de Codex"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "安靜的 Codex 介面"
+            "value": "隱藏 Codex 工具呼叫"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "安静的 Codex 界面"
+            "value": "隐藏 Codex 工具调用"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "조용한 Codex 인터페이스"
+            "value": "Codex 도구 호출 숨기기"
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "静かな Codex インターフェース"
+            "value": "Codex のツール呼び出しを非表示"
           }
         }
       }
@@ -671468,55 +671468,468 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "New terminals use the bundled quiet TUI when compatible. Other launches use stock Codex."
+            "value": "New terminals start quiet. Ctrl+T shows or hides tool details. Errors and approvals stay visible. Incompatible launches use stock Codex."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Neue Terminals verwenden die mitgelieferte ruhige TUI, wenn sie kompatibel ist. Andere Aufrufe verwenden das originale Codex."
+            "value": "Neue Terminals starten ruhig. Ctrl+T blendet Werkzeugdetails ein oder aus. Fehler und Genehmigungen bleiben sichtbar. Bei Inkompatibilität startet das originale Codex."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Les nouveaux terminaux utilisent l’interface discrète intégrée si elle est compatible. Les autres lancements utilisent Codex standard."
+            "value": "Les nouveaux terminaux démarrent en mode discret. Ctrl+T affiche ou masque les détails des outils. Erreurs et approbations restent visibles. Sinon, Codex standard est utilisé."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "تستخدم النوافذ الطرفية الجديدة الواجهة الهادئة المضمّنة عند توافقها. تستخدم عمليات التشغيل الأخرى Codex الأصلي."
+            "value": "تبدأ النوافذ الطرفية الجديدة بهدوء. يعرض Ctrl+T تفاصيل الأدوات أو يخفيها. تبقى الأخطاء والموافقات ظاهرة. عند عدم التوافق يُستخدم Codex الأصلي."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Los nuevos terminales usan la interfaz discreta incluida cuando es compatible. Los demás inicios usan Codex estándar."
+            "value": "Los terminales nuevos empiezan en modo discreto. Ctrl+T muestra u oculta los detalles de herramientas. Los errores y las aprobaciones siguen visibles. Si no es compatible, se usa Codex estándar."
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "新終端機會在相容時使用隨附的精簡文字介面。其他啟動方式使用原版 Codex。"
+            "value": "新終端機以安靜模式啟動。Ctrl+T 顯示或隱藏工具詳細資訊。錯誤與核准請求仍會顯示。不相容時使用原版 Codex。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "新终端在兼容时使用随附的精简文字界面。其他启动方式使用原版 Codex。"
+            "value": "新终端以安静模式启动。Ctrl+T 显示或隐藏工具详情。错误和审批请求仍会显示。不兼容时使用原版 Codex。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "새 터미널은 호환되는 경우 포함된 간결한 TUI를 사용합니다. 그 외 실행에는 기본 Codex를 사용합니다."
+            "value": "새 터미널은 조용한 모드로 시작합니다. Ctrl+T로 도구 세부 정보를 표시하거나 숨깁니다. 오류와 승인은 계속 표시됩니다. 호환되지 않으면 기본 Codex를 사용합니다."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "新しいターミナルでは互換性がある場合に同梱の簡潔な TUI を使用します。それ以外は標準の Codex を使用します。"
+            "value": "新しいターミナルは静かなモードで開始します。Ctrl+T でツールの詳細を表示・非表示にします。エラーと承認は表示されます。互換性がない場合は標準の Codex を使用します。"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.builds": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build / Update…"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إنشاء / تحديث…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erstellen / Aktualisieren…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compilar / Actualizar…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compiler / Mettre à jour…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビルド／更新…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드 / 업데이트…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "构建／更新…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建置／更新…"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.check": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check Compatibility"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التحقق من التوافق"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kompatibilität prüfen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobar compatibilidad"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifier la compatibilité"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互換性を確認"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호환성 확인"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查兼容性"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查相容性"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.fallback": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stock Codex will be used. The quiet frontend needs a compatible build and a running stock daemon."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سيُستخدم Codex الأصلي. تحتاج الواجهة الهادئة إلى إصدار متوافق وخدمة Codex الأصلية قيد التشغيل."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das originale Codex wird verwendet. Die ruhige Oberfläche benötigt einen kompatiblen Build und einen laufenden originalen Daemon."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usará Codex estándar. La interfaz discreta necesita una compilación compatible y el servicio estándar en ejecución."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex standard sera utilisé. L’interface discrète nécessite une version compatible et le service standard en cours d’exécution."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準の Codex を使用します。静かなインターフェースには互換ビルドと実行中の標準デーモンが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 Codex를 사용합니다. 조용한 인터페이스를 사용하려면 호환되는 빌드와 실행 중인 기본 데몬이 필요합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将使用原版 Codex。安静界面需要兼容版本及正在运行的原版后台服务。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將使用原版 Codex。安靜介面需要相容版本及執行中的原版背景服務。"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.maintenance": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex updates normally. A new version may need its quiet patch reviewed and rebuilt. Build / Update opens GitHub; it never replaces a running app or updates Codex."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يُحدّث Codex كالمعتاد. قد يحتاج الإصدار الجديد إلى مراجعة التعديل الهادئ وإعادة بنائه. يفتح إنشاء / تحديث GitHub دون استبدال التطبيق الجاري أو تحديث Codex."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex wird normal aktualisiert. Für neue Versionen muss der Ruhe-Patch gegebenenfalls geprüft und neu erstellt werden. Erstellen / Aktualisieren öffnet GitHub; laufende Apps werden nie ersetzt und Codex wird nicht aktualisiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex se actualiza normalmente. Una versión nueva puede necesitar que se revise y recompile el parche discreto. Compilar / Actualizar abre GitHub sin reemplazar la aplicación en ejecución ni actualizar Codex."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex se met à jour normalement. Une nouvelle version peut nécessiter la révision et la recompilation du correctif discret. Compiler / Mettre à jour ouvre GitHub sans remplacer l’application en cours ni mettre à jour Codex."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex は通常どおり更新されます。新バージョンでは静かなモードのパッチの確認と再ビルドが必要な場合があります。「ビルド／更新」は GitHub を開き、実行中のアプリの置換や Codex の更新は行いません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex는 정상적으로 업데이트됩니다. 새 버전에서는 조용한 모드 패치를 검토하고 다시 빌드해야 할 수 있습니다. 빌드 / 업데이트는 GitHub를 열며 실행 중인 앱을 교체하거나 Codex를 업데이트하지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 照常更新。新版本可能需要审查并重新构建安静模式补丁。“构建／更新”会打开 GitHub，不会替换运行中的 App 或更新 Codex。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 照常更新。新版本可能需要審查並重新建置安靜模式修補程式。「建置／更新」會開啟 GitHub，不會取代執行中的 App 或更新 Codex。"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatible. New Codex terminals can use quiet mode."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "متوافق. يمكن لنوافذ Codex الطرفية الجديدة استخدام الوضع الهادئ."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kompatibel. Neue Codex-Terminals können den ruhigen Modus verwenden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatible. Los terminales nuevos de Codex pueden usar el modo discreto."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatible. Les nouveaux terminaux Codex peuvent utiliser le mode discret."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互換性があります。新しい Codex ターミナルで静かなモードを使用できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호환됩니다. 새 Codex 터미널에서 조용한 모드를 사용할 수 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兼容。新的 Codex 终端可使用安静模式。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相容。新的 Codex 終端機可使用安靜模式。"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.versions": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bundled: %@ · Installed Codex: %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الإصدار المضمّن: %@ · Codex المثبّت: %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mitgeliefert: %@ · Installiertes Codex: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incluido: %@ · Codex instalado: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version intégrée : %@ · Codex installé : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同梱版：%@ · インストール済み Codex：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "포함된 버전: %@ · 설치된 Codex: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随附版本：%@ · 已安装 Codex：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隨附版本：%@ · 已安裝 Codex：%@"
+          }
+        }
+      }
+    },
+    "settings.app.reorderOnNotification.mode.workingFirst": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working First"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الجاري عملها أولاً"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktive zuerst"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activos primero"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actifs d’abord"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作業中を優先"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 중 우선"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作中优先"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作中優先"
           }
         }
       }

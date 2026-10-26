@@ -7,6 +7,7 @@ extension CMUXCLI {
                         [--model <id>] [--effort <level>] [--parent-task <id>]
                         [--background] [--prompt-file <path|->] [--wait] -- <task>
         cmux task read|wait|cancel <task-id>
+        cmux task attach <task-id> [--workspace <id|ref>]
         cmux task list
 
 
@@ -62,6 +63,13 @@ extension CMUXCLI {
             }
             guard let prompt, !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw CLIError(message: usage) }
             params["prompt"] = prompt
+        } else if command == "attach", args.count == 2 || args.count == 4 {
+            method = "agent.task.attach"
+            params["task_id"] = args[1]
+            if args.count == 4 {
+                guard args[2] == "--workspace" else { throw CLIError(message: usage) }
+                params["workspace_id"] = try resolveWorkspaceId(args[3], client: client, windowHandle: windowOverride)
+            }
         } else if command == "list" { method = "agent.task.list" }
         else if ["read", "wait", "cancel", "report"].contains(command), args.count >= 2 {
             method = command == "wait" ? "agent.task.read" : "agent.task." + command
