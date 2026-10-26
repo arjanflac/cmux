@@ -44,8 +44,7 @@ struct RestorableAgentProcessGenerationTests {
             "CMUX_AGENT_LAUNCH_KIND": "codex", "CMUX_AGENT_LAUNCH_EXECUTABLE": "/usr/local/bin/codex",
             "CMUX_WORKSPACE_ID": fixture.workspaceID.uuidString, "CMUX_SURFACE_ID": fixture.panelID.uuidString])
         let index = loadRunningFixture(fixture, processArguments: arguments, processIdentity: identity)
-        #expect(index.entry(workspaceId: fixture.workspaceID, panelId: fixture.panelID,
-            revalidateProcessEvidence: false)?.processLiveness == .running)
+        #expect(index.entry(workspaceId: fixture.workspaceID, panelId: fixture.panelID)?.processLiveness == .running)
         let process = CmuxTopProcessInfo(pid: fixture.processID, parentPID: 1, name: "cmux-codex-quiet", path: executable,
             ttyDevice: nil, cmuxWorkspaceID: fixture.workspaceID, cmuxSurfaceID: fixture.panelID,
             cmuxAttributionReason: "cmux-test", processGroupID: nil, terminalProcessGroupID: nil,
@@ -53,8 +52,7 @@ struct RestorableAgentProcessGenerationTests {
         let census = CmuxTopProcessSnapshot(processes: [process], sampledAt: Date(), includesProcessDetails: true)
         let cached = index.revalidatingCachedProcesses(against: census,
             processArgumentsProvider: { _ in arguments }, processIdentityProvider: { _ in identity })
-        #expect(cached.entry(workspaceId: fixture.workspaceID, panelId: fixture.panelID,
-            revalidateProcessEvidence: false)?.processLiveness == .running)
+        #expect(cached.entry(workspaceId: fixture.workspaceID, panelId: fixture.panelID)?.processLiveness == .running)
         let owner = try #require(index.liveSessionOwners.owner(kind: "codex", sessionID: fixture.sessionID,
             processIdentityProvider: { _ in identity }))
         let snapshot = owner.validationSnapshot
