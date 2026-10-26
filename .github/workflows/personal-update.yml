@@ -9,6 +9,11 @@ on:
   schedule:
     - cron: '31 17 * * 1'
   workflow_dispatch:
+    inputs:
+      quiet_frontend_run:
+        description: Optional successful Quiet Codex frontend run to bundle
+        type: string
+        required: false
 
 concurrency:
   group: personal-cmux-update
@@ -16,6 +21,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   prepare:
@@ -158,9 +164,23 @@ jobs:
         run: python3 scripts/personal-build.py
       - name: Record incremental build cache size
         run: du -sh "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal"
+      - name: Download the explicitly selected quiet frontend
+        if: github.event_name == 'workflow_dispatch' && inputs.quiet_frontend_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QUIET_RUN: ${{ inputs.quiet_frontend_run }}
+          QUIET_REPOSITORY: ${{ github.repository }}
+        run: |
+          [[ "$QUIET_RUN" =~ ^[0-9]+$ ]]
+          gh run download "$QUIET_RUN" --repo "$QUIET_REPOSITORY" \
+            --name "quiet-codex-ARM64-$QUIET_RUN" --dir "$RUNNER_TEMP/cmux-quiet-frontend"
       - name: Package candidate without official auto-updates
         run: |
-          python3 scripts/personal-package.py "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux-custom-build.app"
+          quiet_args=()
+          if [[ -d "$RUNNER_TEMP/cmux-quiet-frontend" ]]; then
+            quiet_args=(--quiet-artifact "$RUNNER_TEMP/cmux-quiet-frontend")
+          fi
+          python3 scripts/personal-package.py "$HOME/Library/Developer/Xcode/DerivedData/cmux-personal/Build/Products/Release/cmux-custom-build.app" "${quiet_args[@]}"
           mkdir -p dist
           ditto -c -k --sequesterRsrc --keepParent "$HOME/Applications/cmux+.app" dist/cmux-personal-arm64.zip
           shasum -a 256 dist/cmux-personal-arm64.zip > dist/cmux-personal-arm64.zip.sha256

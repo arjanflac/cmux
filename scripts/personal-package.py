@@ -12,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 
+from quiet_codex_bundle import stage_artifact
+
 
 def require_closed(path: Path) -> None:
     processes = subprocess.check_output(["ps", "-axo", "comm="], text=True)
@@ -19,15 +21,17 @@ def require_closed(path: Path) -> None:
         raise RuntimeError(f"{path.name} is running; finish its sessions and quit it first")
 
 
-def replace_installation(source: Path, destination: Path, identity: str) -> None:
+def replace_installation(source: Path, destination: Path, identity: str, quiet_artifact: Path | None = None) -> None:
     """Validate a complete same-volume candidate before an atomic directory swap."""
     destination.parent.mkdir(parents=True, exist_ok=True)
     require_closed(destination)
     with tempfile.TemporaryDirectory(prefix=".cmux-plus-install-", dir=destination.parent) as temporary:
         staged = Path(temporary) / "cmux+.app"
-        subprocess.run([sys.executable, str(Path(__file__).resolve()), str(source),
-                        "--destination", str(staged), "--runtime-destination", str(destination),
-                        "--sign", identity], check=True)
+        arguments = [sys.executable, str(Path(__file__).resolve()), str(source),
+                     "--destination", str(staged), "--runtime-destination", str(destination), "--sign", identity]
+        if quiet_artifact is not None:
+            arguments += ["--quiet-artifact", str(quiet_artifact)]
+        subprocess.run(arguments, check=True)
         # The user may have reopened the app while signing. Never replace a live bundle.
         require_closed(destination)
         if destination.exists():
@@ -53,6 +57,7 @@ def main() -> None:
     parser.add_argument("source", type=Path)
     parser.add_argument("--destination", type=Path, default=Path.home() / "Applications/cmux+.app")
     parser.add_argument("--sign", default="-")
+    parser.add_argument("--quiet-artifact", type=Path, help="verified quiet frontend artifact directory to include in this candidate")
     parser.add_argument("--replace", action="store_true",
                         help="validate a staged copy, then atomically replace a closed installation")
     parser.add_argument("--runtime-destination", type=Path, help=argparse.SUPPRESS)
@@ -69,7 +74,7 @@ def main() -> None:
     if args.replace:
         if args.runtime_destination is not None:
             parser.error("--runtime-destination cannot be combined with --replace")
-        replace_installation(source, destination, args.sign)
+        replace_installation(source, destination, args.sign, args.quiet_artifact)
         return
     if destination.exists():
         parser.error("destination already exists; quit the app and use --replace")
@@ -123,6 +128,11 @@ def main() -> None:
         # SwiftPM's Release accessor has no environment override. Standalone CLI
         # processes search beside their executable, rather than the host app's resources.
         resources = destination / "Contents/Resources"
+        quiet_binary = resources / "bin/cmux-codex-quiet"
+        # Never carry an unverified frontend forward from the input app.
+        quiet_binary.unlink(missing_ok=True)
+        if args.quiet_artifact is not None:
+            stage_artifact(args.quiet_artifact.resolve(), resources)
         for bundle in resources.glob("*.bundle"):
             link = resources / "bin" / bundle.name
             if not link.exists():

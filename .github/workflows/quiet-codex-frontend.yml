@@ -48,6 +48,8 @@ jobs:
             quiet-target
           key: quiet-frontend-v1-${{ runner.os }}-${{ runner.arch }}-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
           restore-keys: quiet-frontend-v1-${{ runner.os }}-${{ runner.arch }}-6aaac694-
+      - name: Validate artifact provenance helpers
+        run: python3 -m unittest discover -s lane/experiments/codex-quiet -p 'test_*.py'
       - name: Test attach boundaries and rendering, then package the derived frontend
         run: python3 lane/experiments/codex-quiet/build.py --source codex --output artifact
       - uses: actions/cache/save@v4
