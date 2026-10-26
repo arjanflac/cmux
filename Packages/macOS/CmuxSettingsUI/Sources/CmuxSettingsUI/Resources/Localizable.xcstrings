@@ -16802,6 +16802,124 @@
           }
         }
       }
+    },
+    "settings.terminal.agentOrchestration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background Agent Coordination"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تنسيق الوكلاء في الخلفية"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agentenkoordination im Hintergrund"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coordinación de agentes en segundo plano"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coordination des agents en arrière-plan"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドエージェントの連携"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드 에이전트 조정"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台代理协调"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "背景代理程式協調"
+          }
+        }
+      }
+    },
+    "settings.terminal.agentOrchestration.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow this cmux session to use background workers and scheduled tasks. Schedules run while cmux is open; missed work waits until resumed."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "السماح لجلسة cmux هذه باستخدام عمليات تعمل في الخلفية ومهام مجدولة. تُشغَّل المهام المجدولة ما دام cmux مفتوحًا؛ وتنتظر المهام الفائتة حتى استئنافها."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser cmux-Sitzung erlauben, Hintergrundprozesse und geplante Aufgaben zu nutzen. Geplante Aufgaben laufen, solange cmux geöffnet ist; verpasste Aufgaben warten, bis sie fortgesetzt werden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir que esta sesión de cmux use procesos en segundo plano y tareas programadas. Las tareas se ejecutan mientras cmux está abierto; las omitidas esperan hasta que se reanuden."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser cette session cmux à utiliser des agents en arrière-plan et des tâches planifiées. Les tâches se lancent tant que cmux est ouvert ; les tâches manquées attendent une reprise."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この cmux セッションでバックグラウンドワーカーとスケジュール済みタスクの使用を許可します。タスクは cmux が開いている間に実行され、実行できなかった作業は再開されるまで保留されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 cmux 세션에서 백그라운드 작업 프로세스와 예약 작업을 사용하도록 허용합니다. 예약 작업은 cmux가 열려 있는 동안 실행되며, 놓친 작업은 재개할 때까지 대기합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许此 cmux 会话使用后台工作进程和计划任务。计划任务在 cmux 打开时运行；错过的工作会保留，直到恢复执行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許此 cmux 工作階段使用背景工作程序和排程任務。排程任務會在 cmux 開啟時執行；錯過的工作會保留，直到恢復執行。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

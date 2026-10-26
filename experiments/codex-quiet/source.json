@@ -10,8 +10,17 @@
     "attach-only.patch",
     "session-binding.patch",
     "focus-tests.patch",
-    "focus-mode.patch"
+    "focus-mode.patch",
+    "working-tip-tests.patch",
+    "working-tip.patch",
+    "orchestration-tests.patch",
+    "orchestration.patch",
+    "resume-compat-tests.patch",
+    "resume-compat.patch"
   ],
   "focusTestCount": 4,
-  "bindingTestCount": 5
+  "bindingTestCount": 5,
+  "workingTipTestCount": 2,
+  "orchestrationTestCount": 23,
+  "resumeCompatTestCount": 9
 }

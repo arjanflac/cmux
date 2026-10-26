@@ -1,0 +1,892 @@
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -117,6 +117,7 @@
+ mod app_server_connection;
+ pub mod cmux_quiet;
+ pub mod cmux_session_binding;
++mod cmux_orchestration;
+ mod app_server_session;
+ mod approval_events;
+ mod async_question_reply;
+--- a/codex-rs/tui/src/chatwidget/session_flow.rs
++++ b/codex-rs/tui/src/chatwidget/session_flow.rs
+@@ -115,10 +115,10 @@
+         self.current_cwd = Some(session.cwd.to_path_buf());
+         self.config.cwd = session.cwd.clone();
+         if cfg!(feature = "cmux-quiet") {
+-            crate::cmux_session_binding::publish(
+-                session.thread_id.to_string(), session.cwd.to_string_lossy().into_owned(),
+-                session.model.clone(), session.rollout_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
+-            );
++            self.app_event_tx.send(AppEvent::CmuxSessionConfigured {
++                session_id: session.thread_id.to_string(), cwd: session.cwd.to_string_lossy().into_owned(),
++                model: session.model.clone(), rollout: session.rollout_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
++            });
+         }
+         self.config.model_provider_id = session.model_provider_id.clone();
+         self.set_daybreak_enabled(self.daybreak_enabled);
+--- a/codex-rs/tui/src/cmux_session_binding.rs
++++ b/codex-rs/tui/src/cmux_session_binding.rs
+@@ -41,19 +41,24 @@
+     let (sender, mut receiver) = watch::channel::<Option<Session>>(None);
+     if REPORTER.set(sender).is_err() { return; }
+     tokio::spawn(async move {
+-        let mut delivered = None;
++        let mut delivered: Option<(Session, Option<u64>)> = None;
+         loop {
+             let latest = receiver.borrow_and_update().clone();
+-            let Some(session) = latest.filter(|session| delivered.as_ref() != Some(session)) else {
++            if latest.is_none() { delivered = None; }
++            let Some(session) = latest.filter(|session| delivered.as_ref() != Some(&(session.clone(), crate::cmux_orchestration::generation_for(&session.id)))) else {
+                 if receiver.changed().await.is_err() { return; }
+                 continue;
+             };
+             // New selection cancels an old helper before the next publication.
+             // kill_on_drop closes only that short-lived helper, never the model.
++            let generation = crate::cmux_orchestration::generation_for(&session.id);
+             tokio::select! {
+                 changed = receiver.changed() => { if changed.is_err() { return; } }
+                 outcome = tokio::time::timeout(std::time::Duration::from_secs(12), deliver(&route, &session)) => {
+-                    if matches!(outcome, Ok(Ok(()))) { delivered = Some(session); }
++                    if matches!(outcome, Ok(Ok(()))) {
++                        crate::cmux_orchestration::binding_verified(&session.id, generation);
++                        delivered = Some((session, generation));
++                    }
+                     else { tracing::warn!("cmux session binding could not be verified");
+                         if receiver.changed().await.is_err() { return; }
+                     }
+@@ -61,6 +66,11 @@
+             }
+         }
+     });
++}
++
++/// Cancels publication when there is no selected configured chat.
++pub(crate) fn clear() {
++    if let Some(sender) = REPORTER.get() { sender.send_replace(None); }
+ }
+ 
+ /// Publishes only the current ChatWidget's actual configured session.
+--- a/codex-rs/tui/src/app_event.rs
++++ b/codex-rs/tui/src/app_event.rs
+@@ -600,6 +600,11 @@
+         registered: tokio::sync::oneshot::Sender<()>,
+     },
+ 
++    /// Local cmux presentation/transport events. Never provider history items.
++    CmuxSessionConfigured { session_id: String, cwd: String, model: String, rollout: Option<String> },
++    CmuxWorkers { session_id: String, generation: u64, counts: Option<crate::cmux_orchestration::Counts> },
++    CmuxToolCompleted { session_id: String, generation: u64, request_id: AppServerRequestId, response: DynamicToolCallResponse },
++
+     /// Return a completed client-owned dynamic tool call to app server.
+     DynamicToolCallCompleted {
+         request_id: AppServerRequestId,
+--- a/codex-rs/tui/src/app/event_dispatch.rs
++++ b/codex-rs/tui/src/app/event_dispatch.rs
+@@ -52,7 +52,10 @@
+         if self.reconnect.offline
+             && !matches!(
+                 &event,
+-                AppEvent::OpenDaemonMenu
++                AppEvent::CmuxSessionConfigured { .. }
++                    | AppEvent::CmuxWorkers { .. }
++                    | AppEvent::CmuxToolCompleted { .. }
++                    | AppEvent::OpenDaemonMenu
+                     | AppEvent::OpenWarnings
+                     | AppEvent::StatusLineSetup { .. }
+                     | AppEvent::StatusLineSetupCancelled
+@@ -355,6 +358,28 @@
+                 self.refresh_changed_agents_overview_threads(app_server);
+                 self.repaint_agents_overview();
+                 let _ = registered.send(());
++            }
++            AppEvent::CmuxSessionConfigured { session_id, cwd, model, rollout } => {
++                if self.chat_widget.thread_id().is_some_and(|id| id.to_string() == session_id) {
++                    crate::cmux_orchestration::select(Some(session_id.clone()), self.app_event_tx.clone());
++                    crate::cmux_session_binding::publish(session_id, cwd, model, rollout);
++                }
++            }
++            AppEvent::CmuxWorkers { session_id, generation, counts } => {
++                if self.chat_widget.thread_id().is_some_and(|id| id.to_string() == session_id)
++                    && crate::cmux_orchestration::is_selected(&session_id, generation)
++                {
++                    self.chat_widget.set_cmux_workers(counts);
++                }
++            }
++            AppEvent::CmuxToolCompleted { session_id, generation, request_id, response } => {
++                if self.chat_widget.thread_id().is_some_and(|id| id.to_string() == session_id)
++                    && crate::cmux_orchestration::authorized(&session_id, generation)
++                {
++                    if let Ok(result) = serde_json::to_value(response) {
++                        let _ = app_server.resolve_server_request(request_id, result).await;
++                    }
++                }
+             }
+             AppEvent::DynamicToolCallCompleted {
+                 request_id,
+--- a/codex-rs/tui/src/chatwidget.rs
++++ b/codex-rs/tui/src/chatwidget.rs
+@@ -958,6 +958,10 @@
+ }
+ 
+ impl ChatWidget {
++    pub(crate) fn set_cmux_workers(&mut self, counts: Option<crate::cmux_orchestration::Counts>) {
++        self.bottom_pane.set_cmux_workers(counts);
++    }
++
+     /// Stores or overwrites the cached nickname and role for a collab agent thread.
+     ///
+     /// Called by `App::upsert_agent_picker_thread` and `App::replace_chat_widget` to keep the
+--- a/codex-rs/tui/src/app/session_lifecycle.rs
++++ b/codex-rs/tui/src/app/session_lifecycle.rs
+@@ -487,6 +487,9 @@
+     /// This helper copies every known nickname/role from `AgentNavigationState` into the
+     /// replacement widget so that replayed collab items render agent names immediately.
+     pub(super) fn replace_chat_widget(&mut self, mut chat_widget: ChatWidget) {
++        crate::cmux_orchestration::select(None, self.app_event_tx.clone());
++        crate::cmux_session_binding::clear();
++        chat_widget.set_cmux_workers(None);
+         chat_widget.fork_in_progress = self.chat_widget.fork_in_progress;
+         self.pending_right_click_paste = None;
+         self.config_notification_test_pending = None;
+--- a/codex-rs/tui/src/app_server_session.rs
++++ b/codex-rs/tui/src/app_server_session.rs
+@@ -922,6 +922,7 @@
+         }
+         self.thread_tool_transport().validate_config(config)?;
+         self.thread_tool_transport().configure(&mut params);
++        crate::cmux_orchestration::augment(&mut params, crate::cmux_orchestration::Route::environment());
+         let request_handle = self.request_handle();
+         let (response, history_support, task_tools_available) =
+             request_thread_start_with_history_fallback(&request_handle, request_id, params)
+@@ -1861,6 +1862,7 @@
+     launch_choices.configure(&mut params);
+     params.daybreak_enabled = (config.daybreak_enabled && !config.ephemeral).then_some(true);
+     thread_tool_transport.configure(&mut params);
++    crate::cmux_orchestration::augment(&mut params, crate::cmux_orchestration::Route::environment());
+     let (response, _history_support, task_tools_available) =
+         request_thread_start_with_history_fallback(&request_handle, request_id, params)
+             .await
+--- a/codex-rs/tui/src/app/app_server_events.rs
++++ b/codex-rs/tui/src/app/app_server_events.rs
+@@ -297,6 +297,7 @@
+         }
+         match &notification {
+             ServerNotification::ServerRequestResolved(notification) => {
++                crate::cmux_orchestration::cancel_request(&notification.request_id);
+                 if let Some((_, task)) = self.dynamic_tool_tasks.remove(&notification.request_id) {
+                     task.abort();
+                 }
+@@ -620,6 +621,16 @@
+             return;
+         }
+         if let ServerRequest::DynamicToolCall { request_id, params } = &request {
++            if cfg!(feature = "cmux-quiet") && params.namespace.as_deref() == Some(crate::cmux_orchestration::NAMESPACE) {
++                // Other attached clients must ignore unowned calls. Stock namespaces
++                // continue through their original handler below.
++                if !app_server_client.uses_embedded_app_server()
++                    && self.chat_widget.thread_id().is_some_and(|id| id.to_string() == params.thread_id)
++                {
++                    crate::cmux_orchestration::forward(params, request_id.clone(), self.app_event_tx.clone());
++                }
++                return;
++            }
+             if self.dynamic_tool_tasks.contains_key(request_id)
+                 || (params.namespace.as_deref() != Some(crate::dynamic_tools::NAMESPACE)
+                     && !app_server_client.uses_embedded_app_server())
+--- a/codex-rs/tui/src/app.rs
++++ b/codex-rs/tui/src/app.rs
+@@ -246,6 +246,8 @@
+ mod footer_selection;
+ mod native_history;
+ mod owned_transcript;
++#[cfg(test)]
++mod cmux_orchestration_tests;
+ mod pending_interactive_replay;
+ mod permission_shortcuts;
+ mod pets;
+@@ -1290,6 +1292,8 @@
+ 
+ impl Drop for App {
+     fn drop(&mut self) {
++        crate::cmux_orchestration::select(None, self.app_event_tx.clone());
++        crate::cmux_session_binding::clear();
+         if let Err(err) = self.chat_widget.clear_managed_terminal_title() {
+             tracing::debug!(error = %err, "failed to clear terminal title on app drop");
+         }
+--- a/codex-rs/tui/src/bottom_pane/mod.rs
++++ b/codex-rs/tui/src/bottom_pane/mod.rs
+@@ -296,6 +296,7 @@
+     /// Composer is retained even when a BottomPaneView is displayed so the
+     /// input state is retained when the view is closed.
+     composer: ChatComposer,
++    cmux_workers: Option<crate::cmux_orchestration::Counts>,
+ 
+     /// Stack of views displayed instead of the composer (e.g. popups/modals).
+     view_stack: Vec<Box<dyn BottomPaneView>>,
+@@ -400,6 +401,7 @@
+         composer.set_skill_mentions(skills);
+         Self {
+             composer,
++            cmux_workers: None,
+             view_stack: Vec::new(),
+             key_chord_reset_requested: false,
+             warnings_view: None,
+@@ -2278,12 +2280,20 @@
+ 
+     // --- History helpers ---
+ 
++    pub(crate) fn set_cmux_workers(&mut self, counts: Option<crate::cmux_orchestration::Counts>) {
++        if self.cmux_workers != counts {
++            self.cmux_workers = counts;
++            self.frame_requester.schedule_frame();
++        }
++    }
++
+     pub(crate) fn set_history_metadata(
+         &mut self,
+         thread_id: ThreadId,
+         log_id: u64,
+         entry_count: usize,
+     ) {
++        if self.thread_id != Some(thread_id) { self.set_cmux_workers(None); }
+         self.thread_id = Some(thread_id);
+         self.composer
+             .set_history_metadata(thread_id, log_id, entry_count);
+@@ -2566,6 +2576,9 @@
+                     options: self.composer.resolve_render_options(options),
+                 }))
+             };
++            if let Some(line) = self.cmux_workers.as_ref().and_then(|counts| counts.line()) {
++                flex2.push(/*flex*/ 0, RenderableItem::Owned(Box::new(Line::from(line).dim())));
++            }
+             flex2.push(/*flex*/ 0, composer);
+             RenderableItem::Owned(Box::new(flex2))
+         }
+@@ -2738,6 +2751,30 @@
+             effects: Default::default(),
+             skills: Some(Vec::new()),
+         })
++    }
++
++
++    #[test]
++    fn cmux_orchestration_idle_narrow_render_update_clear_preserves_composer() {
++        let (tx,_rx)=tokio::sync::mpsc::unbounded_channel();
++        let mut pane=test_pane(AppEventSender::new(tx));
++        let thread=ThreadId::new(); pane.set_history_metadata(thread,0,0);
++        pane.set_composer_text("composer-marker".into(),Vec::new(),Vec::new());
++        for width in [18,100] {
++            pane.set_cmux_workers(Some(crate::cmux_orchestration::Counts { running:2, unread:1, needs_input:1, disconnected:0,..Default::default() }));
++            let area=Rect::new(0,0,width,pane.desired_height(width));
++            let mut buf=Buffer::empty(area); pane.render(area,&mut buf);
++            let lines: Vec<String>=(0..area.height).map(|y|(0..width).map(|x|buf[(x,y)].symbol().to_owned()).collect()).collect();
++            assert_eq!(lines.iter().filter(|line|line.contains("cmux workers")).count(),usize::from(cfg!(feature="cmux-quiet")));
++            assert!(lines.iter().any(|line|line.contains("composer-marker")),"{lines:?}");
++            if width==100 && cfg!(feature="cmux-quiet") { assert!(lines.iter().any(|line|line.contains("2 running · 1 result · 1 needs input"))); }
++            pane.set_cmux_workers(None);
++            let area=Rect::new(0,0,width,pane.desired_height(width)); let mut buf=Buffer::empty(area); pane.render(area,&mut buf);
++            let cleared:String=(0..area.height).flat_map(|y|(0..width).map(move |x|(x,y))).map(|pos|buf[pos].symbol().to_owned()).collect();
++            assert!(!cleared.contains("cmux workers"));
++        }
++        pane.set_cmux_workers(Some(crate::cmux_orchestration::Counts { running:2,..Default::default() }));
++        pane.set_history_metadata(ThreadId::new(),0,0); assert!(pane.cmux_workers.is_none());
+     }
+ 
+     fn exec_request() -> ApprovalRequest {
+--- a/codex-rs/tui/src/cmux_orchestration.rs
++++ b/codex-rs/tui/src/cmux_orchestration.rs
+@@ -0,0 +1,53 @@
++//! cmux-only presentation and a short-lived CLI transport. Environment is a
++//! routing hint; a live app-issued scope is required for every operation.
++use crate::app_event::AppEvent;
++use crate::app_event_sender::AppEventSender;
++use codex_app_server_protocol::{DynamicToolCallParams, DynamicToolCallResponse, ThreadStartParams};
++use serde::{Deserialize, Serialize};
++use std::path::PathBuf;
++
++pub(crate) const NAMESPACE: &str = "cmux_tasks";
++const LIMIT: usize = 65 * 1024;
++
++#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
++pub(crate) struct Counts { pub running: u64, pub needs_input: u64, pub unread: u64, pub disconnected: u64, #[serde(default)] pub unavailable: bool }
++#[derive(Clone)]
++pub(crate) struct Route { cli: PathBuf, socket: String, workspace: String, surface: String, invocation: String, pid: u32, enabled: bool }
++#[derive(Clone, Deserialize)]
++struct Panel { snapshot_path: PathBuf, scope_file: PathBuf }
++#[derive(Clone)]
++pub(crate) struct Proof { route: Route, panel: Panel, session: String, pub generation: u64 }
++
++impl Counts { pub(crate) fn line(&self) -> Option<String> { None } }
++impl Route {
++    pub(crate) fn environment() -> Option<Self> { None }
++    fn from_values(_read: impl Fn(&str) -> Option<String>, _pid: u32) -> Option<Self> { None }
++}
++pub(crate) fn augment(_params: &mut ThreadStartParams, _route: Option<Route>) {}
++pub(crate) fn select(_session: Option<String>, _tx: AppEventSender) {}
++pub(crate) fn generation_for(_session: &str) -> Option<u64> { None }
++pub(crate) fn is_selected(_session: &str, _generation: u64) -> bool { false }
++pub(crate) fn authorized(_session: &str, _generation: u64) -> bool { false }
++pub(crate) fn binding_verified(_session: &str, _generation: Option<u64>) {}
++pub(crate) fn claim(_params: &DynamicToolCallParams) -> Option<Proof> { None }
++pub(crate) struct BridgeReply { response: DynamicToolCallResponse, should_respond: bool }
++pub(crate) fn cancel_request(_request_id: &codex_app_server_protocol::RequestId) {}
++pub(crate) fn forward(_params: &DynamicToolCallParams, _request_id: codex_app_server_protocol::RequestId, _tx: AppEventSender) {}
++fn accepts(_params: &DynamicToolCallParams, _session: &str) -> bool { false }
++fn counts_at(_proof: &Proof, _now: u64) -> Option<Counts> { None }
++#[cfg(test)] async fn fixture_finish_calls() {}
++#[cfg(test)] fn fixture_pending(_proof: Proof, _tx: AppEventSender) {}
++#[cfg(test)] fn fixture_ready(_proof: Proof) {}
++#[cfg(test)] fn fixture_call_count() -> usize { 0 }
++async fn wait_for_proof(_session:&str,_generation:u64,_deadline:std::time::Duration)->Option<Proof> { None }
++#[cfg(test)] fn fixture_enroll(_proof: Proof, _tx: AppEventSender) {}
++async fn panel(_route: &Route, _session: &str) -> Option<Panel> { None }
++async fn bridge_once(_proof: &Proof, _params: &DynamicToolCallParams) -> BridgeReply {
++    BridgeReply { response: crate::dynamic_tools::failure_response("cmux workers unavailable"), should_respond: false }
++}
++pub(crate) async fn bridge(_proof: &Proof, _params: &DynamicToolCallParams) -> BridgeReply {
++    BridgeReply { response: crate::dynamic_tools::failure_response("cmux workers unavailable"), should_respond: false }
++}
++#[cfg(test)]
++#[path = "cmux_orchestration_tests.rs"]
++mod tests;
+--- a/codex-rs/tui/src/cmux_orchestration_tests.rs
++++ b/codex-rs/tui/src/cmux_orchestration_tests.rs
+@@ -0,0 +1,482 @@
++use super::*;
++use serde_json::json;
++use std::time::Duration;
++#[cfg(unix)]
++use std::os::unix::fs::PermissionsExt;
++
++fn route() -> Route { Route { cli: "/usr/bin/true".into(), socket: "/fixture.sock".into(), workspace: uuid::Uuid::new_v4().to_string(), surface: uuid::Uuid::new_v4().to_string(), invocation: "fresh-invocation".into(), pid: std::process::id(), enabled:true } }
++fn params() -> DynamicToolCallParams { DynamicToolCallParams { thread_id: uuid::Uuid::new_v4().to_string(), turn_id: "turn-real".into(), call_id: "call-real".into(), namespace: Some(NAMESPACE.into()), tool: "task".into(), arguments: json!({"action":"inbox"}) } }
++#[cfg(unix)]
++fn fixture() -> (tempfile::TempDir, Proof) {
++    let dir = tempfile::tempdir().unwrap();
++    let proof = Proof { route: route(), panel: Panel { snapshot_path: dir.path().join("snapshot.json"), scope_file: dir.path().join("scope.json") }, session: params().thread_id, generation: 42 };
++    std::fs::write(&proof.panel.scope_file, "private-credential-never-context").unwrap();
++    std::fs::set_permissions(&proof.panel.scope_file, std::fs::Permissions::from_mode(0o600)).unwrap();
++    write_snapshot(&proof, 100, 200);
++    (dir, proof)
++}
++#[cfg(unix)]
++fn write_snapshot(proof: &Proof, updated: u64, expires: u64) {
++    let value = json!({"version":1,"session_id":proof.session,"frontend_pid":proof.route.pid,"invocation_id":proof.route.invocation,"updated_at":updated,"expires_at":expires,"running":2,"needs_input":1,"unread":1,"disconnected":0});
++    std::fs::write(&proof.panel.snapshot_path, value.to_string()).unwrap();
++    std::fs::set_permissions(&proof.panel.snapshot_path, std::fs::Permissions::from_mode(0o600)).unwrap();
++}
++#[test]
++fn cmux_orchestration_row_counts_update_and_clear() {
++    let mut counts = Counts { running:2, unread:1, needs_input:1, disconnected:0,..Default::default() };
++    assert_eq!(counts.line(), cfg!(feature="cmux-quiet").then(|| "cmux workers · 2 running · 1 result · 1 needs input".into()));
++    counts.running = 0; counts.unread=0; counts.needs_input=0; counts.disconnected=1;
++    assert_eq!(counts.line(), cfg!(feature="cmux-quiet").then(|| "cmux workers · 1 disconnected".into()));
++    assert!(Counts::default().line().is_none());
++}
++#[test]
++fn cmux_orchestration_namespace_and_actual_ids_only() {
++    let mut call=params();
++    assert_eq!(accepts(&call,&call.thread_id), cfg!(feature="cmux-quiet"));
++    assert!(!accepts(&call,"other-thread"));
++    for arguments in [json!({"action":"unsupported"}),json!({}),json!(null),json!([])] {
++        call.arguments=arguments;assert_eq!(accepts(&call,&call.thread_id),cfg!(feature="cmux-quiet"),"validation belongs to the owned broker");
++    }
++    call.namespace=Some("codex_tui".into()); assert!(!accepts(&call,&call.thread_id));
++    call.namespace=None; assert!(!accepts(&call,&call.thread_id));
++    call.namespace=Some(NAMESPACE.into()); call.call_id.clear(); assert!(!accepts(&call,&call.thread_id));
++}
++#[test]
++fn cmux_orchestration_augments_without_overwriting_stock_tools_or_instructions() {
++    let mut request=ThreadStartParams::default();
++    request.dynamic_tools=Some(crate::dynamic_tools::tool_specs());
++    request.developer_instructions=Some("keep original".into());
++    let stock=request.clone();
++    augment(&mut request,None); assert_eq!(request,stock);
++    augment(&mut request,Some(route()));
++    assert_eq!(request.developer_instructions,stock.developer_instructions);
++    let tools=request.dynamic_tools.as_ref().unwrap();
++    assert_eq!(&tools[..stock.dynamic_tools.as_ref().unwrap().len()],stock.dynamic_tools.as_ref().unwrap());
++    assert_eq!(tools.len(),stock.dynamic_tools.as_ref().unwrap().len()+usize::from(cfg!(feature="cmux-quiet")));
++    let once=request.clone(); augment(&mut request,Some(route())); assert_eq!(request,once);
++}
++#[test]
++fn cmux_orchestration_route_requires_explicit_fresh_frontend_hints() {
++    let target=route();
++    let mut values=std::collections::HashMap::from([
++        ("CMUX_ORCHESTRATOR_ENABLED","1".to_string()),("CMUX_CODEX_PID",target.pid.to_string()),
++        ("CMUX_CODEX_INVOCATION_ID",target.invocation.clone()),("CMUX_BUNDLED_CLI_PATH",target.cli.to_string_lossy().into_owned()),
++        ("CMUX_SOCKET_PATH",target.socket.clone()),("CMUX_WORKSPACE_ID",target.workspace.clone()),("CMUX_SURFACE_ID",target.surface.clone())]);
++    assert_eq!(Route::from_values(|key|values.get(key).cloned(),target.pid).is_some(),cfg!(feature="cmux-quiet"));
++    for key in ["CMUX_ORCHESTRATOR_ENABLED","CMUX_CODEX_PID","CMUX_CODEX_INVOCATION_ID","CMUX_WORKSPACE_ID","CMUX_SURFACE_ID"] {
++        let old=values.insert(key,String::new());
++        assert!(Route::from_values(|key|values.get(key).cloned(),target.pid).is_none());
++        values.insert(key,old.unwrap());
++    }
++    assert!(Route::from_values(|key|values.get(key).cloned(),target.pid+1).is_none());
++    values.insert("CMUX_ORCHESTRATOR_ENABLED","0".into());
++    let disabled=Route::from_values(|key|values.get(key).cloned(),target.pid);
++    assert_eq!(disabled.is_some(),cfg!(feature="cmux-quiet"));
++    if let Some(disabled)=disabled {
++        assert!(!disabled.enabled);
++        let mut request=ThreadStartParams::default(); let before=request.clone();
++        augment(&mut request,Some(disabled)); assert_eq!(request,before);
++    }
++}
++#[cfg(unix)]
++#[test]
++fn cmux_orchestration_snapshot_identity_expiry_and_update() {
++    let (_dir,proof)=fixture();
++    assert_eq!(counts_at(&proof,101).is_some(),cfg!(feature="cmux-quiet"));
++    if !cfg!(feature="cmux-quiet") { return; }
++    let mut wrong=proof.clone(); wrong.session=uuid::Uuid::new_v4().to_string(); assert!(counts_at(&wrong,101).is_none());
++    wrong=proof.clone(); wrong.route.pid+=1; assert!(counts_at(&wrong,101).is_none());
++    wrong=proof.clone(); wrong.route.invocation="stale".into(); assert!(counts_at(&wrong,101).is_none());
++    assert!(counts_at(&proof,200).is_none()); assert!(counts_at(&proof,90).is_none());
++    let mut value:serde_json::Value=serde_json::from_slice(&std::fs::read(&proof.panel.snapshot_path).unwrap()).unwrap();
++    value["updated_at"]=100.5.into(); value["expires_at"]=200.5.into();
++    std::fs::write(&proof.panel.snapshot_path,value.to_string()).unwrap();
++    assert!(counts_at(&proof,200).is_some()); assert!(counts_at(&proof,201).is_none());
++    write_snapshot(&proof,201,300); assert!(counts_at(&proof,202).is_some());
++    std::fs::remove_file(&proof.panel.scope_file).unwrap(); assert!(counts_at(&proof,202).is_none());
++}
++#[cfg(unix)]
++#[test]
++fn cmux_orchestration_private_files_reject_symlinks_modes_and_oversize() {
++    let (dir,proof)=fixture();
++    std::fs::set_permissions(&proof.panel.snapshot_path,std::fs::Permissions::from_mode(0o644)).unwrap(); assert!(counts_at(&proof,101).is_none());
++    write_snapshot(&proof,100,200);
++    let link=dir.path().join("link"); std::os::unix::fs::symlink(&proof.panel.snapshot_path,&link).unwrap();
++    let mut wrong=proof.clone(); wrong.panel.snapshot_path=link; assert!(counts_at(&wrong,101).is_none());
++    std::fs::write(&proof.panel.snapshot_path,vec![b' ';16385]).unwrap(); assert!(counts_at(&proof,101).is_none());
++    write_snapshot(&proof,100,200);
++    std::fs::set_permissions(&proof.panel.scope_file,std::fs::Permissions::from_mode(0o644)).unwrap(); assert!(counts_at(&proof,101).is_none());
++}
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_cli_fixture_exact_envelope_no_secret_and_uncertainty() {
++    let (dir,mut proof)=fixture();
++    let cli=dir.path().join("cmux");
++    let script=r#"#!/usr/bin/env python3
++import json,sys
++args=sys.argv[1:]
++assert args[:4]==['--socket','/fixture.sock','task','bridge']
++assert args[4]=='--scope-file' and len(args)==6
++assert 'private-credential' not in ' '.join(args)
++x=json.load(sys.stdin)
++assert x['request_id']=='call-real' and x['provider_turn_id']=='turn-real' and x['provider_call_id']=='call-real'
++assert x['caller_session_id']==SESSION
++assert x['arguments']=={'action':'inbox'}
++print(json.dumps({'ok':True,'result':'fixture-result','_cmux_should_respond':True}))
++"#.replace("SESSION",&serde_json::to_string(&proof.session).unwrap());
++    std::fs::write(&cli,script).unwrap(); std::fs::set_permissions(&cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++    proof.route.cli=cli.clone();
++    let mut call=params(); call.thread_id=proof.session.clone();
++    let response=bridge_once(&proof,&call).await.response;
++    assert_eq!(response.success,cfg!(feature="cmux-quiet"));
++    let serialized=serde_json::to_string(&response).unwrap(); assert!(!serialized.contains("private-credential"));
++    if !cfg!(feature="cmux-quiet") { return; }
++    assert!(serialized.contains("fixture-result")); assert!(!serialized.contains("_cmux_should_respond"));
++    // Simulate acceptance followed by lost stdout. There must be no replay.
++    let counter=dir.path().join("accepted");
++    let script=format!("#!/usr/bin/env python3\nimport pathlib,sys\np=pathlib.Path({})\np.write_text(p.read_text()+'x' if p.exists() else 'x')\nprint('SECRET-STDERR',file=sys.stderr)\nsys.exit(1)\n",serde_json::to_string(&counter.to_string_lossy()).unwrap());
++    std::fs::write(&cli,script).unwrap();
++    let response=bridge_once(&proof,&call).await.response;
++    assert!(!response.success); let serialized=serde_json::to_string(&response).unwrap();
++    assert!(serialized.contains("uncertain")); assert!(!serialized.contains("SECRET-STDERR")); assert_eq!(std::fs::read_to_string(counter).unwrap(),"x");
++}
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_panel_fixture_binds_one_exact_session() {
++    let dir=tempfile::tempdir().unwrap(); let mut target=route();
++    target.cli=dir.path().join("cmux");
++    let session=uuid::Uuid::new_v4().to_string();
++    let script=format!(r#"#!/usr/bin/env python3
++import json,sys
++assert sys.argv[1:]==['--socket','/fixture.sock','task','panel','--workspace',WORKSPACE,'--surface',SURFACE,'--session',SESSION,'--frontend-pid',PID,'--invocation','fresh-invocation']
++print(json.dumps({{'snapshot_path':'/private/snapshot.json','scope_file':'/private/scope.json'}}))
++"#).replace("WORKSPACE",&serde_json::to_string(&target.workspace).unwrap()).replace("SURFACE",&serde_json::to_string(&target.surface).unwrap()).replace("SESSION",&serde_json::to_string(&session).unwrap()).replace("PID",&serde_json::to_string(&target.pid.to_string()).unwrap());
++    std::fs::write(&target.cli,script).unwrap(); std::fs::set_permissions(&target.cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++    assert_eq!(panel(&target,&session).await.is_some(),cfg!(feature="cmux-quiet"));
++}
++
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_selection_generation_dedup_and_revocation() {
++    let (_dir,mut proof)=fixture();
++    let time=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
++    write_snapshot(&proof,time,time+60);
++    let (tx,_rx)=tokio::sync::mpsc::unbounded_channel(); let tx=AppEventSender::new(tx);
++    fixture_enroll(proof.clone(),tx.clone());
++    let mut call=params(); call.thread_id=proof.session.clone();
++    let first=claim(&call);
++    assert_eq!(first.is_some(),cfg!(feature="cmux-quiet"));
++    if !cfg!(feature="cmux-quiet") { return; }
++    assert!(claim(&call).is_none(),"same provider call ID must be claimed once locally");
++    let mut next_turn=call.clone(); next_turn.turn_id="another-turn".into();
++    assert!(claim(&next_turn).is_some(),"dedup key includes actual turn ID");
++    assert!(authorized(&proof.session,proof.generation));
++    let old=proof.generation;
++    select(None,tx.clone()); assert!(!is_selected(&proof.session,old)); assert!(!authorized(&proof.session,old));
++    select(Some(proof.session.clone()),tx.clone());
++    assert!(!is_selected(&proof.session,old),"A to B to A must discard old generation");
++    assert!(claim(&call).is_none(),"selection hints alone are never authority");
++    proof.generation=old+3; fixture_enroll(proof.clone(),tx.clone());
++    assert!(claim(&call).is_some());
++    std::fs::remove_file(&proof.panel.scope_file).unwrap();
++    assert!(!authorized(&proof.session,proof.generation));
++    call.call_id="new-call".into(); assert!(claim(&call).is_none());
++    select(None,tx);
++}
++
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_one_aggregate_reader_update_and_proof_loss_stop() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let (dir,mut proof)=fixture();
++    let time=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
++    write_snapshot(&proof,time,time+60);
++    let count=dir.path().join("panel-count"); proof.route.cli=dir.path().join("cmux");
++    let script=format!("#!/usr/bin/env python3\nimport json,pathlib,sys\nassert sys.argv[3:5]==['task','panel']\np=pathlib.Path({})\np.write_text(p.read_text()+'x' if p.exists() else 'x')\nprint(json.dumps({{'snapshot_path':{},'scope_file':{}}}))\n",
++        serde_json::to_string(&count.to_string_lossy()).unwrap(),serde_json::to_string(&proof.panel.snapshot_path.to_string_lossy()).unwrap(),serde_json::to_string(&proof.panel.scope_file.to_string_lossy()).unwrap());
++    std::fs::write(&proof.route.cli,script).unwrap(); std::fs::set_permissions(&proof.route.cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++    let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel(); let tx=AppEventSender::new(tx);
++    fixture_enroll(proof.clone(),tx.clone());
++    binding_verified(&proof.session,Some(proof.generation-1));
++    assert!(!count.exists(),"stale verified binding cannot enroll");
++    binding_verified(&proof.session,Some(proof.generation));
++    binding_verified(&proof.session,Some(proof.generation));
++    let event=tokio::time::timeout(std::time::Duration::from_secs(5),rx.recv()).await.unwrap().unwrap();
++    assert!(matches!(event,AppEvent::CmuxWorkers { counts:Some(Counts { running:2,.. }),.. }));
++    assert_eq!(std::fs::read_to_string(&count).unwrap(),"x");
++    let mut value:serde_json::Value=serde_json::from_slice(&std::fs::read(&proof.panel.snapshot_path).unwrap()).unwrap();
++    value["running"]=0.into(); value["unread"]=9.into();
++    std::fs::write(&proof.panel.snapshot_path,value.to_string()).unwrap();
++    let event=tokio::time::timeout(std::time::Duration::from_secs(5),rx.recv()).await.unwrap().unwrap();
++    assert!(matches!(event,AppEvent::CmuxWorkers { counts:Some(Counts { running:0,unread:9,.. }),.. }));
++    // Expiry must retain an unavailable row for previously nonempty workers.
++    value["expires_at"]=(time-1).into(); value["updated_at"]=(time-2).into();
++    std::fs::write(&proof.panel.snapshot_path,value.to_string()).unwrap();
++    let event=tokio::time::timeout(std::time::Duration::from_secs(5),rx.recv()).await.unwrap().unwrap();
++    assert!(matches!(event,AppEvent::CmuxWorkers { counts:Some(Counts { unavailable:true,.. }),.. }));
++    assert!(!authorized(&proof.session,proof.generation));
++    binding_verified(&proof.session,Some(proof.generation));
++    assert_eq!(std::fs::read_to_string(&count).unwrap(),"x","missing proof must stop without repeated enrollment");
++    select(None,tx);
++}
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_bridge_bounds_stdout_and_rejects_foreign_namespace() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let (dir,mut proof)=fixture(); proof.route.cli=dir.path().join("cmux");
++    std::fs::write(&proof.route.cli,"#!/usr/bin/env python3\nprint('x'*66561)\n").unwrap();
++    std::fs::set_permissions(&proof.route.cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++    let mut call=params(); call.thread_id=proof.session.clone();
++    let response=bridge_once(&proof,&call).await.response; assert!(!response.success);
++    assert!(serde_json::to_vec(&response).unwrap().len()<=65*1024);
++    std::fs::remove_file(&proof.route.cli).unwrap();
++    call.namespace=Some("codex_tui".into());
++    let response=bridge_once(&proof,&call).await.response; assert!(!response.success);
++    assert!(!serde_json::to_string(&response).unwrap().contains("uncertain"),"foreign calls never reach the bridge");
++}
++
++#[test]
++fn cmux_orchestration_schema_advertises_every_action_and_body_contract() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let mut request=ThreadStartParams::default(); augment(&mut request,Some(route()));
++    let tools=serde_json::to_value(request.dynamic_tools.unwrap()).unwrap();
++    let schema=&tools[0]["tools"][0]["inputSchema"];
++    let actions=schema["properties"]["action"]["enum"].as_array().unwrap();
++    let mut call=params();
++    for action in ["start","send","read","turns","result","wait","cancel","interactions","respond","inbox","ack","schedule.create","schedule.list","schedule.read","schedule.pause","schedule.resume","schedule.cancel","schedule"] {
++        assert!(actions.contains(&json!(action)),"missing {action}");
++        call.arguments=json!({"action":action}); assert!(accepts(&call,&call.thread_id));
++    }
++    let body=&schema["properties"]["body"]["properties"];
++    for key in ["task_id","operation_id","prompt","provider","cwd","model","effort","request_id","due_at","time_zone","misfire","max_runs","repeat_seconds","schedule_id","event_id","interaction_id","response"] {
++        assert!(body.get(key).is_some(),"missing {key}");
++    }
++    assert_eq!(body["provider"]["enum"],json!(["codex","claude","opencode"]));
++    assert_eq!(body["misfire"]["enum"],json!(["hold","skip","coalesceOne"]));
++}
++
++// Owned broker mock: dedupe side effects by actual provider identity and choose
++// one registration to answer. All forwarders receive the same completion body.
++#[cfg(unix)]
++const OWNED_BROKER_FIXTURE:&str=r#"#!/usr/bin/env python3
++import json,pathlib,sys
++assert sys.argv[1:5]==['--socket','/fixture.sock','task','bridge']
++assert sys.argv[5]=='--scope-file' and len(sys.argv)==7
++x=json.load(sys.stdin)
++assert x['caller_session_id']==SESSION
++assert x['provider_turn_id']=='turn-real' and x['provider_call_id']=='call-real'
++assert x['request_id']=='call-real'
++assert x['arguments']['body']['request_id']==STABLE_ID
++# Root owns normalization; body identity claims cannot replace transport IDs.
++assert x['arguments']['body']['caller_session_id']=='forged-thread'
++p=pathlib.Path(BROKER)
++state=json.loads(p.read_text()) if p.exists() else {'effects':0,'forwards':0}
++key=[x['caller_session_id'],x['provider_turn_id'],x['provider_call_id']]
++if 'key' not in state:
++    state.update(key=key,responder=sys.argv[6],effects=state['effects']+1,
++                 result={'operation_id':STABLE_ID,'phase':'completed','result':'same-completion'})
++assert state['key']==key
++state['forwards']+=1
++p.write_text(json.dumps(state))
++if DROP_DESIGNATED and state['responder']==sys.argv[6]:
++    sys.exit(1)
++print(json.dumps(dict(state['result'],_cmux_should_respond=state['responder']==sys.argv[6])))
++"#;
++
++#[cfg(unix)]
++async fn two_forwarders(drop_designated:bool) {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let (dir,mut proof)=fixture();
++    let time=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs(); write_snapshot(&proof,time,time+60);
++    let stable=uuid::Uuid::new_v4().to_string(); let broker=dir.path().join("broker.json");
++    proof.route.cli=dir.path().join("cmux");
++    let script=OWNED_BROKER_FIXTURE.replace("SESSION",&serde_json::to_string(&proof.session).unwrap())
++        .replace("STABLE_ID",&serde_json::to_string(&stable).unwrap())
++        .replace("BROKER",&serde_json::to_string(&broker.to_string_lossy()).unwrap())
++        .replace("DROP_DESIGNATED",if drop_designated { "True" } else { "False" });
++    std::fs::write(&proof.route.cli,script).unwrap();
++    std::fs::set_permissions(&proof.route.cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++    let mut call=params(); call.thread_id=proof.session.clone();
++    call.arguments=json!({"action":"start","body":{"request_id":stable,"caller_session_id":"forged-thread","provider_turn_id":"forged-turn","provider_call_id":"forged-call"}});
++    let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel(); let tx=AppEventSender::new(tx);
++    // Simulate independent attached processes, each with its own local seen set.
++    for frontend in 0..2 {
++        if frontend==1 {
++            proof.panel.scope_file=dir.path().join("scope-second.json");
++            std::fs::write(&proof.panel.scope_file,"second-private-registration").unwrap();
++            std::fs::set_permissions(&proof.panel.scope_file,std::fs::Permissions::from_mode(0o600)).unwrap();
++        }
++        fixture_enroll(proof.clone(),tx.clone());
++        forward(&call,codex_app_server_protocol::RequestId::String(format!("rpc-{frontend}")),tx.clone());
++        fixture_finish_calls().await;
++    }
++    // Mock the owned provider RPC response sink at the real AppEvent boundary.
++    #[derive(Default)]
++    struct OwnedResponseBroker { responses:Vec<(codex_app_server_protocol::RequestId,serde_json::Value)> }
++    impl OwnedResponseBroker {
++        async fn resolve_server_request(&mut self,id:codex_app_server_protocol::RequestId,result:serde_json::Value) {
++            self.responses.push((id,result));
++        }
++    }
++    let mut owned=OwnedResponseBroker::default();
++    while let Ok(event)=rx.try_recv() {
++        if let AppEvent::CmuxToolCompleted { request_id,response,.. }=event {
++            owned.resolve_server_request(request_id,serde_json::to_value(response).unwrap()).await;
++        } else { panic!("bridge emitted unrelated event"); }
++    }
++    let responses=owned.responses;
++    assert_eq!(responses.len(),usize::from(!drop_designated));
++    if !drop_designated {
++        assert_eq!(responses[0].0,codex_app_server_protocol::RequestId::String("rpc-0".into()));
++        let model=responses[0].1.to_string();
++        assert!(model.contains("same-completion")); assert!(!model.contains("_cmux_should_respond"));
++    }
++    let state:serde_json::Value=serde_json::from_slice(&std::fs::read(broker).unwrap()).unwrap();
++    assert_eq!(state["effects"],1); assert_eq!(state["forwards"],2,"no bridge retry or responder takeover");
++    select(None,tx);
++}
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_two_forwarders_one_owned_broker_response() { two_forwarders(false).await; }
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_lost_designated_forwarder_never_transfers_response() { two_forwarders(true).await; }
++
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_response_control_is_transport_only_and_fixture_compatible() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let (dir,mut proof)=fixture(); proof.route.cli=dir.path().join("cmux");
++    let mut call=params(); call.thread_id=proof.session.clone();
++    let mut completion=None;
++    for (control,expected) in [(Some(json!(true)),true),(Some(json!(false)),false),(Some(json!("true")),false),(Some(json!(null)),false),(None,true)] {
++        let mut result=json!({"result":"complete"});
++        if let Some(control)=control { result["_cmux_should_respond"]=control; }
++        let script=format!("#!/usr/bin/env python3\nprint({})\n",serde_json::to_string(&result.to_string()).unwrap());
++        std::fs::write(&proof.route.cli,script).unwrap();
++        std::fs::set_permissions(&proof.route.cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++        let reply=bridge_once(&proof,&call).await;
++        assert_eq!(reply.should_respond,expected);
++        let model=serde_json::to_string(&reply.response).unwrap();
++        assert!(model.contains("complete")); assert!(!model.contains("_cmux_should_respond"));
++        if let Some(previous)=&completion { assert_eq!(&model,previous,"all forwarders receive identical model completion bytes"); }
++        completion=Some(model);
++    }
++}
++
++#[cfg(unix)]
++const PANEL_RETRY_FIXTURE:&str=r#"#!/usr/bin/env python3
++import json,pathlib,sys
++assert sys.argv[1:5]==['--socket','/fixture.sock','task','panel']
++assert sys.argv[5:]==['--workspace',WORKSPACE,'--surface',SURFACE,'--session',SESSION,'--frontend-pid',PID,'--invocation','fresh-invocation']
++p=pathlib.Path(COUNTER)
++n=int(p.read_text())+1 if p.exists() else 1
++p.write_text(str(n))
++if n<=FAILURES: sys.exit(1)
++print(json.dumps({'snapshot_path':'/private/snapshot.json','scope_file':'/private/scope.json'}))
++"#;
++#[cfg(unix)]
++fn retry_script(target:&Route,session:&str,counter:&std::path::Path,failures:u32)->String {
++    PANEL_RETRY_FIXTURE.replace("WORKSPACE",&serde_json::to_string(&target.workspace).unwrap())
++        .replace("SURFACE",&serde_json::to_string(&target.surface).unwrap())
++        .replace("SESSION",&serde_json::to_string(session).unwrap())
++        .replace("PID",&serde_json::to_string(&target.pid.to_string()).unwrap())
++        .replace("COUNTER",&serde_json::to_string(&counter.to_string_lossy()).unwrap())
++        .replace("FAILURES",&failures.to_string())
++}
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_panel_waits_for_binding_and_stops_after_three_reads() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let dir=tempfile::tempdir().unwrap(); let mut target=route(); target.cli=dir.path().join("cmux");
++    let session=uuid::Uuid::new_v4().to_string();
++    for (failures,attempts,success) in [(2,3,true),(9,3,false)] {
++        let counter=dir.path().join(format!("reads-{failures}"));
++        std::fs::write(&target.cli,retry_script(&target,&session,&counter,failures)).unwrap();
++        std::fs::set_permissions(&target.cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++        assert_eq!(panel(&target,&session).await.is_some(),success);
++        assert_eq!(std::fs::read_to_string(counter).unwrap(),attempts.to_string());
++    }
++}
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_selection_cancels_pending_panel_registration() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let (dir,mut proof)=fixture(); proof.route.cli=dir.path().join("cmux");
++    let counter=dir.path().join("reads");
++    std::fs::write(&proof.route.cli,retry_script(&proof.route,&proof.session,&counter,9)).unwrap();
++    std::fs::set_permissions(&proof.route.cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++    let (tx,_rx)=tokio::sync::mpsc::unbounded_channel(); let tx=AppEventSender::new(tx);
++    fixture_enroll(proof.clone(),tx.clone()); binding_verified(&proof.session,Some(proof.generation));
++    tokio::time::timeout(Duration::from_secs(3),async {
++        while std::fs::read_to_string(&counter).ok().as_deref()!=Some("1") { tokio::task::yield_now().await; }
++    }).await.unwrap();
++    select(None,tx); tokio::time::sleep(Duration::from_millis(1500)).await;
++    assert_eq!(std::fs::read_to_string(counter).unwrap(),"1");
++    assert!(!authorized(&proof.session,proof.generation));
++}
++
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_owned_error_is_failure_without_transport_fields() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let (dir,mut proof)=fixture(); proof.route.cli=dir.path().join("cmux");
++    std::fs::write(&proof.route.cli,"#!/usr/bin/env python3\nimport json,sys\nassert isinstance(json.load(sys.stdin)['arguments'],dict)\nprint('{\"_cmux_should_respond\":true,\"_cmux_tool_error\":true,\"phase\":\"unconfirmed\",\"error\":\"provider busy\"}')\n").unwrap();
++    std::fs::set_permissions(&proof.route.cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++    let mut call=params();call.thread_id=proof.session.clone();
++    for arguments in [json!({"action":"inbox"}),json!({"action":"unsupported"}),json!({}),json!(null),json!([])] {
++        call.arguments=arguments;
++        let reply=bridge_once(&proof,&call).await;
++        assert!(reply.should_respond); assert!(!reply.response.success);
++        let text=serde_json::to_string(&reply.response).unwrap();
++        assert!(text.contains("provider busy")); assert!(!text.contains("_cmux_tool_error")); assert!(!text.contains("_cmux_should_respond"));
++    }
++}
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_call_waits_for_proof_once_with_exact_provider_ids() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let (dir,mut proof)=fixture(); proof.route.cli=dir.path().join("cmux");
++    let time=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();write_snapshot(&proof,time,time+60);
++    let counter=dir.path().join("calls");
++    let script=format!("#!/usr/bin/env python3\nimport json,pathlib,sys\nx=json.load(sys.stdin)\nassert x['caller_session_id']=={}\nassert x['provider_turn_id']=='turn-real' and x['provider_call_id']=='call-real' and x['request_id']=='call-real'\np=pathlib.Path({})\np.write_text(p.read_text()+'x' if p.exists() else 'x')\nprint('{{\"_cmux_should_respond\":true,\"result\":\"queued-result\"}}')\n",
++        serde_json::to_string(&proof.session).unwrap(),serde_json::to_string(&counter.to_string_lossy()).unwrap());
++    std::fs::write(&proof.route.cli,script).unwrap();std::fs::set_permissions(&proof.route.cli,std::fs::Permissions::from_mode(0o700)).unwrap();
++    let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel();let tx=AppEventSender::new(tx);
++    let mut call=params();call.thread_id=proof.session.clone();
++    fixture_pending(proof.clone(),tx.clone());
++    forward(&call,codex_app_server_protocol::RequestId::Integer(99),tx.clone());
++    assert_eq!(fixture_call_count(),1,"pre-proof request must be retained");assert!(!counter.exists());
++    fixture_ready(proof.clone());fixture_finish_calls().await;
++    let event=rx.try_recv().unwrap();
++    assert!(matches!(event,AppEvent::CmuxToolCompleted { request_id:codex_app_server_protocol::RequestId::Integer(99),response,.. } if response.success));
++    assert_eq!(std::fs::read_to_string(&counter).unwrap(),"x");
++    forward(&call,codex_app_server_protocol::RequestId::Integer(99),tx.clone());fixture_finish_calls().await;
++    assert_eq!(std::fs::read_to_string(counter).unwrap(),"x"); assert!(rx.try_recv().is_err());select(None,tx);
++}
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_preproof_queue_is_bounded_and_cancellable() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let (_dir,proof)=fixture();let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel();let tx=AppEventSender::new(tx);
++    fixture_pending(proof.clone(),tx.clone());
++    for index in 0..40 {
++        let mut call=params();call.thread_id=proof.session.clone();call.call_id=format!("call-{index}");
++        forward(&call,codex_app_server_protocol::RequestId::Integer(index),tx.clone());
++    }
++    assert_eq!(fixture_call_count(),32);
++    cancel_request(&codex_app_server_protocol::RequestId::Integer(0));assert_eq!(fixture_call_count(),31);
++    select(None,tx.clone());fixture_ready(proof.clone());fixture_finish_calls().await;
++    assert_eq!(fixture_call_count(),0);
++    while let Ok(event)=rx.try_recv() { assert!(matches!(event,AppEvent::CmuxWorkers { counts:Some(Counts { unavailable:true,.. }),.. })); }
++    assert!(!authorized(&proof.session,proof.generation));
++}
++#[cfg(unix)]
++#[tokio::test]
++async fn cmux_orchestration_wait_for_proof_has_a_deadline_without_provider_dispatch() {
++    if !cfg!(feature="cmux-quiet") { return; }
++    let (_dir,proof)=fixture();let (tx,mut rx)=tokio::sync::mpsc::unbounded_channel();let tx=AppEventSender::new(tx);
++    fixture_pending(proof.clone(),tx.clone());
++    assert!(wait_for_proof(&proof.session,proof.generation,Duration::ZERO).await.is_none());
++    assert_eq!(fixture_call_count(),0);assert!(rx.try_recv().is_err());select(None,tx);
++}
+--- a/codex-rs/tui/src/app/cmux_orchestration_tests.rs
++++ b/codex-rs/tui/src/app/cmux_orchestration_tests.rs
+@@ -0,0 +1,52 @@
++use super::*;
++use crate::app::owned_transcript::tests::{attach_thread, buffer_text};
++#[tokio::test]
++async fn cmux_orchestration_owned_screen_is_passive_and_preserves_history() -> Result<()> {
++    let (mut app,mut events,_ops)=crate::app::tests::make_test_app_with_channels().await;
++    attach_thread(&mut app,ThreadId::new());
++    app.local_settings.tui.animations=false;
++    app.transcript_cells=vec![
++        Arc::new(history_cell::PlainHistoryCell::new(vec!["Assistant prose stays.".into()])),
++        Arc::new(history_cell::new_error_event("Failure remains visible.".into())),
++        Arc::from(history_cell::new_approval_decision_cell(
++            history_cell::ApprovalDecisionSubject::Command(vec!["approval-marker".into()]),
++            history_cell::ReviewDecision::Denied,history_cell::ApprovalDecisionActor::User)),
++    ];
++    while events.try_recv().is_ok() {}
++    let history_len=app.transcript_cells.len();
++    app.chat_widget.set_cmux_workers(Some(crate::cmux_orchestration::Counts { running:2,unread:1,needs_input:1,disconnected:0,..Default::default() }));
++    let mut tui=crate::tui::test_support::make_test_tui()?;
++    tui.set_owned_screen(true)?; let size=Size::new(100,24); tui.terminal.resize(size)?;
++    for _ in 0..2 {
++        app.render_owned_transcript(&mut tui,size)?;
++        let screen=buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal));
++        assert!(screen.contains("Assistant prose stays."),"{screen}");
++        assert!(screen.contains("Failure remains visible."),"{screen}");
++        assert!(screen.contains("approval-marker"),"{screen}");
++        assert_eq!(screen.contains("cmux workers · 2 running"),cfg!(feature="cmux-quiet"),"{screen}");
++        assert!(!screen.contains("Working"),"parent is idle: {screen}");
++        assert_eq!(app.transcript_cells.len(),history_len);
++        #[cfg(feature="cmux-quiet")] app.transcript_view.toggle_cmux_quiet();
++    }
++    // Row updates are local presentation, never an InsertHistoryCell or model op.
++    while let Ok(event)=events.try_recv() {
++        assert!(!matches!(event,AppEvent::InsertHistoryCell(_) | AppEvent::CodexOp(_)),"a passive row must not produce provider work or history");
++    }
++    let thread=app.chat_widget.thread_id().unwrap();
++    let started=serde_json::from_value(serde_json::json!({"method":"turn/started","params":{"threadId":thread.to_string(),"turn":{"id":"busy-turn","items":[],"itemsView":"full","status":"inProgress","error":null,"startedAt":null,"completedAt":null,"durationMs":0}}})).unwrap();
++    app.handle_thread_event_now(ThreadBufferedEvent::Notification(Box::new(started)));
++    app.render_owned_transcript(&mut tui,size)?;
++    let screen=buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal));
++    assert!(screen.contains("Working"),"{screen}");
++    assert_eq!(screen.contains("cmux workers · 2 running"),cfg!(feature="cmux-quiet"),"{screen}");
++    app.chat_widget.set_cmux_workers(Some(crate::cmux_orchestration::Counts { unavailable:true,..Default::default() }));
++    app.render_owned_transcript(&mut tui,size)?;
++    let screen=buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal));
++    assert_eq!(screen.contains("cmux workers · status unavailable"),cfg!(feature="cmux-quiet"),"{screen}");
++    assert!(!screen.contains("cmux workers · 2 running"));
++    assert_eq!(app.transcript_cells.len(),history_len);
++    app.chat_widget.set_cmux_workers(None); app.render_owned_transcript(&mut tui,size)?;
++    let screen=buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal));
++    assert!(!screen.contains("cmux workers"));
++    tui.set_owned_screen(false)?; Ok(())
++}

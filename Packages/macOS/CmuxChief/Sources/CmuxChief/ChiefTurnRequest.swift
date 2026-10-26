@@ -20,6 +20,11 @@ public struct ChiefTurnRequest: Sendable {
     public var workingDirectory: URL
     /// Extra environment for the brain's process.
     public var environment: [String: String]
+    /// A durable identity for this prompt, nil to let the brain pick a random one.
+    ///
+    /// Managed task turns pass their operation ID so the provider's echo of the
+    /// prompt correlates with a saved receipt. It is correlation, not deduplication.
+    public var promptID: UUID?
 
     /// Creates a request.
     ///
@@ -32,8 +37,10 @@ public struct ChiefTurnRequest: Sendable {
     ///   - systemPrompt: The Chief's system prompt.
     ///   - workingDirectory: The process's working directory.
     ///   - environment: Extra process environment.
+    ///   - promptID: A durable prompt identity; nil (the default) keeps the brain's random one.
     public init(conversation: ConversationID, resumeSession: String?, userText: String, attachmentPaths: [URL],
-                replyContext: String?, systemPrompt: String, workingDirectory: URL, environment: [String: String]) {
+                replyContext: String?, systemPrompt: String, workingDirectory: URL, environment: [String: String],
+                promptID: UUID? = nil) {
         self.conversation = conversation
         self.resumeSession = resumeSession
         self.userText = userText
@@ -42,5 +49,6 @@ public struct ChiefTurnRequest: Sendable {
         self.systemPrompt = systemPrompt
         self.workingDirectory = workingDirectory
         self.environment = environment
+        self.promptID = promptID
     }
 }

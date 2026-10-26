@@ -13,6 +13,14 @@ enum ClaudeStreamOutput: Sendable, Equatable {
     case stalePermission(requestID: String, input: ChiefJSON)
     /// A control request the driver does not handle; it answers with an error.
     case unsupportedControl(requestID: String, subtype: String)
+    /// Strict mode: Claude Code echoed the running turn's prompt (it was read).
+    case accepted
+    /// Strict mode: the running turn's `result` reports an interruption.
+    case interrupted
+    /// Strict mode: Claude Code answered the driver's control request `requestID`.
+    case controlResponse(requestID: String, error: String?)
+    /// Strict mode: `system/init` names a session other than the expected one.
+    case sessionChanged(String)
 }
 
 /// Turns Claude Code's `--output-format stream-json` lines into Chief turn
@@ -32,6 +40,10 @@ enum ClaudeStreamOutput: Sendable, Equatable {
 /// `result` after the next prompt was written. Until Claude Code echoes the
 /// next prompt (`--replay-user-messages`), that output is the old turn's and
 /// is dropped.
+///
+/// Strict mode (managed task conversations) never normalizes an interrupted
+/// `result` to a finish, reports the prompt echo and control responses, never
+/// adopts a different session, and leaves reply text unfiltered.
 struct ClaudeStreamParser: Sendable {
     /// The session id from the last `system/init`.
     private(set) var sessionID: String?
@@ -43,11 +55,14 @@ struct ClaudeStreamParser: Sendable {
     private var blockKinds: [Int: String] = [:]
     private var startedTools: Set<String> = []
     private var openText = false
+    private let strict: Bool
+    private var interruptRequested = false
     /// Lifts `cmux-question` / `cmux-result` blocks out of the reply text.
     var blocks = ChiefStructuredBlocks()
 
-    init(sessionID: String? = nil) {
+    init(sessionID: String? = nil, strict: Bool = false) {
         self.sessionID = sessionID
+        self.strict = strict
     }
 
     /// Starts a turn whose prompt line carries `uuid`.
@@ -56,8 +71,14 @@ struct ClaudeStreamParser: Sendable {
         turnOutput = false
         awaitingEcho = uuid
         openText = false
+        interruptRequested = false
         startedTools = []
         blocks.reset()
+    }
+
+    /// Strict mode: the driver asked Claude Code to interrupt the running turn.
+    mutating func noteInterruptRequested() {
+        interruptRequested = true
     }
 
     /// Ends the running turn early (Stop). Its late output and `result` are dropped.
@@ -94,6 +115,8 @@ struct ClaudeStreamParser: Sendable {
     /// Reads one parsed stdout line. Reply text passes through ``blocks``.
     mutating func consume(_ line: ChiefJSON) -> [ClaudeStreamOutput] {
         let raw = consumeLine(line)
+        // A managed worker's reply is not a Chief transcript: keep it verbatim.
+        if strict { return raw }
         blocks.session = sessionID
         return raw.flatMap { output -> [ClaudeStreamOutput] in
             guard case .event(let event) = output else { return [output] }
@@ -104,10 +127,13 @@ struct ClaudeStreamParser: Sendable {
     private mutating func consumeLine(_ line: ChiefJSON) -> [ClaudeStreamOutput] {
         let type = line["type"]?.string ?? ""
         if type == "control_request" { return controlRequest(line) }
+        if type == "control_response" { return strict ? controlResponse(line) : [] }
         if line["parent_tool_use_id"]?.string != nil { return [] }
         switch type {
         case "system":
             guard line["subtype"]?.string == "init", let id = line["session_id"]?.string, id != sessionID else { return [] }
+            // Never adopt a replacement for the session the driver asked for.
+            if strict, sessionID != nil { return [.sessionChanged(id)] }
             sessionID = id
             return turnActive ? [.event(.session(id))] : []
         case "user":
@@ -133,12 +159,19 @@ struct ClaudeStreamParser: Sendable {
         return [.permission(requestID: id, tool: request["tool_name"]?.string ?? "tool", input: request["input"] ?? [:])]
     }
 
+    private func controlResponse(_ line: ChiefJSON) -> [ClaudeStreamOutput] {
+        let response = line["response"] ?? .null
+        guard let id = response["request_id"]?.string else { return [] }
+        guard response["subtype"]?.string == "error" else { return [.controlResponse(requestID: id, error: nil)] }
+        return [.controlResponse(requestID: id, error: response["error"]?.string ?? "error")]
+    }
+
     private mutating func user(_ line: ChiefJSON) -> [ClaudeStreamOutput] {
         if line["isReplay"]?.bool == true, let uuid = line["uuid"]?.string, uuid == awaitingEcho {
             // The stopped turn's result may still follow, before this
             // turn's own output; `result` handles it.
             awaitingEcho = nil
-            return []
+            return strict ? [.accepted] : []
         }
         guard !stale, let content = line["message"]?["content"]?.array else { return [] }
         var out: [ClaudeStreamOutput] = []
@@ -211,6 +244,11 @@ struct ClaudeStreamParser: Sendable {
         startedTools = []
         let resultText = line["result"]?.string
         let interrupted = subtype == "error_during_execution" && (line["result"]?.isNull ?? true) && !isError
+        if strict, interrupted || (interruptRequested && subtype == "error_during_execution") {
+            interruptRequested = false
+            return out + [.interrupted]
+        }
+        interruptRequested = false
         if (isError || subtype.hasPrefix("error")) && !interrupted {
             out.append(.event(.failed(Self.failureMessage(line, subtype: subtype, text: resultText))))
         } else {

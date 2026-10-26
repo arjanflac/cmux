@@ -157,6 +157,7 @@ struct SettingsRowAnchorResolutionTests {
         "windowHints.beta.enabled",
         "sidebarAppearance.matchTerminalBackground",
         "shortcuts.showModifierHoldHints",
+        "terminal.agentOrchestration",
         "terminal.agentHibernation.enabled",
         "terminal.agentHibernation.idleSeconds",
         "terminal.agentHibernation.maxLiveTerminals",

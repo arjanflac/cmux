@@ -12,10 +12,20 @@ between true quiet and the original compact view. Assistant messages, user shell
 commands, failures, approvals, unknown/media content and meaningful status stay
 visible. Full-content search and F4 retain the original tool data.
 
+The derived frontend also suppresses the recurring **Working** tip. Startup and
+completion guidance stays available. With **Background Agent Coordination**
+enabled, new cmux-owned Codex threads receive a scoped coordination tool and a
+passive worker row above the composer. Existing resumed threads retain their
+original tools. [Coordination controls and limits](../../docs/agent-messages.md)
+include headless workers, exact-session follow-ups, passive receipts and finite
+schedules; they do not install global hooks or a scheduling daemon.
+
 ## Launch boundaries
 
 Plain interactive launch, `resume` and an explicit resume UUID are supported,
-with a narrow set of model, cwd, sandbox and approval flags. Other flags, prompts
+with a narrow set of model, cwd, sandbox and approval flags. The exact native
+restore lane also accepts `--yolo` and only the supported update-check/effort
+config keys, preserving original permission choices. Other flags, prompts
 and noninteractive commands use stock before input or thread submission. The
 frontend requires matching stock CLI/daemon versions and a verified local daemon
 socket. It preserves local project configuration and uses stock helper paths.
@@ -38,7 +48,8 @@ restart a model turn. Global auto-resume remains a separate setting.
 rendering proof** on the selected source branch with `build_frontend=true`.
 The lane validates seven original rendering cases, attach boundaries, five
 binding cases (including declined delivery/retry against a fake CLI), and four
-focus cases before/after their patch. Regression failures must be executed test
+focus cases before/after their patch, plus Working-tip, orchestration and
+restore-compatibility regressions with feature-off controls. Regression failures must be executed test
 failures, never compilation errors. Release compilation belongs on GitHub,
 not the 8 GB workstation. No account/model turns are used by this lane.
 

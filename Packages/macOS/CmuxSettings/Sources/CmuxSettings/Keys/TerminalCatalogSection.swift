@@ -151,6 +151,14 @@ public struct TerminalCatalogSection: SettingCatalogSection {
         userDefaultsKey: "terminal.codexQuietFrontend"
     )
 
+    /// Opts new local terminal frontends into background agent coordination.
+    /// This feature preference does not grant worker or schedule authority.
+    public let agentOrchestration = DefaultsKey<Bool>(
+        id: "terminal.agentOrchestration",
+        defaultValue: false,
+        userDefaultsKey: "terminal.agentOrchestration"
+    )
+
     /// Absolute launch folders keyed by persistent workspace UUID; explicit cwd wins.
     public let workspaceLaunchDirectories = DefaultsKey<[String: String]>(
         id: "terminal.workspaceLaunchDirectories", defaultValue: [:],

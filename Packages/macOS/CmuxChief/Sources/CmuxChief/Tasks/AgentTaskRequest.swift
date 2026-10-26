@@ -3,7 +3,9 @@ import Foundation
 /// An explicitly requested child task, independent of terminal selection.
 public struct AgentTaskRequest: Codable, Equatable, Sendable {
     /// The installed harness that performs the task.
-    public enum Provider: String, Codable, Sendable { case codex, claude }
+    public enum Provider: String, Codable, Sendable { case codex, claude, opencode }
+    /// Provider-native approval policy; unrestricted work must be explicitly requested.
+    public enum PermissionMode: String, Codable, Sendable { case providerDefault, unrestricted }
     /// Whether the task receives a terminal tab or runs without a view.
     public enum Presentation: String, Codable, Sendable { case terminal, background }
 
@@ -21,6 +23,8 @@ public struct AgentTaskRequest: Codable, Equatable, Sendable {
     public var model: String?
     /// Optional provider reasoning effort.
     public var effort: String?
+    /// Explicit policy for this managed worker; missing legacy values use provider defaults.
+    public var permissionMode: PermissionMode?
     /// Terminal by default; background must be requested explicitly.
     public var presentation: Presentation
     /// Optional managed parent for task relationships and cancellation.
@@ -29,7 +33,8 @@ public struct AgentTaskRequest: Codable, Equatable, Sendable {
     /// Creates a task. Background execution must be explicitly selected.
     public init(provider: Provider, prompt: String, workspaceID: UUID, workingDirectory: URL,
                 model: String? = nil, effort: String? = nil,
-                presentation: Presentation = .terminal, parentTaskID: UUID? = nil, workspaceStableID: UUID? = nil) {
+                presentation: Presentation = .terminal, parentTaskID: UUID? = nil, workspaceStableID: UUID? = nil,
+                permissionMode: PermissionMode = .providerDefault) {
         self.provider = provider
         self.prompt = prompt
         self.workspaceID = workspaceID
@@ -37,6 +42,7 @@ public struct AgentTaskRequest: Codable, Equatable, Sendable {
         self.workingDirectory = workingDirectory
         self.model = model
         self.effort = effort
+        self.permissionMode = permissionMode
         self.presentation = presentation
         self.parentTaskID = parentTaskID
     }

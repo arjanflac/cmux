@@ -1255,14 +1255,11 @@ struct ContentView: View {
         maximumWidth: CGFloat,
         minimumWidth: CGFloat = CGFloat(SessionPersistencePolicy.defaultMinimumSidebarWidth)
     ) -> CGFloat {
-        let sanitizedMaximumWidth = max(minimumWidth, maximumWidth.isFinite ? maximumWidth : minimumWidth)
-        guard candidate.isFinite else {
-            return max(
-                minimumWidth,
-                min(sanitizedMaximumWidth, CGFloat(SessionPersistencePolicy.defaultSidebarWidth))
-            )
-        }
-        return max(minimumWidth, min(sanitizedMaximumWidth, candidate))
+        CGFloat(SessionPersistencePolicy.clampedSidebarWidth(
+            Double(candidate),
+            minimumWidth: Double(minimumWidth),
+            maximumWidth: Double(maximumWidth)
+        ))
     }
 
     private func clampSidebarWidthIfNeeded(availableWidth: CGFloat? = nil) {
@@ -1779,7 +1776,9 @@ struct ContentView: View {
 
         let minimumSidebarTitleInset = max(titlebarLeadingInset, minimumSidebarWidth + 12)
         guard isSidebarVisible else {
-            return minimumSidebarTitleInset
+            // Lowering the drag floor must not move the title when toggling a normal-width sidebar.
+            let retainedWidth = min(sidebarWidth, CGFloat(SessionPersistencePolicy.defaultSidebarWidth))
+            return max(minimumSidebarTitleInset, retainedWidth + 12)
         }
 
         let visibleSidebarTitleInset = sidebarWidth + 12

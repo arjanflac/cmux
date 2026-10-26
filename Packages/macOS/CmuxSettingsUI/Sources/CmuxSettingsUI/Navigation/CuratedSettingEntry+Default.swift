@@ -265,6 +265,14 @@ extension Array where Element == CuratedSettingEntry {
                 paths: ["terminal.predictiveLocalEcho"],
                 synonyms: "terminal.predictiveLocalEcho predictive local echo typing latency lag ssh remote speculative mosh round trip underline"
             ),
+            .init(
+                section: .terminal,
+                id: "agent-orchestration",
+                title: String(localized: "settings.terminal.agentOrchestration", defaultValue: "Background Agent Coordination", bundle: .module),
+                detailText: String(localized: "settings.terminal.agentOrchestration.subtitle", defaultValue: "Allow this cmux session to use background workers and scheduled tasks. Schedules run while cmux is open; missed work waits until resumed.", bundle: .module),
+                paths: ["terminal.agentOrchestration"],
+                synonyms: "terminal.agentOrchestration"
+            ),
             .init(section: .terminal, id: "agent-auto-resume", title: String(localized: "settings.terminal.agentAutoResume", defaultValue: "Resume Agent Sessions on Reopen"), synonyms: "Resume Agent Sessions on Reopen terminal.autoResumeAgentSessions auto resume restore reopen relaunch quit sessions agents claude code codex opencode rovo dev rovodev toggle"),
             .init(
                 section: .terminal,

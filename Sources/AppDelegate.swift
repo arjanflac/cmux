@@ -4095,6 +4095,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             // restored panel-identity aliases are recorded.
             AgentJournalLifecycleCenter.shared.noteStartupReplayReady()
             scheduleAgentSessionRecoveryAfterUncleanLaunchIfNeeded()
+            startAgentOrchestrationAfterRestore()
         }
         if Self.shouldSaveSessionSnapshotAfterMainWindowRegistration(
             isTerminatingApp: isTerminatingApp,
@@ -4213,6 +4214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         startupSessionSnapshot = nil
         let wasApplyingSessionRestore = isApplyingSessionRestore
         isApplyingSessionRestore = false
+        startAgentOrchestrationAfterRestore()
         if wasApplyingSessionRestore {
             SurfaceResumeRunPromptBatch.shared.endRestorePass()
             NotificationCenter.default.post(name: .mainWindowContextsDidChange, object: self)

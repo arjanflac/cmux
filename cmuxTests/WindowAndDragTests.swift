@@ -2342,7 +2342,7 @@ final class MainWindowDragBehaviorTests: XCTestCase {
         )
     }
 
-    func testMainWindowDragBehaviorRequiresExplicitDragZones() {
+    func testMainWindowDragBehaviorKeepsWindowManagerCompatibility() {
         let window = CmuxMainWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -2350,25 +2350,57 @@ final class MainWindowDragBehaviorTests: XCTestCase {
             defer: false
         )
         defer { window.orderOut(nil) }
-        window.isMovable = true
+        window.isMovable = false
         window.isMovableByWindowBackground = true
 
         configureCmuxMainWindowDragBehavior(window)
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             window.isMovable,
-            "Main windows must not use native AppKit titlebar dragging because pane tabs live in the titlebar band"
+            "Main windows must remain movable so Accessibility-based window managers such as Swish can attach titlebar gestures"
         )
-        XCTAssertFalse(window.isMovableByWindowBackground)
+        XCTAssertFalse(
+            window.isMovableByWindowBackground,
+            "Main content must not become an implicit AppKit background-drag region; explicit titlebar chrome owns app-window dragging"
+        )
 
         let previous = withTemporaryWindowMovableEnabled(window: window) {
             XCTAssertTrue(window.isMovable)
         }
 
-        XCTAssertEqual(previous, false)
+        XCTAssertEqual(previous, true)
+        XCTAssertTrue(
+            window.isMovable,
+            "Explicit chrome drag zones should preserve the window-manager-compatible movable state"
+        )
+    }
+
+    func testPaneTabDragSuppressesThenRestoresWindowManagerMovability() {
+        let window = CmuxMainWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 320, height: 180),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
+        defer {
+            _ = clearWindowDragSuppression(window: window)
+            window.orderOut(nil)
+        }
+        configureCmuxMainWindowDragBehavior(window)
+
+        XCTAssertEqual(
+            beginWindowMoveSuppressionSequence(window: window, reason: .bonsplitPaneTabDrag),
+            .bonsplitPaneTabDrag
+        )
         XCTAssertFalse(
             window.isMovable,
-            "Explicit chrome drag zones may temporarily enable movement, but the main window must return to pane-tab-safe immovable state"
+            "A pane-tab drag in the titlebar band must not move the now-movable window"
+        )
+
+        XCTAssertEqual(finishWindowMoveSuppressionSequence(window: window), .bonsplitPaneTabDrag)
+        XCTAssertTrue(
+            window.isMovable,
+            "Ending a pane-tab drag must restore the movable state window managers depend on"
         )
     }
 }
@@ -2439,10 +2471,8 @@ struct CustomTitlebarLeadingPaddingTests {
         )
     }
 
-    // Regression: at the default (== minimum) sidebar width, toggling the sidebar
-    // must not move the folder/title. The title tracks the actual width only when
-    // the sidebar is wider than the minimum, so the default width must equal the
-    // minimum for the visible and hidden insets to match.
+    // The starting width stays independent of the drag floor; toggling at that
+    // normal width must still leave the folder/title in place.
     @Test func togglingSidebarAtDefaultWidthDoesNotMoveTitle() {
         let width = CGFloat(SessionPersistencePolicy.defaultSidebarWidth)
         let minimum = CGFloat(SessionPersistencePolicy.minimumSidebarWidth)
@@ -2461,6 +2491,17 @@ struct CustomTitlebarLeadingPaddingTests {
             titlebarLeadingInset: 82
         )
         #expect(visible == hidden)
+    }
+
+    @Test(arguments: [true, false])
+    func narrowSidebarTitleTracksItsActualWidth(isVisible: Bool) {
+        #expect(ContentView.customTitlebarLeadingPadding(
+            isFullScreen: false,
+            isSidebarVisible: isVisible,
+            sidebarWidth: 100,
+            minimumSidebarWidth: 100,
+            titlebarLeadingInset: 82
+        ) == 112)
     }
 }
 

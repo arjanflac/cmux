@@ -1,0 +1,15 @@
+--- a/codex-rs/tui/src/app/turn_tips.rs
++++ b/codex-rs/tui/src/app/turn_tips.rs
+@@ -175,7 +175,11 @@
+             return None;
+         }
+         let surface = match &current.phase {
+-            Phase::Working if self.chat_widget.is_agent_turn_running() => {
++            // The derived frontend omits only the recurring Working tip row.
++            // Keep startup/completion tips and the Ctrl+T presentation toggle independent.
++            Phase::Working
++                if !cfg!(feature = "cmux-quiet") && self.chat_widget.is_agent_turn_running() =>
++            {
+                 let remaining =
+                     WORKING_DELAY.saturating_sub(now.saturating_duration_since(current.started_at));
+                 if !remaining.is_zero() {

@@ -1,0 +1,287 @@
+--- a/codex-rs/tui/src/cmux_quiet.rs
++++ b/codex-rs/tui/src/cmux_quiet.rs
+@@ -56,3 +56,199 @@
+         }
+     }
+ }
++
++/// Validate only the derived frontend launch lane, before any connection or input.
++pub fn parse(arguments: &[String]) -> anyhow::Result<crate::Cli> {
++    use clap::Parser;
++    use crate::Cli;
++
++    let mut rest = arguments;
++    let mut session = None;
++    let resume = rest.first().is_some_and(|a| a == "resume");
++    if resume {
++        rest = &rest[1..];
++        if rest.first().is_some_and(|a| !a.starts_with('-')) {
++            let value = &rest[0];
++            anyhow::ensure!(uuid::Uuid::parse_str(value).is_ok(), "only explicit resume UUIDs are supported");
++            session = Some(value.clone());
++            rest = &rest[1..];
++        }
++    }
++    let mut index = 0;
++    while index < rest.len() {
++        match rest[index].as_str() {
++            "-m" | "--model" | "-C" | "--cd" | "-s" | "--sandbox" | "-a" | "--ask-for-approval" => {
++                index += 1;
++                anyhow::ensure!(index < rest.len() && !rest[index].starts_with('-'), "missing option value");
++            }
++            "--dangerously-bypass-approvals-and-sandbox" => (),
++            _ => anyhow::bail!("unsupported invocation; use stock Codex"),
++        }
++        index += 1;
++    }
++    let mut cli = Cli::try_parse_from(std::iter::once("codex".to_string()).chain(rest.iter().cloned()))?;
++    cli.resume_picker = resume && session.is_none();
++    cli.resume_session_id = session;
++    Ok(cli)
++}
++
++
++#[cfg(test)]
++mod resume_compat_tests {
++    use super::*;
++    use clap::Parser;
++    use crate::Cli;
++
++    const SESSION: &str = "01a176fc-d044-7e62-92bb-de6c5c50c0d1";
++
++    fn args(values: &[&str]) -> Vec<String> {
++        values.iter().map(|value| value.to_string()).collect()
++    }
++
++    #[test]
++    fn cmux_resume_compat_exact_native_restore() {
++        // Quotes here are TOML quotes retained in the argv, not shell syntax.
++        let cli = parse(&args(&[
++            "--yolo", "-c", "check_for_update_on_startup=false",
++            "-c", r#"model_reasoning_effort="high""#, "resume", SESSION,
++        ])).unwrap();
++        assert_eq!(cli.resume_session_id.as_deref(), Some(SESSION));
++        assert!(!cli.resume_picker);
++        assert!(cli.dangerously_bypass_approvals_and_sandbox);
++        assert!(cli.prompt.is_none());
++        assert!(!cli.no_alt_screen);
++        let overrides = cli.config_overrides.parse_overrides().unwrap();
++        assert_eq!(overrides[0].0, "check_for_update_on_startup");
++        assert_eq!(overrides[0].1.as_bool(), Some(false));
++        assert_eq!(overrides[1].0, "model_reasoning_effort");
++        assert_eq!(overrides[1].1.as_str(), Some("high"));
++    }
++
++    #[test]
++    fn cmux_resume_compat_root_and_resume_option_positions() {
++        for values in [
++            vec!["resume", SESSION, "--yolo", "-c", "check_for_update_on_startup=false"],
++            vec!["--dangerously-bypass-approvals-and-sandbox", "resume", SESSION,
++                 "--config", "model_reasoning_effort=high"],
++            vec!["-C", "/tmp/project with spaces", "--config=check_for_update_on_startup=false",
++                 "resume", SESSION, "-m", "gpt-6-luna", "-c=model_reasoning_effort=high"],
++        ] {
++            let cli = parse(&args(&values)).unwrap();
++            assert_eq!(cli.resume_session_id.as_deref(), Some(SESSION));
++            assert!(cli.prompt.is_none());
++        }
++        let picker = parse(&args(&["-c", "check_for_update_on_startup=false", "resume"])).unwrap();
++        assert!(picker.resume_picker);
++        assert!(picker.resume_session_id.is_none());
++        let fresh = parse(&args(&["--yolo", "--config", "model_reasoning_effort=high"])).unwrap();
++        assert!(!fresh.resume_picker);
++        assert!(fresh.resume_session_id.is_none());
++    }
++
++    #[test]
++    fn cmux_resume_compat_known_efforts_and_exact_quote_forms() {
++        // Closed set of built-in wire values from the pinned ReasoningEffort.
++        for effort in ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra", "persistent"] {
++            for value in [effort.to_string(), format!("\"{effort}\""), format!("'{effort}'")] {
++                let config = format!("model_reasoning_effort={value}");
++                let cli = parse(&args(&["resume", SESSION, "-c", &config])).unwrap();
++                assert_eq!(cli.config_overrides.raw_overrides, vec![config]);
++                let parsed = cli.config_overrides.parse_overrides().unwrap();
++                assert_eq!(parsed[0].1.as_str(), Some(effort));
++            }
++        }
++    }
++
++    #[test]
++    fn cmux_resume_compat_config_values_and_precedence_are_preserved() {
++        let cli = parse(&args(&[
++            "--config", "model_reasoning_effort=low", "resume", SESSION,
++            "-c", r#"model_reasoning_effort="high""#,
++            "--config=check_for_update_on_startup=false",
++        ])).unwrap();
++        assert_eq!(cli.config_overrides.raw_overrides, vec![
++            "model_reasoning_effort=low", r#"model_reasoning_effort="high""#,
++            "check_for_update_on_startup=false",
++        ]);
++        assert!(cli.approval_policy.is_none());
++        assert!(cli.sandbox_mode.is_none());
++        assert!(!cli.dangerously_bypass_approvals_and_sandbox);
++    }
++
++    #[test]
++    fn cmux_resume_compat_permissions_match_upstream_without_added_bypass() {
++        for permission in [
++            vec![], vec!["--yolo"], vec!["--dangerously-bypass-approvals-and-sandbox"],
++            vec!["-a", "on-request", "--sandbox", "read-only"],
++            vec!["--ask-for-approval", "on-request", "-s", "workspace-write"],
++            vec!["--sandbox", "danger-full-access", "-a", "never"],
++        ] {
++            let stock = Cli::try_parse_from(std::iter::once("codex").chain(permission.iter().copied())).unwrap();
++            let mut restored = args(&permission);
++            restored.extend(args(&["-c", "check_for_update_on_startup=false", "resume", SESSION]));
++            let cli = parse(&restored).unwrap();
++            assert_eq!(cli.approval_policy.map(codex_protocol::protocol::AskForApproval::from), stock.approval_policy.map(codex_protocol::protocol::AskForApproval::from));
++            assert_eq!(cli.sandbox_mode.map(codex_protocol::config_types::SandboxMode::from), stock.sandbox_mode.map(codex_protocol::config_types::SandboxMode::from));
++            assert_eq!(cli.dangerously_bypass_approvals_and_sandbox, stock.dangerously_bypass_approvals_and_sandbox);
++            assert_eq!(cli.auto_review, stock.auto_review);
++            assert!(!cli.bypass_hook_trust);
++        }
++        for values in [
++            vec!["--yolo", "-a", "untrusted"],
++            vec!["--dangerously-bypass-approvals-and-sandbox", "--ask-for-approval", "on-request"],
++            vec!["--sandbox", "unknown"], vec!["-a", "unknown"],
++        ] {
++            assert!(parse(&args(&values)).is_err(), "{values:?}");
++        }
++    }
++
++    #[test]
++    fn cmux_resume_compat_rejects_unapproved_config_and_injection() {
++        for config in [
++            "check_for_update_on_startup=true", "check_for_update_on_startup=\"false\"",
++            "approval_policy=never", "sandbox_mode=danger-full-access", "approvals_reviewer=auto_review",
++            "features.daemon_auto_start=true", "model_provider=other", "model=gpt-6-luna",
++            "tui.title=anything", "model_reasoning_effort=unknown", "model_reasoning_effort=HIGH",
++            "model_reasoning_effort=", "model_reasoning_effort=\"high", "model_reasoning_effort=high\"",
++            "model_reasoning_effort=['high']", "model_reasoning_effort={value='high'}",
++            "model_reasoning_effort=high\napproval_policy='never'",
++            "model_reasoning_effort=\"high\"\napproval_policy='never'",
++            "model_reasoning_effort=high # comment", "model_reasoning_effort=high=never",
++            "model_reasoning_effort =high", "model_reasoning_effort= high", "other.key=false",
++        ] {
++            for flag in ["-c", "--config"] {
++                assert!(parse(&args(&[flag, config, "resume", SESSION])).is_err(), "{flag} {config:?}");
++                let joined = format!("{flag}={config}");
++                assert!(parse(&args(&["resume", SESSION, &joined])).is_err(), "{joined:?}");
++            }
++        }
++    }
++
++    #[test]
++    fn cmux_resume_compat_rejects_prompts_commands_and_malformed_options() {
++        for values in [
++            vec!["resume", "not-a-uuid"], vec!["--yolo", "resume", "not-a-uuid"],
++            vec!["resume", SESSION, "hello"], vec!["--yolo", "hello"],
++            vec!["resume", SESSION, "resume", SESSION], vec!["resume", "--last"],
++            vec!["resume", SESSION, "--", "hello"], vec!["exec"], vec!["fork", SESSION],
++            vec!["--remote", "unix:///tmp/other.sock"], vec!["--no-daemon"], vec!["--worktree"],
++            vec!["--dangerously-bypass-hook-trust"], vec!["--approve-for-me"], vec!["--search"],
++            vec!["--profile", "other"], vec!["--config"], vec!["-c"],
++            vec!["-c", "resume", SESSION], vec!["--config="], vec!["-cmodel_reasoning_effort=high"],
++            vec!["--model"], vec!["--model", "--yolo"], vec!["resume", SESSION, SESSION],
++        ] {
++            assert!(parse(&args(&values)).is_err(), "{values:?}");
++        }
++    }
++
++    #[test]
++    fn cmux_resume_compat_stock_cli_and_backend_feature_controls() {
++        // The normal TUI CLI is not extended by the derived eligibility helper.
++        let cli = Cli::try_parse_from(["codex", "--yolo"]).unwrap();
++        assert!(cli.dangerously_bypass_approvals_and_sandbox);
++        assert!(cli.config_overrides.raw_overrides.is_empty());
++        assert!(Cli::try_parse_from(["codex", "-c", "check_for_update_on_startup=false"]).is_err());
++        assert_eq!(require_embedded_allowed().is_err(), cfg!(feature = "cmux-quiet"));
++        assert_eq!(require_server_version(None).is_err(), cfg!(feature = "cmux-quiet"));
++    }
++}
+--- a/codex-rs/tui/src/bin/cmux-quiet.rs
++++ b/codex-rs/tui/src/bin/cmux-quiet.rs
+@@ -1,44 +1,13 @@
+ //! A deliberately narrow entrypoint. The cmux wrapper handles stock fallback
+ //! before calling this binary. Errors here never replay input through stock.
+ #![recursion_limit = "256"]
+-use clap::Parser;
+ use codex_app_server_client::{RemoteAppServerClient, RemoteAppServerConnectArgs, RemoteAppServerEndpoint};
+ use codex_arg0::Arg0DispatchPaths;
+ use codex_config::LoaderOverrides;
+-use codex_tui::{Cli, ExitReason};
++use codex_tui::cmux_quiet::parse;
++use codex_tui::ExitReason;
+ use std::io::IsTerminal;
+ use std::path::PathBuf;
+-
+-fn parse(arguments: &[String]) -> anyhow::Result<Cli> {
+-    let mut rest = arguments;
+-    let mut session = None;
+-    let resume = rest.first().is_some_and(|a| a == "resume");
+-    if resume {
+-        rest = &rest[1..];
+-        if rest.first().is_some_and(|a| !a.starts_with('-')) {
+-            let value = &rest[0];
+-            anyhow::ensure!(uuid::Uuid::parse_str(value).is_ok(), "only explicit resume UUIDs are supported");
+-            session = Some(value.clone());
+-            rest = &rest[1..];
+-        }
+-    }
+-    let mut index = 0;
+-    while index < rest.len() {
+-        match rest[index].as_str() {
+-            "-m" | "--model" | "-C" | "--cd" | "-s" | "--sandbox" | "-a" | "--ask-for-approval" => {
+-                index += 1;
+-                anyhow::ensure!(index < rest.len() && !rest[index].starts_with('-'), "missing option value");
+-            }
+-            "--dangerously-bypass-approvals-and-sandbox" => (),
+-            _ => anyhow::bail!("unsupported invocation; use stock Codex"),
+-        }
+-        index += 1;
+-    }
+-    let mut cli = Cli::try_parse_from(std::iter::once("codex".to_string()).chain(rest.iter().cloned()))?;
+-    cli.resume_picker = resume && session.is_none();
+-    cli.resume_session_id = session;
+-    Ok(cli)
+-}
+ 
+ async fn endpoint() -> anyhow::Result<RemoteAppServerEndpoint> {
+     let home = codex_utils_home_dir::find_codex_home()?;
+--- a/codex-rs/tui/src/cmux_session_binding.rs
++++ b/codex-rs/tui/src/cmux_session_binding.rs
+@@ -225,4 +225,32 @@
+         assert_eq!(std::fs::read_to_string(counter).unwrap(), "2", "bounded retry waits for the actual current binding");
+     }
+ 
+-}
++
++    #[test]
++    fn cmux_resume_compat_binding_capture_accepts_root_options_before_resume() {
++        let current = session();
++        for original in [
++            vec!["--yolo", "-c", "check_for_update_on_startup=false", "-c", r#"model_reasoning_effort="high""#,
++                 "resume", "01a176fc-d044-7e62-92bb-de6c5c50c0d1"],
++            vec!["--yolo", "-c", "check_for_update_on_startup=false", "-c", r#"model_reasoning_effort="high""#,
++                 "-m", "resume", "-C", "resume", "resume", "01a176fc-d044-7e62-92bb-de6c5c50c0d1"],
++            vec!["resume", "01a176fc-d044-7e62-92bb-de6c5c50c0d1", "--yolo", "-c", "check_for_update_on_startup=false",
++                 "-c", r#"model_reasoning_effort="high""#],
++        ] {
++            let mut target = route(); target.original = original.into_iter().map(str::to_string).collect();
++            let captured = capture_arguments(&target, &current);
++            assert_eq!(captured, ["/stock/codex", "resume", "actual-session", "--yolo", "-c", "check_for_update_on_startup=false",
++                "-c", r#"model_reasoning_effort="high""#, "--model", "actual-model", "--cd", "/actual"]);
++        }
++        // An option operand is data, even when it spells a command. The
++        // production parser still validates permission values independently.
++        let mut target = route();
++        target.original = ["--sandbox", "resume", "-a", "resume", "resume", "old-session"]
++            .into_iter().map(str::to_string).collect();
++        assert_eq!(capture_arguments(&target, &current), ["/stock/codex", "resume", "actual-session",
++            "--sandbox", "resume", "-a", "resume", "--model", "actual-model", "--cd", "/actual"]);
++        target.original = ["--yolo", "resume", "--model", "old-model"].into_iter().map(str::to_string).collect();
++        assert_eq!(capture_arguments(&target, &current), ["/stock/codex", "resume", "actual-session",
++            "--yolo", "--model", "actual-model", "--cd", "/actual"]);
++    }
++}

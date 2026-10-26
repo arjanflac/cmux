@@ -5293,5 +5293,30 @@
     "identityLocales": {
       "fr": "Suggestions is the standard French noun for this label and shares the English spelling."
     }
+  },
+  "cli.agentTask.literal.usage": {
+    "source": "cmux task start --provider codex|claude|opencode --workspace <id|ref> --cwd <dir>\n                [--model <id>] [--effort <level>] [--parent-task <id>]\n                [--background|--terminal] [--request-id <uuid>]\n                [--permission-mode <mode>] [--prompt-file <path|->] [--wait] -- <task>\ncmux task read|wait|cancel <task-id>\ncmux task attach <task-id> [--workspace <id|ref>]\ncmux task list\ncmux task send <task-id> [--request-id <uuid>] [--prompt-file <path|->] [--wait] -- <message>\ncmux task turns <task-id>\ncmux task result|wait-turn <operation-id>\ncmux task inbox <parent-task-id> [--after <sequence>]\ncmux task ack <parent-task-id> <event-id>\ncmux task schedule create --owner <task-id> --at <ISO8601> [--request-id <uuid>]\n                         [--target <task-id> | --provider codex|claude|opencode\n                          --workspace <id|ref> --cwd <dir> [--model <id>] [--effort <level>]\n                          [--permission-mode <mode>]]\n                         [--timezone <IANA-zone>] [--expires <ISO8601>]\n                         [--misfire hold|skip|coalesceOne] [--repeat-seconds <seconds>]\n                         [--max-runs <limit>] [--prompt-file <path|->] -- <message>\ncmux task schedule list --owner <task-id>\ncmux task schedule read|pause|resume|cancel <schedule-id> --owner <task-id>",
+    "class": "syntax",
+    "reason": "Exact command and flag syntax in CLI/CMUXCLI+AgentTasks.swift. The help prose is separately localized in cli.agentTask.help, cli.agentTask.help.turns and cli.agentTask.help.schedules."
+  },
+  "cli.agentTask.mcp.literal.toolName": {
+    "source": "cmux_tasks",
+    "class": "technical",
+    "reason": "Exact MCP tool name in CLI/CMUXCLI+AgentTaskMCP.swift; protocol clients match this identifier."
+  },
+  "cli.agentTask.mcp.literal.serverName": {
+    "source": "cmux-workers",
+    "class": "technical",
+    "reason": "Exact MCP serverInfo name in CLI/CMUXCLI+AgentTaskMCP.swift; an invariant protocol identifier."
+  },
+  "cli.agentTask.mcp.literal.toolDescription": {
+    "source": "Manage this cmux conversation's background workers, inbox and schedules. Mutations require a stable UUID request_id; reuse it only for an identical retry. Inspect uncertain work instead of resubmitting.",
+    "class": "technical",
+    "reason": "Exact model-facing tools/list description in CLI/CMUXCLI+AgentTaskMCP.swift. MCP schema instructions remain invariant English by protocol convention; human-facing CLI help and errors are localized separately."
+  },
+  "cli.agentTask.mcp.literal.methodNotFound": {
+    "source": "Method not found",
+    "class": "technical",
+    "reason": "Exact JSON-RPC standard error message for code -32601 in CLI/CMUXCLI+AgentTaskMCP.swift; retained as invariant protocol text."
   }
 }

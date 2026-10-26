@@ -5,6 +5,7 @@ import importlib.util
 import io
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -59,6 +60,302 @@ class ReleaseLockTests(unittest.TestCase):
     def test_rejects_external_checksum_changes(self):
         with self.assertRaisesRegex(RuntimeError, "more than local workspace"):
             self.exercise(change_external=True)
+
+
+class WorkingTipProofTests(unittest.TestCase):
+    def test_requires_rendered_failure_then_derived_and_stock_passes(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        count = manifest["workingTipTestCount"]
+        applied = False
+        features = []
+
+        def git(arguments, directory):
+            nonlocal applied
+            if arguments[:2] == ["git", "apply"]:
+                self.assertEqual(Path(arguments[-1]).name, "working-tip.patch")
+                if "--check" not in arguments:
+                    applied = True
+            return ""
+
+        def cargo(arguments, **kwargs):
+            self.assertEqual(arguments[:6], ["cargo", "test", "--locked", "-p", "codex-tui", "--lib"])
+            self.assertIn("cmux_working_tip_", arguments)
+            feature = "--features" in arguments
+            features.append(feature)
+            failed = int(feature and not applied)
+            kwargs["stdout"].write(
+                f"test result: {'FAILED' if failed else 'ok'}. {count - failed} passed; {failed} failed; 0 ignored;\n")
+            return subprocess.CompletedProcess(arguments, failed)
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(check, "run", git), \
+                patch.object(check.subprocess, "run", cargo), \
+                contextlib.redirect_stdout(io.StringIO()):
+            check.working_tip_proof(Path(directory), Path(directory), manifest)
+        self.assertEqual(features, [True, True, False])
+        self.assertTrue(applied)
+
+    def test_setup_or_zero_test_failure_cannot_apply_the_fix(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        for output in ["error: compilation failed\n",
+                       "test result: FAILED. 0 passed; 0 failed; 0 ignored;\n"]:
+            with self.subTest(output=output), tempfile.TemporaryDirectory() as directory:
+                def cargo(arguments, **kwargs):
+                    kwargs["stdout"].write(output)
+                    return subprocess.CompletedProcess(arguments, 1)
+
+                with patch.object(check, "run") as git, \
+                        patch.object(check.subprocess, "run", cargo), \
+                        contextlib.redirect_stdout(io.StringIO()), \
+                        self.assertRaisesRegex(RuntimeError, "Expected"):
+                    check.working_tip_proof(Path(directory), Path(directory), manifest)
+                git.assert_not_called()
+
+
+class OrchestrationProofTests(unittest.TestCase):
+    def test_requires_executed_failure_then_feature_on_and_stock_pass(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        count = manifest["orchestrationTestCount"]
+        applied = False
+        features = []
+
+        def git(arguments, directory):
+            nonlocal applied
+            if arguments[:2] == ["git", "apply"]:
+                self.assertEqual(Path(arguments[-1]).name, "orchestration.patch")
+                if "--check" not in arguments:
+                    applied = True
+            return ""
+
+        def cargo(arguments, **kwargs):
+            self.assertIn("cmux_orchestration_", arguments)
+            self.assertIn("--lib", arguments)
+            self.assertIn("--test-threads=1", arguments)
+            features.append("--features" in arguments)
+            failed = int(features[-1] and not applied)
+            kwargs["stdout"].write(
+                f"test result: {'FAILED' if failed else 'ok'}. {count - failed} passed; {failed} failed; 0 ignored;\n")
+            return subprocess.CompletedProcess(arguments, failed)
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(check, "run", git), \
+                patch.object(check.subprocess, "run", cargo), \
+                contextlib.redirect_stdout(io.StringIO()):
+            check.orchestration_proof(Path(directory), Path(directory), manifest)
+        self.assertEqual(features, [True, True, False])
+        self.assertTrue(applied)
+
+    def test_invalid_before_evidence_never_applies_implementation(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        count = manifest["orchestrationTestCount"]
+        for output in ["error: compilation failed\n",
+                       "test result: FAILED. 0 passed; 0 failed; 0 ignored;\n",
+                       f"test result: ok. {count} passed; 0 failed; 0 ignored;\n",
+                       f"test result: FAILED. 0 passed; {count-1} failed; 1 ignored;\n"]:
+            with self.subTest(output=output), tempfile.TemporaryDirectory() as directory:
+                def cargo(arguments, **kwargs):
+                    kwargs["stdout"].write(output)
+                    return subprocess.CompletedProcess(arguments, int("FAILED" in output))
+
+                with patch.object(check, "run") as git, \
+                        patch.object(check.subprocess, "run", cargo), \
+                        contextlib.redirect_stdout(io.StringIO()), \
+                        self.assertRaises(RuntimeError):
+                    check.orchestration_proof(Path(directory), Path(directory), manifest)
+                git.assert_not_called()
+
+
+class ResumeCompatProofTests(unittest.TestCase):
+    def test_requires_failure_then_feature_on_and_feature_off_passes(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        count = manifest["resumeCompatTestCount"]
+        applied = []
+        features = []
+
+        def git(arguments, directory):
+            if arguments[:2] == ["git", "apply"] and "--check" not in arguments:
+                applied.append(Path(arguments[-1]).name)
+            return ""
+
+        def cargo(arguments, **kwargs):
+            self.assertIn("cmux_resume_compat_", arguments)
+            self.assertIn("--lib", arguments)
+            self.assertIn("--test-threads=1", arguments)
+            self.assertIn("resume-compat-tests.patch", applied)
+            features.append("--features" in arguments)
+            failed = int("resume-compat.patch" not in applied)
+            kwargs["stdout"].write(
+                f"test result: {'FAILED' if failed else 'ok'}. {count - failed} passed; {failed} failed; 0 ignored;\n")
+            return subprocess.CompletedProcess(arguments, failed)
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(check, "run", git), \
+                patch.object(check.subprocess, "run", cargo), \
+                contextlib.redirect_stdout(io.StringIO()):
+            check.resume_compat_proof(Path(directory), Path(directory), manifest)
+        self.assertEqual(features, [True, True, False])
+        self.assertEqual(applied, ["resume-compat-tests.patch", "resume-compat.patch"])
+
+    def test_invalid_before_evidence_never_applies_fix(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        count = manifest["resumeCompatTestCount"]
+        for output in ["error: compilation failed\n",
+                       "test result: FAILED. 0 passed; 0 failed; 0 ignored;\n",
+                       f"test result: ok. {count} passed; 0 failed; 0 ignored;\n",
+                       f"test result: FAILED. 0 passed; {count-1} failed; 1 ignored;\n"]:
+            with self.subTest(output=output), tempfile.TemporaryDirectory() as directory:
+                def cargo(arguments, **kwargs):
+                    kwargs["stdout"].write(output)
+                    return subprocess.CompletedProcess(arguments, int("FAILED" in output))
+
+                with patch.object(check, "run") as git, \
+                        patch.object(check.subprocess, "run", cargo), \
+                        contextlib.redirect_stdout(io.StringIO()), \
+                        self.assertRaises(RuntimeError):
+                    check.resume_compat_proof(Path(directory), Path(directory), manifest)
+                applied = [Path(call.args[0][-1]).name for call in git.call_args_list
+                           if call.args[0][:2] == ["git", "apply"] and "--check" not in call.args[0]]
+                self.assertEqual(applied, ["resume-compat-tests.patch"])
+
+    def test_post_fix_or_feature_off_failure_rejects_proof(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        count = manifest["resumeCompatTestCount"]
+        for failed_call in (2, 3):
+            with self.subTest(failed_call=failed_call), tempfile.TemporaryDirectory() as directory:
+                calls = 0
+
+                def cargo(arguments, **kwargs):
+                    nonlocal calls
+                    calls += 1
+                    failed = int(calls in (1, failed_call))
+                    kwargs["stdout"].write(
+                        f"test result: {'FAILED' if failed else 'ok'}. {count-failed} passed; {failed} failed; 0 ignored;\n")
+                    return subprocess.CompletedProcess(arguments, failed)
+
+                with patch.object(check, "run"), \
+                        patch.object(check.subprocess, "run", cargo), \
+                        contextlib.redirect_stdout(io.StringIO()), \
+                        self.assertRaises(RuntimeError):
+                    check.resume_compat_proof(Path(directory), Path(directory), manifest)
+                self.assertEqual(calls, failed_call)
+
+    def test_main_applies_compatibility_only_after_all_prior_patches(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        applied = []
+
+        def git(arguments, directory):
+            if arguments[1] == "rev-parse":
+                return manifest["commit"]
+            if arguments[:2] == ["git", "apply"] and "--check" not in arguments:
+                applied.append(Path(arguments[-1]).name)
+            return ""
+
+        def tests(source, log, expected_count, **kwargs):
+            if kwargs.get("selector") == "cmux_resume_compat_":
+                self.assertTrue(set(manifest["patches"][:10]).issubset(applied))
+                self.assertIn("resume-compat-tests.patch", applied)
+                self.assertEqual("resume-compat.patch" in applied, not kwargs["should_fail"])
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("sys.argv", ["check.py", "--source", directory, "--logs", directory]), \
+                patch.object(check, "prepare_release_lock"), \
+                patch.object(check, "run", git), patch.object(check, "test", tests), \
+                contextlib.redirect_stdout(io.StringIO()):
+            check.main()
+        self.assertEqual(len(applied), len(set(applied)))
+        self.assertEqual(applied[-2:], ["resume-compat-tests.patch", "resume-compat.patch"])
+        self.assertEqual(set(applied), set(manifest["patches"]))
+
+    def test_manifest_appends_compatibility_and_counts_all_fixtures(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        self.assertEqual(manifest["patches"], [
+            "regression-tests.patch", "quiet-fullscreen.patch", "attach-only.patch", "session-binding.patch",
+            "focus-tests.patch", "focus-mode.patch", "working-tip-tests.patch", "working-tip.patch",
+            "orchestration-tests.patch", "orchestration.patch", "resume-compat-tests.patch", "resume-compat.patch",
+        ])
+        source = (check.HERE / "resume-compat-tests.patch").read_text()
+        count = len(re.findall(r'^\+\s*fn cmux_resume_compat_\w+\(', source, re.M))
+        self.assertEqual(count, manifest["resumeCompatTestCount"])
+
+
+class OrchestrationBrokerFixtureTests(unittest.TestCase):
+    """Execute the owned Python brokers embedded in the Rust fixtures, without Rust."""
+
+    def script(self, name, **values):
+        source = "\n".join(line[1:] for line in
+                           (check.HERE / "orchestration-tests.patch").read_text().splitlines()
+                           if line.startswith("+") and not line.startswith("+++"))
+        script = re.search(rf'const {name}:&str=r#"(.*?)"#;', source, re.S).group(1)
+        for key, value in values.items():
+            script = script.replace(key, repr(value))
+        return script
+
+    def broker(self, drop_designated):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "broker.json"
+            script = self.script("OWNED_BROKER_FIXTURE", SESSION="actual-thread",
+                                 STABLE_ID="00000000-0000-4000-8000-000000000001",
+                                 BROKER=str(state), DROP_DESIGNATED=drop_designated)
+            envelope = {"caller_session_id": "actual-thread", "provider_turn_id": "turn-real",
+                        "provider_call_id": "call-real", "request_id": "call-real",
+                        "arguments": {"action": "start", "body": {
+                            "request_id": "00000000-0000-4000-8000-000000000001",
+                            "caller_session_id": "forged-thread"}}}
+            replies = []
+            # Same registration replay retains response ownership; another
+            # frontend/native backend can forward but cannot take over replying.
+            for registration in ("frontend-first", "frontend-second", "frontend-first"):
+                outcome = subprocess.run(
+                    ["python3", "-c", script, "--socket", "/fixture.sock", "task", "bridge",
+                     "--scope-file", registration], input=json.dumps(envelope), text=True,
+                    capture_output=True, timeout=5)
+                expected_drop = drop_designated and registration == "frontend-first"
+                self.assertEqual(outcome.returncode, int(expected_drop), outcome.stderr)
+                replies.append(None if expected_drop else json.loads(outcome.stdout))
+            recorded = json.loads(state.read_text())
+            self.assertEqual(recorded["effects"], 1)
+            self.assertEqual(recorded["forwards"], 3)
+            self.assertEqual(recorded["key"], ["actual-thread", "turn-real", "call-real"])
+            self.assertFalse(replies[1]["_cmux_should_respond"])
+            if not drop_designated:
+                self.assertTrue(replies[0].pop("_cmux_should_respond"))
+                self.assertTrue(replies[2].pop("_cmux_should_respond"))
+                replies[1].pop("_cmux_should_respond")
+                self.assertEqual(replies[0], replies[1])
+                self.assertEqual(replies[0], replies[2])
+
+    def test_two_forwarders_keep_one_owned_responder_and_one_effect(self):
+        self.broker(False)
+
+    def test_designated_loss_does_not_transfer_response_ownership(self):
+        self.broker(True)
+
+    def test_registration_fixture_waits_for_binding_or_stays_closed(self):
+        for failures in (2, 9):
+            with self.subTest(failures=failures), tempfile.TemporaryDirectory() as directory:
+                counter = Path(directory) / "reads"
+                script = self.script("PANEL_RETRY_FIXTURE", WORKSPACE="workspace",
+                                     SURFACE="surface", SESSION="session", PID="123",
+                                     COUNTER=str(counter), FAILURES=failures)
+                outcomes = []
+                for _ in range(3):
+                    outcome = subprocess.run(
+                        ["python3", "-c", script, "--socket", "/fixture.sock", "task", "panel",
+                         "--workspace", "workspace", "--surface", "surface", "--session", "session",
+                         "--frontend-pid", "123", "--invocation", "fresh-invocation"],
+                        text=True, capture_output=True, timeout=5)
+                    outcomes.append(outcome.returncode)
+                self.assertEqual(outcomes, [1, 1, int(failures > 2)])
+                self.assertEqual(counter.read_text(), "3")
+                if failures == 2:
+                    self.assertEqual(json.loads(outcome.stdout), {
+                        "snapshot_path": "/private/snapshot.json", "scope_file": "/private/scope.json"})
+
+    def test_manifest_counts_all_rust_orchestration_fixtures(self):
+        source = (check.HERE / "orchestration-tests.patch").read_text()
+        count = len(re.findall(r'^\+\s*(?:async )?fn cmux_orchestration_\w+\(', source, re.M))
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        self.assertEqual(count, manifest["orchestrationTestCount"])
 
 
 if __name__ == "__main__":

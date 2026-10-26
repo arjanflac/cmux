@@ -1,4 +1,5 @@
 import CmuxChief
+import CmuxSettings
 import Foundation
 
 /// Composes the native task domain with the shared daemon and terminal presenter.
@@ -7,6 +8,10 @@ final class NativeAgentTaskRuntime {
     let coordinator: AgentTaskCoordinator
     let backend: AgentManagedTaskBackend
     let host: NativeAgentTaskHost
+    let toolRouter: AgentTaskToolRouter
+    let rootDirectory: URL
+    let turnRepository: AgentTaskFileTurnRepository
+    private var orchestrationState: NativeAgentOrchestration?
     private var restoreTask: Task<Void, any Error>?
     private var observedTargets: [String: Set<UUID>] = [:]
     private var activityTask: Task<Void, Never>?
@@ -18,14 +23,20 @@ final class NativeAgentTaskRuntime {
         let codexHome = ProcessInfo.processInfo.environment["CODEX_HOME"] ?? NSHomeDirectory() + "/.codex"
         let cli = Bundle.main.resourceURL?.appendingPathComponent("bin/cmux").path ?? "cmux"
         let socket = TerminalController.shared.currentSocketPathForRemoteRestore() ?? ""
+        let toolRouter = AgentTaskToolRouter()
+        self.toolRouter = toolRouter
         backend = AgentManagedTaskBackend(socketPath: codexHome + "/app-server-control/app-server-control.sock",
                                          taskCommand: [cli, "--socket", socket, "task"],
-                                         cancelTerminal: { id in try await host.interrupt(id) })
+                                         cancelTerminal: { id in try await host.interrupt(id) }, toolRouter: toolRouter)
         let root = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("cmux/agent-tasks/" + (Bundle.main.bundleIdentifier ?? "cmux"))
+        rootDirectory = root
+        let turnRepository = AgentTaskFileTurnRepository(directory: root.appendingPathComponent("turns"))
+        self.turnRepository = turnRepository
         coordinator = AgentTaskCoordinator(backend: backend, repository: AgentTaskFileRepository(directory: root),
                                            present: { record, request in try host.open(record, request: request) },
-                                           reconnect: { record, request in try host.open(record, request: request, reconnectOnly: true) })
+                                           reconnect: { record, request in try host.open(record, request: request, reconnectOnly: true) },
+                                           turnRepository: turnRepository)
         let events = coordinator.changes()
         notices = Task {
             for await record in events {
@@ -35,6 +46,34 @@ final class NativeAgentTaskRuntime {
                 }
             }
         }
+        Task { [weak self] in
+            await toolRouter.install(enabled: { [weak self] in
+                guard let self else { return false }
+                return await self.orchestrationEnabled()
+            }, handler: { [weak self] call in
+                guard let self else { throw CocoaError(.userCancelled) }
+                let service = try await self.orchestrator()
+                return try await service.nativeTool(call)
+            })
+        }
+    }
+
+    func orchestrationEnabled() -> Bool {
+        UserDefaultsSettingsClient(defaults: .standard).value(for: SettingCatalog().terminal.agentOrchestration)
+    }
+
+    /// One app-owned control plane, with no service or provider process per task.
+    func orchestrator() async throws -> NativeAgentOrchestration {
+        if let orchestrationState { return orchestrationState }
+        let state = try NativeAgentOrchestration(runtime: self, directory: rootDirectory)
+        orchestrationState = state
+        coordinator.setReceiptHandler { [weak state] record, _ in
+            guard let state else { throw CocoaError(.userCancelled) }
+            do { try await state.recordChanged(record) }
+            catch { state.noteStorageFailure(error); throw error }
+        }
+        try await state.restore()
+        return state
     }
 
     /// Saved runtime UUIDs are never guessed by title or directory after relaunch.

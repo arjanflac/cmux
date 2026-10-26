@@ -26,13 +26,21 @@ public struct AgentTaskRecord: Codable, Equatable, Sendable {
     public var title: String
     /// Requested provider model.
     public var model: String?
+    /// Requested provider reasoning effort, preserved across follow-up turns.
+    public var effort: String?
+    /// Explicit worker permissions, absent for legacy receipts and externally enrolled chats.
+    public var permissionMode: AgentTaskRequest.PermissionMode?
+    /// Most recently admitted operation; absent in legacy receipts.
+    public var latestOperationID: UUID?
+    /// Number of admitted turns; absent in legacy receipts.
+    public var turnCount: Int?
     /// Exact provider identity, never inferred from terminal output.
     public var sessionID: String?
     /// Native terminal surface created for this task.
     public var surfaceID: UUID?
     /// Last reported task state.
     public var phase: Phase
-    /// First-turn result reported by the provider.
+    /// Latest turn result reported by the provider.
     public var result: String?
     /// Diagnostic or attention detail.
     public var detail: String?
@@ -51,6 +59,10 @@ public struct AgentTaskRecord: Codable, Equatable, Sendable {
         parentTaskID = request.parentTaskID
         title = String(request.prompt.split(separator: "\n").first.map(String.init)?.prefix(100) ?? "Task")
         model = request.model
+        effort = request.effort
+        permissionMode = request.permissionMode
+        latestOperationID = id
+        turnCount = 1
         phase = .starting
         createdAt = now
         updatedAt = now

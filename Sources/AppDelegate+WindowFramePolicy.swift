@@ -63,11 +63,10 @@ extension AppDelegate {
     /// grabbable slice of its titlebar is already reachable on some display, or
     /// there are no displays to reason about.
     ///
-    /// This is the reactive counterpart to `CmuxMainWindow.constrainFrameRect`:
-    /// a cmux main window sets `isMovable = false` for its custom titlebar drag
-    /// handling, and a non-movable `NSWindow` is excluded from AppKit's automatic
-    /// on-screen constraining when displays change -- so `constrainFrameRect` is
-    /// never invoked on that path and nothing pulls a stranded window back. When
+    /// This is the reactive counterpart to `CmuxMainWindow.constrainFrameRect`,
+    /// which returns the proposed frame unchanged to avoid a display
+    /// reconfiguration layout cycle -- so AppKit's automatic on-screen
+    /// constraining never pulls a stranded window back. When
     /// an external monitor that sat above the built-in display is disconnected,
     /// the window is left with its titlebar in the now-gone monitor's coordinate
     /// space, above every remaining screen and unreachable (the user cannot drag

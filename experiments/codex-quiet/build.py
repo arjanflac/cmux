@@ -9,7 +9,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
-from check import HERE, prepare_release_lock, run, test
+from check import HERE, orchestration_proof, prepare_release_lock, resume_compat_proof, run, working_tip_proof
 import source_mtimes
 
 
@@ -28,7 +28,8 @@ def main():
     prepare_release_lock(source, output)
     patches = manifest['patches']
     for name in patches:
-        if name == 'focus-mode.patch': continue
+        if name in ('focus-mode.patch', 'working-tip.patch', 'orchestration.patch',
+                    'resume-compat-tests.patch', 'resume-compat.patch'): continue
         run(['git', 'apply', '--check', str(HERE / name)], source)
         run(['git', 'apply', str(HERE / name)], source)
     root = source / 'codex-rs'
@@ -67,6 +68,9 @@ def main():
         run(['git', 'apply', '--check', str(HERE / 'focus-mode.patch')], source)
         run(['git', 'apply', str(HERE / 'focus-mode.patch')], source)
         tests('lib', 'cmux_focus_', manifest['focusTestCount'], label='focus-after')
+        working_tip_proof(source, output, manifest)
+        orchestration_proof(source, output, manifest)
+        resume_compat_proof(source, output, manifest)
         print('Building the installable quiet frontend', flush=True)
         with (output / 'build.log').open('w') as log:
             outcome = subprocess.run(['cargo', 'build', '--locked', '--release', '-p', 'codex-tui', '--bin', 'cmux-codex-quiet', '--features', 'cmux-quiet'], cwd=root, stdout=log, stderr=subprocess.STDOUT)

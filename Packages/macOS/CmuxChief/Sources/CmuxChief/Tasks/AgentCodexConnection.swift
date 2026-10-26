@@ -3,16 +3,26 @@ import CryptoKit
 import Darwin
 
 protocol AgentCodexTransport: Sendable {
+    /// Notifications and server requests (which carry an `id`), in arrival order.
     var messages: AsyncThrowingStream<ChiefJSON, any Error> { get }
     func connect() async throws
     func request(_ method: String, _ params: ChiefJSON) async throws -> ChiefJSON
     func notify(_ method: String, _ params: ChiefJSON) async throws
+    /// Answers one server request, echoing its string or numeric `id` unchanged.
+    func respond(id: ChiefJSON, result: ChiefJSON) async throws
     func close() async
+}
+
+extension AgentCodexTransport {
+    /// Transports that cannot answer server requests say so instead of dropping the answer.
+    func respond(id: ChiefJSON, result: ChiefJSON) async throws {
+        throw AgentCodexConnection.Failure.unsupported
+    }
 }
 
 /// One native, event-driven connection to the existing shared Codex daemon.
 actor AgentCodexConnection: AgentCodexTransport {
-    enum Failure: Error { case unavailable, closed, invalidHandshake, rpc(String), deadline, overloaded }
+    enum Failure: Error { case unavailable, closed, invalidHandshake, rpc(String), deadline, overloaded, unsupported }
     nonisolated let messages: AsyncThrowingStream<ChiefJSON, any Error>
     private let messageSink: AsyncThrowingStream<ChiefJSON, any Error>.Continuation
     private let path: String
@@ -66,6 +76,11 @@ actor AgentCodexConnection: AgentCodexTransport {
 
     func notify(_ method: String, _ params: ChiefJSON = .object([:])) throws {
         try send(.object(["method": .string(method), "params": params]))
+    }
+
+    func respond(id: ChiefJSON, result: ChiefJSON) throws {
+        guard id.string != nil || id.number != nil else { throw Failure.rpc("Invalid request ID") }
+        try send(.object(["id": id, "result": result]))
     }
 
     func close() { fail(Failure.closed) }
@@ -144,7 +159,8 @@ actor AgentCodexConnection: AgentCodexTransport {
             case .ping(let bytes): output.append(try AgentWebSocketFrames.clientFrame(bytes, opcode: 10)); try flush()
             case .text(let bytes):
                 let value = try ChiefJSON(parsing: bytes)
-                if let id = value["id"]?.string, pending[id] != nil {
+                // A server request also carries an `id`; only a method-less message is a response.
+                if value["method"] == nil, let id = value["id"]?.string, pending[id] != nil {
                     if let error = value["error"] { finish(id, result: .failure(Failure.rpc(error["message"]?.string ?? "Request rejected"))) }
                     else { finish(id, result: .success(value["result"] ?? .null)) }
                 } else if case .dropped = messageSink.yield(value) { throw Failure.overloaded }

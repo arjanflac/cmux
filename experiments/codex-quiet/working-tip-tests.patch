@@ -1,0 +1,133 @@
+--- a/codex-rs/tui/src/app/turn_tips_tests.rs
++++ b/codex-rs/tui/src/app/turn_tips_tests.rs
+@@ -561,3 +561,130 @@
+     tui.set_owned_screen(/*owned*/ false)?;
+     Ok(())
+ }
++
++// Render the actual owned screen, with tips explicitly enabled and a deterministic
++// catalog entry. Run in CI both with and without the derived frontend feature.
++#[tokio::test]
++async fn cmux_working_tip_row_is_frontend_scoped() -> Result<()> {
++    let (mut app, _events, _ops) = crate::app::tests::make_test_app_with_channels().await;
++    let thread = ThreadId::new();
++    attach_thread(&mut app, thread);
++    app.local_settings.tui.show_tooltips = true;
++    app.local_settings.tui.animations = false;
++    app.transcript_cells = vec![
++        Arc::new(history_cell::PlainHistoryCell::new(vec![
++            "Assistant says Tip: keep this prose.".into(),
++        ])),
++        Arc::new(history_cell::new_error_event(
++            "Tip: failure stays visible.".into(),
++        )),
++        Arc::from(history_cell::new_approval_decision_cell(
++            history_cell::ApprovalDecisionSubject::Command(vec!["approval-marker".into()]),
++            history_cell::ReviewDecision::Denied,
++            history_cell::ApprovalDecisionActor::User,
++        )),
++    ];
++    let mut tui = crate::tui::test_support::make_test_tui()?;
++    tui.set_owned_screen(/*owned*/ true)?;
++    let size = Size::new(/*width*/ 100, /*height*/ 24);
++    tui.terminal.resize(size)?;
++    // Multiple long turns ensure suppression is not just a one-time dismissal.
++    for turn in 1..=3 {
++        deliver(
++            &mut app,
++            notification("turn/started", thread, turn, "inProgress"),
++        );
++        let current = app.turn_tips.current.as_mut().unwrap();
++        current.started_at = Instant::now() - WORKING_DELAY;
++        current.template = Some("Try /help.");
++        // Exercise the same presentation state that Ctrl+T switches, in both
++        // directions. Working tips must stay absent even in compact presentation.
++        for _ in 0..2 {
++            app.render_owned_transcript(&mut tui, size)?;
++            let screen = buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(
++                &tui.terminal,
++            ));
++            assert!(screen.contains("Working"), "{screen}");
++            assert!(
++                screen.contains("Assistant says Tip: keep this prose."),
++                "{screen}"
++            );
++            assert!(screen.contains("Tip: failure stays visible."), "{screen}");
++            assert!(screen.contains("approval-marker"), "{screen}");
++            assert_eq!(
++                screen.contains("└ Tip: Try /help."),
++                !cfg!(feature = "cmux-quiet"),
++                "{screen}"
++            );
++            assert_eq!(
++                app.turn_tips.current.as_ref().unwrap().shown,
++                !cfg!(feature = "cmux-quiet")
++            );
++            #[cfg(feature = "cmux-quiet")]
++            {
++                let was_quiet = app.transcript_view.is_cmux_quiet();
++                app.transcript_view.toggle_cmux_quiet();
++                assert_eq!(app.transcript_view.is_cmux_quiet(), !was_quiet);
++            }
++        }
++        deliver(
++            &mut app,
++            notification("turn/completed", thread, turn, "completed"),
++        );
++    }
++    assert!(app.local_settings.tui.show_tooltips);
++    tui.set_owned_screen(/*owned*/ false)?;
++    Ok(())
++}
++
++#[tokio::test]
++async fn cmux_working_tip_completion_row_still_renders() -> Result<()> {
++    let (mut app, mut events, _ops) = crate::app::tests::make_test_app_with_channels().await;
++    let thread = ThreadId::new();
++    attach_thread(&mut app, thread);
++    app.local_settings.tui.show_tooltips = true;
++    app.local_settings.tui.animations = false;
++    app.turn_tips.starts = 2;
++    let mut tui = crate::tui::test_support::make_test_tui()?;
++    tui.set_owned_screen(/*owned*/ true)?;
++    let size = Size::new(/*width*/ 100, /*height*/ 24);
++    tui.terminal.resize(size)?;
++    while events.try_recv().is_ok() {}
++    app.transcript_cells = vec![user_cell("Show a response.")];
++    deliver(
++        &mut app,
++        notification("turn/started", thread, /*turn*/ 3, "inProgress"),
++    );
++    app.turn_tips.current.as_mut().unwrap().template = Some("Try /help.");
++    deliver(&mut app, answer(thread, /*turn*/ 3));
++    deliver(
++        &mut app,
++        notification("turn/completed", thread, /*turn*/ 3, "completed"),
++    );
++    while let Ok(event) = events.try_recv() {
++        match event {
++            AppEvent::InsertHistoryCell(cell) => app.insert_history_cell(&mut tui, cell),
++            AppEvent::TurnTipReady { thread_id, turn_id } => {
++                app.turn_tips
++                    .ready(thread_id, &turn_id, app.transcript_cells.last());
++            }
++            _ => {}
++        }
++    }
++    app.render_owned_transcript(&mut tui, size)?;
++    let screen = buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(
++        &tui.terminal,
++    ));
++    assert!(screen.contains("• Done."), "{screen}");
++    assert!(screen.contains("└ Tip: Try /help."), "{screen}");
++    assert_eq!(app.turn_tips.completions_shown, 1);
++    app.local_settings.tui.show_tooltips = false;
++    app.render_owned_transcript(&mut tui, size)?;
++    let screen = buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(
++        &tui.terminal,
++    ));
++    assert!(!screen.contains("└ Tip:"), "{screen}");
++    assert!(screen.contains("• Done."), "{screen}");
++    tui.set_owned_screen(/*owned*/ false)?;
++    Ok(())
++}

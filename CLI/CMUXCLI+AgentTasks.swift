@@ -3,22 +3,43 @@ import Foundation
 extension CMUXCLI {
     static var agentTaskUsage: String {
         let syntax = """
-        cmux task start --provider codex|claude --workspace <id|ref> --cwd <dir>
+        cmux task start --provider codex|claude|opencode --workspace <id|ref> --cwd <dir>
                         [--model <id>] [--effort <level>] [--parent-task <id>]
-                        [--background] [--prompt-file <path|->] [--wait] -- <task>
+                        [--background|--terminal] [--request-id <uuid>]
+                        [--permission-mode <mode>] [--prompt-file <path|->] [--wait] -- <task>
         cmux task read|wait|cancel <task-id>
         cmux task attach <task-id> [--workspace <id|ref>]
         cmux task list
-
-
+        cmux task send <task-id> [--request-id <uuid>] [--prompt-file <path|->] [--wait] -- <message>
+        cmux task turns <task-id>
+        cmux task result|wait-turn <operation-id>
+        cmux task inbox <parent-task-id> [--after <sequence>]
+        cmux task ack <parent-task-id> <event-id>
+        cmux task schedule create --owner <task-id> --at <ISO8601> [--request-id <uuid>]
+                                 [--target <task-id> | --provider codex|claude|opencode
+                                  --workspace <id|ref> --cwd <dir> [--model <id>] [--effort <level>]
+                                  [--permission-mode <mode>]]
+                                 [--timezone <IANA-zone>] [--expires <ISO8601>]
+                                 [--misfire hold|skip|coalesceOne] [--repeat-seconds <seconds>]
+                                 [--max-runs <limit>] [--prompt-file <path|->] -- <message>
+        cmux task schedule list --owner <task-id>
+        cmux task schedule read|pause|resume|cancel <schedule-id> --owner <task-id>
         """
-        return syntax + "\n" + String(localized: "cli.agentTask.help", defaultValue: "Tasks open terminal tabs in an existing workspace. Use --background only for an explicitly requested headless task. Use --wait to return its result.")
+        return syntax + "\n\n" + [
+            String(localized: "cli.agentTask.help", defaultValue: "Tasks start in the background by default (--background). Use --terminal for a visible initial Codex turn; Claude and OpenCode use background workers and can attach after becoming idle. Use attach to open a task's terminal in an existing workspace."),
+            String(localized: "cli.agentTask.help.turns", defaultValue: "Use send for a follow-up. Keep a stable --request-id UUID for each action; reuse it only to retry that same action. --wait also returns when input is needed (needsInput) or the provider disconnects (disconnected). Use turns, result and wait-turn to inspect turns; use inbox and ack to receive and acknowledge child-task events."),
+            String(localized: "cli.agentTask.help.schedules", defaultValue: "Schedules dispatch only while cmux is open, with no daemon or global hooks. Missed runs are held by default (--misfire hold). --at and --expires require ISO 8601 timestamps with an explicit offset, for example 2026-10-26T09:00:00-07:00 or 2026-10-26T16:00:00Z. --timezone supplies the schedule's IANA time zone. Omit --target and --provider to send to the owner.")
+        ].joined(separator: "\n\n")
     }
 
     func runAgentTaskCommand(_ args: [String], client: SocketClient, windowOverride: String?) throws {
         let usage = Self.agentTaskUsage
         let options = args.prefix(while: { $0 != "--" })
         guard let command = args.first, !options.contains("--help") else { print(usage); return }
+        if ["send", "turns", "result", "wait-turn", "inbox", "ack", "schedule", "panel", "bridge", "interactions", "respond", "mcp"].contains(command) {
+            try runAgentOrchestratorCommand(args, client: client, windowOverride: windowOverride)
+            return
+        }
         var params: [String: Any] = [:]
         var wait = command == "wait"
         let method: String
@@ -30,6 +51,7 @@ extension CMUXCLI {
                 let arg = args[index]
                 if arg == "--" { prompt = args.dropFirst(index + 1).joined(separator: " "); break }
                 if arg == "--background" { params["background"] = true; index += 1; continue }
+                if arg == "--terminal" { params["background"] = false; index += 1; continue }
                 if arg == "--wait" { wait = true; index += 1; continue }
                 guard index + 1 < args.count else { throw CLIError(message: usage) }
                 let value = args[index + 1]
@@ -40,6 +62,8 @@ extension CMUXCLI {
                 case "--model": params["model"] = value
                 case "--effort": params["effort"] = value
                 case "--parent-task": params["parent_task_id"] = value
+                case "--request-id": params["request_id"] = value
+                case "--permission-mode": params["permission_mode"] = value
                 case "--prompt-file": promptFile = value
                 default: throw CLIError(message: usage)
                 }
@@ -48,6 +72,8 @@ extension CMUXCLI {
             guard let target = workspace else {
                 throw CLIError(message: String(localized: "cli.agentTask.workspace", defaultValue: "Specify the existing target --workspace; a focused project is never guessed."))
             }
+            params["request_id"] = params["request_id"] ?? UUID().uuidString
+            params["background"] = params["background"] ?? true
             params["workspace_id"] = try resolveWorkspaceId(target, client: client, windowHandle: windowOverride)
             params["provider"] = params["provider"] ?? "codex"
             params["cwd"] = params["cwd"] ?? FileManager.default.currentDirectoryPath
@@ -88,7 +114,7 @@ extension CMUXCLI {
         var result = try client.sendV2(method: method, params: params)
         if wait, let id = result["id"] as? String {
             // Native event waits avoid a per-task polling worker.
-            while !["completed", "cancelled", "failed", "disconnected"].contains(result["phase"] as? String ?? "") {
+            while !["completed", "cancelled", "failed", "disconnected", "needsInput"].contains(result["phase"] as? String ?? "") {
                 result = try client.sendV2(method: "agent.task.wait", params: ["task_id": id], responseTimeout: 20)
             }
         }

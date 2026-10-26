@@ -1071,6 +1071,11 @@ enum CmuxEmbeddedConfigSchema {
           "default": true,
           "description": "Draw typed characters immediately in a terminal whose shell runs on another machine (cmux ssh, Cloud, remote tmux) when the link is slow, underlined until the remote echo confirms them, and withdraw them if the remote disagrees. Local terminals, password prompts and full-screen apps are excluded."
         },
+        "agentOrchestration": {
+          "type": "boolean",
+          "default": false,
+          "description": "Allow new local terminal frontends in this cmux session to enroll in background agent coordination. Schedules run while cmux is open; missed work waits until resumed. Independent of the quiet Codex frontend. This feature preference does not grant authority for worker or schedule operations."
+        },
         "codexQuietFrontend": {
           "type": "boolean",
           "default": false,

@@ -13,29 +13,24 @@ extension TerminalController {
             let params = request.params.mapValues(\.foundationObject)
             let runtime = await agentTaskRuntimeForControl()
             try await runtime.restore()
+            let orchestrationMethods: Set<String> = ["agent.task.start", "agent.task.send", "agent.task.turns",
+                "agent.task.result", "agent.task.wait-turn", "agent.task.inbox", "agent.task.ack",
+                "agent.task.schedule", "agent.task.panel", "agent.task.bridge", "agent.task.interactions", "agent.task.respond"]
+            if orchestrationMethods.contains(request.method) {
+                let input = try JSONSerialization.data(withJSONObject: params)
+                let orchestration = try await runtime.orchestrator()
+                let output = try await orchestration.control(method: request.method, parameters: input)
+                let value = try JSONSerialization.jsonObject(with: output) as? [String: Any] ?? [:]
+                return Self.v2Encoder.response(id: request.id, Self.controlCallResult(fromLegacy: .ok(value)))
+            }
             switch request.method {
-            case "agent.task.start":
-                guard let provider = (params["provider"] as? String).flatMap(AgentTaskRequest.Provider.init(rawValue:)),
-                      let prompt = params["prompt"] as? String, prompt.utf8.count <= 200_000,
-                      let workspaceID = (params["workspace_id"] as? String).flatMap(UUID.init(uuidString:)),
-                      let cwd = params["cwd"] as? String, cwd.hasPrefix("/"),
-                      await MainActor.run(body: { AppDelegate.shared?.workspaceFor(tabId: workspaceID)?.isRemoteWorkspace == false }) else {
-                    throw CocoaError(.validationMissingMandatoryProperty)
-                }
-                if let parent = params["parent_task_id"] as? String, UUID(uuidString: parent) == nil {
-                    throw CocoaError(.validationMissingMandatoryProperty)
-                }
-                let stableID = await MainActor.run { AppDelegate.shared?.workspaceFor(tabId: workspaceID)?.stableId }
-                let task = AgentTaskRequest(provider: provider, prompt: prompt, workspaceID: workspaceID,
-                    workingDirectory: URL(fileURLWithPath: cwd), model: params["model"] as? String,
-                    effort: params["effort"] as? String,
-                    presentation: (params["background"] as? Bool) == true ? .background : .terminal,
-                    parentTaskID: (params["parent_task_id"] as? String).flatMap(UUID.init(uuidString:)), workspaceStableID: stableID)
-                let record = try await runtime.coordinator.start(task)
-                result = .ok(try await taskPayload(record))
             case "agent.task.attach":
                 guard let id = (params["task_id"] as? String).flatMap(UUID.init(uuidString:)),
                       let record = try await runtime.coordinator.record(id) else { throw CocoaError(.fileNoSuchFile) }
+                if record.provider != .codex {
+                    guard record.phase.isFinished else { throw CocoaError(.userCancelled) }
+                    try await runtime.backend.park(id: id)
+                }
                 if let raw = params["workspace_id"], (raw as? String).flatMap(UUID.init(uuidString:)) == nil {
                     throw CocoaError(.validationMissingMandatoryProperty)
                 }

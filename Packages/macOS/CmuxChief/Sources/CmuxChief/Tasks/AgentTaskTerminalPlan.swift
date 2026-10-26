@@ -9,6 +9,7 @@ public struct AgentTaskTerminalPlan: Sendable {
     public func arguments(record: AgentTaskRecord, request: AgentTaskRequest,
                           cmuxExecutable: String, cmuxSocket: String) throws -> [String] {
         guard let session = record.sessionID else { throw CocoaError(.fileReadUnknown) }
+        guard record.provider != .opencode else { throw CocoaError(.featureUnsupported) }
         if record.provider == .codex {
             var arguments = ["codex", "resume", session]
             if let model = request.model { arguments += ["--model", model] }
@@ -23,7 +24,8 @@ public struct AgentTaskTerminalPlan: Sendable {
             hooks[hook] = [["hooks": [["type": "command", "command": command, "timeout": 5]]]]
         }
         let settings = try JSONSerialization.data(withJSONObject: ["hooks": hooks], options: [.sortedKeys])
-        var arguments = ["claude", "--session-id", session, "--permission-mode", "bypassPermissions", "--settings", String(decoding: settings, as: UTF8.self)]
+        let permissions = request.permissionMode == .unrestricted ? "bypassPermissions" : "default"
+        var arguments = ["claude", "--session-id", session, "--permission-mode", permissions, "--settings", String(decoding: settings, as: UTF8.self)]
         arguments += ["--append-system-prompt", AgentTaskContext.text(id: record.id, request: request,
                           command: [cmuxExecutable, "--socket", cmuxSocket, "task"])]
         if let model = request.model { arguments += ["--model", model] }

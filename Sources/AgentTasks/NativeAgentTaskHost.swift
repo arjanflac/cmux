@@ -59,7 +59,7 @@ final class NativeAgentTaskHost {
         }
         workspace.setPanelCustomTitle(panelId: panel.id, title: record.title)
         guard workspace.setSurfaceResumeBinding(Self.resumeBinding(provider: record.provider,
-                sessionID: session, cwd: record.workingDirectory.path, model: request.model, title: record.title),
+                sessionID: session, cwd: record.workingDirectory.path, model: request.model, title: record.title, permissionMode: record.permissionMode),
                 panelId: panel.id) else { throw CocoaError(.fileWriteUnknown) }
         surfaces[record.id] = (record.workspaceID, panel.id, session)
         return panel.id
@@ -67,9 +67,13 @@ final class NativeAgentTaskHost {
 
     /// Uses the existing trusted managed-agent contract with shell-free resume argv.
     nonisolated static func resumeBinding(provider: AgentTaskRequest.Provider, sessionID: String,
-            cwd: String, model: String?, title: String) -> SurfaceResumeBindingSnapshot {
-        var arguments = provider == .codex ? ["codex", "resume", sessionID]
-            : ["claude", "--resume", sessionID, "--permission-mode", "bypassPermissions"]
+            cwd: String, model: String?, title: String, permissionMode: AgentTaskRequest.PermissionMode? = nil) -> SurfaceResumeBindingSnapshot {
+        var arguments: [String]
+        switch provider {
+        case .codex: arguments = ["codex", "resume", sessionID]
+        case .claude: arguments = ["claude", "--resume", sessionID, "--permission-mode", permissionMode == .unrestricted ? "bypassPermissions" : "default"]
+        case .opencode: arguments = ["opencode", "--session", sessionID]
+        }
         if let model { arguments += ["--model", model] }
         return SurfaceResumeBindingSnapshot(name: title, kind: provider.rawValue,
             command: arguments.map(AgentTaskTerminalPlan.shellWord).joined(separator: " "),
@@ -77,7 +81,7 @@ final class NativeAgentTaskHost {
             environment: ["CMUX_COMPUTER_USE_MCP_DISABLED": "1", "CMUX_CODEX_HOOKS_DISABLED": "1"],
             launchCommand: .init(executablePath: arguments[0], arguments: arguments,
                 workingDirectory: cwd, source: "cmux-managed-task"),
-            permissionMode: provider == .claude ? "bypassPermissions" : nil, autoResume: true)
+            permissionMode: provider == .claude ? (permissionMode == .unrestricted ? "bypassPermissions" : "default") : nil, autoResume: true)
     }
 
     func interrupt(_ id: UUID) throws {
@@ -106,7 +110,8 @@ final class NativeAgentTaskHost {
 
     func notify(_ record: AgentTaskRecord) {
         let attachmentFailed = record.detail?.hasPrefix("terminal_attachment_failed:") == true
-        let noticeKey = attachmentFailed ? "terminal_attachment_failed" : record.phase.rawValue
+        let turn = record.latestOperationID?.uuidString ?? record.id.uuidString
+        let noticeKey = turn + ":" + (attachmentFailed ? "terminal_attachment_failed" : record.phase.rawValue)
         guard lastNotice[record.id] != noticeKey else { return }
         lastNotice[record.id] = noticeKey
         let title: String

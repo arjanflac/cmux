@@ -17,25 +17,98 @@ struct SidebarWidthPolicyTests {
     private let importedManagedDefaultsKey = "cmux.settingsFile.importedManagedDefaults.v1"
 
     @Test
-    func defaultMinimumSidebarWidthIsPersistedProductDefault() {
+    func defaultMinimumAllowsNarrowSidebarWithoutChangingStartingWidth() {
         let suiteName = "SidebarWidthPolicyTests.defaultMinimum.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
-        #expect(abs(SessionPersistencePolicy.defaultMinimumSidebarWidth - 240) <= 0.001)
+        #expect(abs(SessionPersistencePolicy.defaultMinimumSidebarWidth - 100) <= 0.001)
         #expect(
-            abs(SessionPersistencePolicy.resolvedMinimumSidebarWidth(defaults: defaults) - 240) <= 0.001
+            abs(SessionPersistencePolicy.resolvedMinimumSidebarWidth(defaults: defaults) - 100) <= 0.001
         )
+        #expect(SessionPersistencePolicy.sanitizedSidebarWidth(nil, defaults: defaults) == 240)
+        #expect(SessionPersistencePolicy.sanitizedSidebarWidth(.nan, defaults: defaults) == 240)
     }
 
     @Test
     func contentViewClampKeepsMinimumSidebarWidth() {
         #expect(
             abs(
-                ContentView.clampedSidebarWidth(184, maximumWidth: 600)
+                ContentView.clampedSidebarWidth(80, maximumWidth: 600)
                     - CGFloat(SessionPersistencePolicy.minimumSidebarWidth)
             ) <= 0.001
         )
+    }
+
+    @Test(arguments: [100.0, 120, 160, 180, 240, 320, 600])
+    func dragAndSessionRestorePreserveValidWidths(_ width: Double) throws {
+        let suiteName = "SidebarWidthPolicyTests.savedWidth.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let dragged = ContentView.clampedSidebarWidth(CGFloat(width), maximumWidth: 600)
+        #expect(Double(dragged) == width)
+        let snapshot = SessionSidebarSnapshot(isVisible: true, selection: .tabs, width: Double(dragged))
+        let restored = try JSONDecoder().decode(
+            SessionSidebarSnapshot.self,
+            from: JSONEncoder().encode(snapshot)
+        )
+        #expect(SessionPersistencePolicy.sanitizedSidebarWidth(restored.width, defaults: defaults) == width)
+        #expect(defaults.object(forKey: SessionPersistencePolicy.sidebarMinimumWidthKey) == nil)
+    }
+
+    @Test(arguments: [-20.0, 0, 99, 100])
+    func dragAndRestoreClampAtOneHundredPoints(_ width: Double) {
+        let suiteName = "SidebarWidthPolicyTests.floor.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        #expect(ContentView.clampedSidebarWidth(CGFloat(width), maximumWidth: 600) == 100)
+        #expect(SessionPersistencePolicy.sanitizedSidebarWidth(width, defaults: defaults) == 100)
+    }
+
+    @Test(arguments: [100.0, 180, 240, 260])
+    func configuredMinimumIsSharedByDragAndRestore(_ minimum: Double) {
+        let suiteName = "SidebarWidthPolicyTests.configuredFloor.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set(minimum, forKey: SessionPersistencePolicy.sidebarMinimumWidthKey)
+
+        let resolved = SessionPersistencePolicy.resolvedMinimumSidebarWidth(defaults: defaults)
+        #expect(resolved == minimum)
+        #expect(ContentView.clampedSidebarWidth(
+            80,
+            maximumWidth: 600,
+            minimumWidth: CGFloat(resolved)
+        ) == CGFloat(minimum))
+        #expect(SessionPersistencePolicy.sanitizedSidebarWidth(80, defaults: defaults) == minimum)
+        #expect(SessionPersistencePolicy.sanitizedSidebarWidth(nil, defaults: defaults) == minimum)
+        #expect(defaults.double(forKey: SessionPersistencePolicy.sidebarMinimumWidthKey) == minimum)
+    }
+
+    @Test
+    func clampHandlesNarrowWindowsAndInvalidGeometry() {
+        #expect(ContentView.clampedSidebarWidth(180, maximumWidth: 80) == 100)
+        #expect(ContentView.clampedSidebarWidth(180, maximumWidth: .nan) == 100)
+        #expect(ContentView.clampedSidebarWidth(.nan, maximumWidth: 600) == 240)
+        #expect(ContentView.clampedSidebarWidth(.infinity, maximumWidth: 150) == 150)
+        #expect(ContentView.clampedSidebarWidth(900, maximumWidth: 600) == 600)
+        #expect(SessionPersistencePolicy.sanitizedMinimumSidebarWidth(80) == 100)
+        #expect(SessionPersistencePolicy.sanitizedMinimumSidebarWidth(300) == 260)
+        #expect(SessionPersistencePolicy.sanitizedMinimumSidebarWidth(.nan) == 100)
+    }
+
+    @Test
+    func storedMinimumAcceptsOneHundredAsTextAndFallsBackForInvalidValues() {
+        let suiteName = "SidebarWidthPolicyTests.storedFloor.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set("100", forKey: SessionPersistencePolicy.sidebarMinimumWidthKey)
+        #expect(SessionPersistencePolicy.sanitizedSidebarWidth(80, defaults: defaults) == 100)
+        defaults.set("nan", forKey: SessionPersistencePolicy.sidebarMinimumWidthKey)
+        #expect(SessionPersistencePolicy.resolvedMinimumSidebarWidth(defaults: defaults) == 100)
+        #expect(SessionPersistencePolicy.sanitizedSidebarWidth(nil, defaults: defaults) == 240)
     }
 
     @Test

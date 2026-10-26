@@ -23,8 +23,10 @@ struct AgentTaskTerminalPlanTests {
             #expect(command.contains("'/path with spaces/cmux' '--socket' '/tmp/test.sock'"))
         }
         let contextIndex = try #require(arguments.firstIndex(of: "--append-system-prompt"))
-        #expect(arguments[contextIndex + 1].contains(request.workspaceID.uuidString))
-        #expect(arguments[contextIndex + 1].contains(record.id.uuidString))
+        #expect(arguments[contextIndex + 1].contains("cmux_tasks"))
+        #expect(!arguments[contextIndex + 1].contains("inside cmux"))
+        #expect(!arguments[contextIndex + 1].contains(request.workspaceID.uuidString))
+        #expect(arguments[contextIndex + 1].utf8.count < 256)
         #expect(!arguments.contains(request.prompt))
     }
 

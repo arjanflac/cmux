@@ -1,0 +1,121 @@
+--- a/codex-rs/tui/src/cmux_quiet.rs
++++ b/codex-rs/tui/src/cmux_quiet.rs
+@@ -62,34 +62,65 @@
+     use clap::Parser;
+     use crate::Cli;
+ 
+-    let mut rest = arguments;
++    let mut options = Vec::new();
++    let mut overrides = Vec::new();
+     let mut session = None;
+-    let resume = rest.first().is_some_and(|a| a == "resume");
+-    if resume {
+-        rest = &rest[1..];
+-        if rest.first().is_some_and(|a| !a.starts_with('-')) {
+-            let value = &rest[0];
+-            anyhow::ensure!(uuid::Uuid::parse_str(value).is_ok(), "only explicit resume UUIDs are supported");
+-            session = Some(value.clone());
+-            rest = &rest[1..];
+-        }
+-    }
++    let mut resume = false;
+     let mut index = 0;
+-    while index < rest.len() {
+-        match rest[index].as_str() {
++    while index < arguments.len() {
++        let argument = &arguments[index];
++        match argument.as_str() {
++            "resume" if !resume => {
++                resume = true;
++                if arguments.get(index + 1).is_some_and(|value| !value.starts_with('-')) {
++                    index += 1;
++                    let value = &arguments[index];
++                    anyhow::ensure!(uuid::Uuid::parse_str(value).is_ok(), "only explicit resume UUIDs are supported");
++                    session = Some(value.clone());
++                }
++            }
+             "-m" | "--model" | "-C" | "--cd" | "-s" | "--sandbox" | "-a" | "--ask-for-approval" => {
++                options.push(argument.clone());
+                 index += 1;
+-                anyhow::ensure!(index < rest.len() && !rest[index].starts_with('-'), "missing option value");
+-            }
+-            "--dangerously-bypass-approvals-and-sandbox" => (),
++                anyhow::ensure!(index < arguments.len() && !arguments[index].starts_with('-'), "missing option value");
++                options.push(arguments[index].clone());
++            }
++            "--dangerously-bypass-approvals-and-sandbox" | "--yolo" => options.push(argument.clone()),
++            "-c" | "--config" => {
++                index += 1;
++                let value = arguments.get(index).ok_or_else(|| anyhow::anyhow!("missing config value"))?;
++                anyhow::ensure!(safe_restore_config(value), "unsupported config; use stock Codex");
++                overrides.push(value.clone());
++            }
++            _ if argument.starts_with("--config=") || argument.starts_with("-c=") => {
++                let (_, value) = argument.split_once('=').unwrap();
++                anyhow::ensure!(safe_restore_config(value), "unsupported config; use stock Codex");
++                overrides.push(value.to_string());
++            }
+             _ => anyhow::bail!("unsupported invocation; use stock Codex"),
+         }
+         index += 1;
+     }
+-    let mut cli = Cli::try_parse_from(std::iter::once("codex".to_string()).chain(rest.iter().cloned()))?;
++    // Upstream validates permission values and conflicts. Never synthesize a
++    // permission flag or discard a user-supplied one to gain eligibility.
++    let mut cli = Cli::try_parse_from(std::iter::once("codex".to_string()).chain(options))?;
++    cli.config_overrides.raw_overrides = overrides;
+     cli.resume_picker = resume && session.is_none();
+     cli.resume_session_id = session;
+     Ok(cli)
++}
++
++fn safe_restore_config(value: &str) -> bool {
++    if value == "check_for_update_on_startup=false" {
++        return true;
++    }
++    let Some(effort) = value.strip_prefix("model_reasoning_effort=") else { return false; };
++    let effort = effort.strip_prefix('"').and_then(|s| s.strip_suffix('"'))
++        .or_else(|| effort.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
++        .unwrap_or(effort);
++    // Accept only the pinned built-in wire values, including their exact TOML
++    // string spellings; no arbitrary config, trailing text or extra TOML keys.
++    matches!(effort, "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra" | "persistent")
+ }
+ 
+ 
+--- a/codex-rs/tui/src/cmux_session_binding.rs
++++ b/codex-rs/tui/src/cmux_session_binding.rs
+@@ -80,16 +80,25 @@
+ }
+ 
+ fn capture_arguments(route: &Route, session: &Session) -> Vec<String> {
+-    let mut remaining = route.original.as_slice();
+-    if remaining.first().is_some_and(|arg| arg == "resume") {
+-        remaining = &remaining[1..];
+-        if remaining.first().is_some_and(|arg| !arg.starts_with('-')) { remaining = &remaining[1..]; }
+-    }
+     let mut result = vec![route.stock.to_string_lossy().into_owned(), "resume".into(), session.id.clone()];
+     let mut index = 0;
+-    while index < remaining.len() {
+-        if matches!(remaining[index].as_str(), "-C" | "--cd" | "-m" | "--model") { index += 2; continue; }
+-        result.push(remaining[index].clone()); index += 1;
++    while index < route.original.len() {
++        let argument = &route.original[index];
++        match argument.as_str() {
++            // The narrow parser accepts root options before resume. Strip the
++            // old selector wherever it appears, never retain two resume IDs.
++            "resume" => {
++                index += 1;
++                if route.original.get(index).is_some_and(|value| !value.starts_with('-')) { index += 1; }
++            }
++            "-C" | "--cd" | "-m" | "--model" => { index += 2; }
++            // Consume values as data so a literal "resume" is not a selector.
++            "-c" | "--config" | "-s" | "--sandbox" | "-a" | "--ask-for-approval" => {
++                result.push(argument.clone()); index += 1;
++                if let Some(value) = route.original.get(index) { result.push(value.clone()); index += 1; }
++            }
++            _ => { result.push(argument.clone()); index += 1; }
++        }
+     }
+     result.extend(["--model".into(), session.model.clone(), "--cd".into(), session.cwd.clone()]);
+     result

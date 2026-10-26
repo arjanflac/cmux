@@ -60,9 +60,11 @@ def prepare_release_lock(source, logs):
     print(f"Normalized {len(updates)} local release labels; all external lock entries unchanged", flush=True)
 
 
-def test(source, log, expected_count, *, should_fail):
-    command = ["cargo", "test", "--locked", "-p", "codex-tui", "--lib",
-               "cmux_quiet_", "--", "--test-threads=1", "--color=never"]
+def test(source, log, expected_count, *, should_fail, selector="cmux_quiet_", feature=False):
+    command = ["cargo", "test", "--locked", "-p", "codex-tui", "--lib"]
+    if feature:
+        command += ["--features", "cmux-quiet"]
+    command += [selector, "--", "--test-threads=1", "--color=never"]
     print(f"Running {'stock regression' if should_fail else 'patched regression'}", flush=True)
     with log.open("w") as stream:
         outcome = subprocess.run(command, cwd=source / "codex-rs", text=True,
@@ -106,6 +108,65 @@ def main():
         test(source, logs / ("stock.log" if should_fail else "quiet.log"),
              manifest["testCount"], should_fail=should_fail)
     print("PASS: the same synthetic rendering tests failed behaviorally on stock and passed after the patch")
+    # Use the complete derived presentation for the Working-tip discriminator;
+    # preserve the independent original rendering proof above.
+    for patch_name in manifest["patches"]:
+        if patch_name in ("regression-tests.patch", "quiet-fullscreen.patch", "working-tip.patch", "orchestration.patch",
+                          "resume-compat-tests.patch", "resume-compat.patch"):
+            continue
+        run(["git", "apply", "--check", str(HERE / patch_name)], source)
+        run(["git", "apply", str(HERE / patch_name)], source)
+    working_tip_proof(source, logs, manifest)
+    orchestration_proof(source, logs, manifest)
+    resume_compat_proof(source, logs, manifest)
+
+
+def working_tip_proof(source, logs, manifest):
+    """Require a rendered failure, then feature-on and stock feature-off passes."""
+    arguments = dict(selector="cmux_working_tip_", expected_count=manifest["workingTipTestCount"])
+    test(source, logs / "working-tip-before.log", feature=True, should_fail=True, **arguments)
+    run(["git", "apply", "--check", str(HERE / "working-tip.patch")], source)
+    run(["git", "apply", str(HERE / "working-tip.patch")], source)
+    run(["git", "diff", "--check"], source)
+    test(source, logs / "working-tip-after.log", feature=True, should_fail=False, **arguments)
+    test(source, logs / "working-tip-stock.log", feature=False, should_fail=False, **arguments)
+    print("PASS: Working tips hidden only in the derived frontend; completion tips and stock rendering retained")
+
+
+def orchestration_proof(source, logs, manifest):
+    """Run private-file/CLI fixtures and actual rendering before and after activation.
+
+    The tests patch wires inert transport/presentation seams into the pinned TUI.
+    A setup failure or a missing test cannot satisfy the behavioral discriminator.
+    These fixtures never connect to a socket or submit provider work.
+    """
+    arguments = dict(selector="cmux_orchestration_", expected_count=manifest["orchestrationTestCount"])
+    test(source, logs / "orchestration-before.log", feature=True, should_fail=True, **arguments)
+    run(["git", "apply", "--check", str(HERE / "orchestration.patch")], source)
+    run(["git", "apply", str(HERE / "orchestration.patch")], source)
+    run(["git", "diff", "--check"], source)
+    test(source, logs / "orchestration-after.log", feature=True, should_fail=False, **arguments)
+    test(source, logs / "orchestration-stock.log", feature=False, should_fail=False, **arguments)
+    print("PASS: scoped cmux worker presentation and native bridge; feature-off stock control retained")
+
+
+def resume_compat_proof(source, logs, manifest):
+    """Exercise restore eligibility after all prior patches, without connecting.
+
+    Move the unchanged binary parser into a shared test seam, require an
+    executed pre-fix failure, then check the fix and the stock feature controls.
+    """
+    run(["git", "apply", "--check", str(HERE / "resume-compat-tests.patch")], source)
+    run(["git", "apply", str(HERE / "resume-compat-tests.patch")], source)
+    run(["git", "diff", "--check"], source)
+    arguments = dict(selector="cmux_resume_compat_", expected_count=manifest["resumeCompatTestCount"])
+    test(source, logs / "resume-compat-before.log", feature=True, should_fail=True, **arguments)
+    run(["git", "apply", "--check", str(HERE / "resume-compat.patch")], source)
+    run(["git", "apply", str(HERE / "resume-compat.patch")], source)
+    run(["git", "diff", "--check"], source)
+    test(source, logs / "resume-compat-after.log", feature=True, should_fail=False, **arguments)
+    test(source, logs / "resume-compat-stock.log", feature=False, should_fail=False, **arguments)
+    print("PASS: exact native restore argv eligible; permission flags and stock feature controls retained")
 
 
 if __name__ == "__main__":
