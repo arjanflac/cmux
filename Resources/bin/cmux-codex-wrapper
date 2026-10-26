@@ -702,8 +702,20 @@ cmux_codex_read_computer_use_args() {
     return 0
 }
 
-# CMUX_CODEX_HOOKS_DISABLED is the documented MASTER opt-out: the wrapper
-# stays fully inert — no cmux calls, no Computer Use attach, no argv changes.
+# Quiet presentation is a separate, explicit cmux setting. Check compatibility
+# before exec; the derived process never falls back or replays accepted input.
+# This is independent of hook injection so stock shared-daemon sessions stay intact.
+if [[ "$IN_CMUX" == "1" && "${CMUX_CODEX_QUIET_FRONTEND:-0}" == "1" && -t 0 && -t 1 ]]; then
+    quiet_frontend="$(cd "$(dirname "$0")" && pwd)/cmux-codex-quiet"
+    if [[ -x "$quiet_frontend" && "$("$REAL_CODEX" --version 2>/dev/null)" == "codex-cli 0.164.0" ]] &&
+       CMUX_QUIET_STOCK_CODEX="$REAL_CODEX" "$quiet_frontend" --cmux-check "$@" >/dev/null 2>&1; then
+        export CMUX_QUIET_STOCK_CODEX="$REAL_CODEX"
+        exec "$quiet_frontend" "$@"
+        exit 126
+    fi
+fi
+
+# Hook opt-out keeps injection and cmux computer-use attachment inert.
 if [[ "${CMUX_CODEX_HOOKS_DISABLED:-}" == "1" ]]; then
     cmux_codex_cua_diagnostic "hooks-disabled"
     exec_real_codex_passthrough "$@"

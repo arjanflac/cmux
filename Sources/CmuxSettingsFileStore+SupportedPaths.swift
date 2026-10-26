@@ -75,6 +75,8 @@ extension CmuxSettingsFileStore {
         "terminal.showPasswordInputDots",
         "terminal.predictiveLocalEcho",
         "terminal.autoResumeAgentSessions",
+        "terminal.codexQuietFrontend",
+        "terminal.workspaceLaunchDirectories",
         "terminal.showTextBoxOnNewTerminals",
         "terminal.focusTextBoxOnNewTerminals",
         "terminal.textBoxDefaultSubmitAction",

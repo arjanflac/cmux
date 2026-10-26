@@ -671402,6 +671402,124 @@
         }
       },
       "extractionState": "manual"
+    },
+    "settings.terminal.codexQuiet": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Quiet Codex Frontend"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ruhige Codex-Oberfläche"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interface Codex discrète"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "واجهة Codex هادئة"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Interfaz discreta de Codex"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安靜的 Codex 介面"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "安静的 Codex 界面"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "조용한 Codex 인터페이스"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "静かな Codex インターフェース"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New terminals use the bundled quiet TUI when compatible. Other launches use stock Codex."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Terminals verwenden die mitgelieferte ruhige TUI, wenn sie kompatibel ist. Andere Aufrufe verwenden das originale Codex."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les nouveaux terminaux utilisent l’interface discrète intégrée si elle est compatible. Les autres lancements utilisent Codex standard."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تستخدم النوافذ الطرفية الجديدة الواجهة الهادئة المضمّنة عند توافقها. تستخدم عمليات التشغيل الأخرى Codex الأصلي."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los nuevos terminales usan la interfaz discreta incluida cuando es compatible. Los demás inicios usan Codex estándar."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新終端機會在相容時使用隨附的精簡文字介面。其他啟動方式使用原版 Codex。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新终端在兼容时使用随附的精简文字界面。其他启动方式使用原版 Codex。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 터미널은 호환되는 경우 포함된 간결한 TUI를 사용합니다. 그 외 실행에는 기본 Codex를 사용합니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいターミナルでは互換性がある場合に同梱の簡潔な TUI を使用します。それ以外は標準の Codex を使用します。"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

@@ -1061,6 +1061,19 @@
           "default": true,
           "description": "Draw typed characters immediately in a terminal whose shell runs on another machine (cmux ssh, Cloud, remote tmux) when the link is slow, underlined until the remote echo confirms them, and withdraw them if the remote disagrees. Local terminals, password prompts and full-screen apps are excluded."
         },
+        "codexQuietFrontend": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use the bundled attach-only quiet Codex frontend for supported launches in new cmux terminals."
+        },
+        "workspaceLaunchDirectories": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "default": {},
+          "description": "Absolute default folders keyed by persistent workspace UUID. Applies to new local terminals; explicit directories and agent restore paths win."
+        },
         "autoResumeAgentSessions": {
           "type": "boolean",
           "default": true,

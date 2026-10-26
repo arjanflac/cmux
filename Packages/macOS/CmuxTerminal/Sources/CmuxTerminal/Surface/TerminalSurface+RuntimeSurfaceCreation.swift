@@ -163,6 +163,7 @@ extension TerminalSurface {
         // resumed codex routes through it), but when the Codex integration is
         // off the wrapper no-ops on this env var and injects no hooks, mirroring
         // the Claude toggle.
+        setManagedEnvironmentValue("CMUX_CODEX_QUIET_FRONTEND", spawnPolicy.codexQuietFrontendEnabled ? "1" : "0")
         if !spawnPolicy.codexHooksEnabled {
             setManagedEnvironmentValue("CMUX_CODEX_HOOKS_DISABLED", "1")
         }

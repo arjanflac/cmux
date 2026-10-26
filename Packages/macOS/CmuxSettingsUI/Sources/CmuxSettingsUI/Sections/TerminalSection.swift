@@ -34,6 +34,7 @@ public struct TerminalSection: View {
     @State private var predictiveLocalEcho: DefaultsValueModel<Bool>
     @State private var adaptiveDefaultTheme: DefaultsValueModel<Bool>
     @State private var autoResume: DefaultsValueModel<Bool>
+    @State private var codexQuiet: DefaultsValueModel<Bool>
     @State private var hibernation: DefaultsValueModel<Bool>
     @State private var idleSeconds: DefaultsValueModel<Double>
     @State private var maxLive: DefaultsValueModel<Int>
@@ -81,6 +82,7 @@ public struct TerminalSection: View {
             )
         )
         _autoResume = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.terminal.autoResumeAgentSessions))
+        _codexQuiet = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.terminal.codexQuietFrontend))
         _hibernation = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.terminal.agentHibernationEnabled))
         _idleSeconds = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.terminal.agentHibernationIdleSeconds))
         _maxLive = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.terminal.agentHibernationMaxLiveTerminals))
@@ -121,6 +123,7 @@ public struct TerminalSection: View {
             predictiveLocalEcho,
             adaptiveDefaultTheme,
             autoResume,
+            codexQuiet,
             hibernation,
             idleSeconds,
             maxLive,
@@ -522,6 +525,16 @@ public struct TerminalSection: View {
                     .labelsHidden()
                     .controlSize(.small)
                     .accessibilityIdentifier("SettingsTerminalPredictiveLocalEchoToggle")
+            }
+            SettingsCardDivider()
+            SettingsCardRow(
+                configurationReview: .json("terminal.codexQuietFrontend"),
+                String(localized: "settings.terminal.codexQuiet", defaultValue: "Quiet Codex Frontend"),
+                subtitle: String(localized: "settings.terminal.codexQuiet.subtitle", defaultValue: "New terminals use the bundled quiet TUI when compatible. Other launches use stock Codex.")
+            ) {
+                Toggle("", isOn: Binding(get: { codexQuiet.current }, set: { codexQuiet.set($0) }))
+                    .labelsHidden().controlSize(.small)
+                    .accessibilityIdentifier("SettingsTerminalCodexQuietToggle")
             }
             SettingsCardDivider()
             SettingsCardRow(

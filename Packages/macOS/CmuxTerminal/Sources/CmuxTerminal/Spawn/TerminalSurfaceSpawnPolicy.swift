@@ -16,6 +16,9 @@ public struct TerminalSurfaceSpawnPolicy: Sendable {
     /// (`CMUX_CODEX_HOOKS_DISABLED`).
     public var codexHooksEnabled: Bool
 
+    /// Whether new cmux terminals may route eligible Codex launches to the bundled quiet TUI.
+    public var codexQuietFrontendEnabled: Bool
+
     /// Whether Pi hooks (the `pi` wrapper and bundled extension) are enabled
     /// (`CMUX_PI_HOOKS_DISABLED`).
     public var piHooksEnabled: Bool
@@ -81,6 +84,7 @@ public struct TerminalSurfaceSpawnPolicy: Sendable {
         socketAuthenticationEnvironment: [String: String] = [:],
         claudeHooksEnabled: Bool,
         codexHooksEnabled: Bool = true,
+        codexQuietFrontendEnabled: Bool = false,
         customClaudePath: String?,
         subagentNotificationEnvironmentKey: String,
         suppressSubagentNotifications: Bool,
@@ -98,6 +102,7 @@ public struct TerminalSurfaceSpawnPolicy: Sendable {
         self.socketAuthenticationEnvironment = socketAuthenticationEnvironment
         self.claudeHooksEnabled = claudeHooksEnabled
         self.codexHooksEnabled = codexHooksEnabled
+        self.codexQuietFrontendEnabled = codexQuietFrontendEnabled
         self.piHooksEnabled = piHooksEnabled
         self.customClaudePath = customClaudePath
         self.subagentNotificationEnvironmentKey = subagentNotificationEnvironmentKey

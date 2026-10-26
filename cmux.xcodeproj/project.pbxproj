@@ -4532,6 +4532,7 @@
 		112950000000000000000010 /* Workspace+ForkStartupInput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11295000000000000000000F /* Workspace+ForkStartupInput.swift */; };
 		F17F00000000000000000005 /* Workspace+FullWidthTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17F00000000000000000006 /* Workspace+FullWidthTab.swift */; };
 		D9466FDCDB9B4670943C3E7A /* Workspace+GeometryDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = F949FFE94E234BC39DDDCE34 /* Workspace+GeometryDiagnostics.swift */; };
+		44F55A17B32A4AE91D99858A /* Workspace+LaunchDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06788E8F383CB6C31E884B8 /* Workspace+LaunchDirectory.swift */; };
 		C0DE1A050000000000000001 /* Workspace+LayoutCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE1A050000000000000002 /* Workspace+LayoutCapture.swift */; };
 		C0DE12746000000000000007 /* Workspace+ManualPullRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE12746000000000000008 /* Workspace+ManualPullRequest.swift */; };
 				B11D00000000000000000003 /* Workspace+MobileAgentStatus.swift in Sources */ = {isa = PBXBuildFile; fileRef = B11D00000000000000000004 /* Workspace+MobileAgentStatus.swift */; };
@@ -9182,6 +9183,7 @@
 		11295000000000000000000F /* Workspace+ForkStartupInput.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+ForkStartupInput.swift"; sourceTree = "<group>"; };
 		F17F00000000000000000006 /* Workspace+FullWidthTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+FullWidthTab.swift"; sourceTree = "<group>"; };
 		F949FFE94E234BC39DDDCE34 /* Workspace+GeometryDiagnostics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+GeometryDiagnostics.swift"; sourceTree = "<group>"; };
+		B06788E8F383CB6C31E884B8 /* Workspace+LaunchDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+LaunchDirectory.swift"; sourceTree = "<group>"; };
 		C0DE1A050000000000000002 /* Workspace+LayoutCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+LayoutCapture.swift"; sourceTree = "<group>"; };
 		C0DE12746000000000000008 /* Workspace+ManualPullRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+ManualPullRequest.swift"; sourceTree = "<group>"; };
 				B11D00000000000000000004 /* Workspace+MobileAgentStatus.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Workspace+MobileAgentStatus.swift"; sourceTree = "<group>"; };
@@ -12645,6 +12647,7 @@
 				07345A6458DA79EA13AF87FF /* NativeAgentTaskHost.swift */,
 				DC7F80DF9404B4DB5888C747 /* NativeAgentTaskRuntime.swift */,
 				B2FB468BFD43921AFD9C3495 /* TerminalController+AgentTasks.swift */,
+				B06788E8F383CB6C31E884B8 /* Workspace+LaunchDirectory.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -17752,6 +17755,7 @@
 				112950000000000000000010 /* Workspace+ForkStartupInput.swift in Sources */,
 				F17F00000000000000000005 /* Workspace+FullWidthTab.swift in Sources */,
 				D9466FDCDB9B4670943C3E7A /* Workspace+GeometryDiagnostics.swift in Sources */,
+				44F55A17B32A4AE91D99858A /* Workspace+LaunchDirectory.swift in Sources */,
 				C0DE1A050000000000000001 /* Workspace+LayoutCapture.swift in Sources */,
 				C0DE12746000000000000007 /* Workspace+ManualPullRequest.swift in Sources */,
 				B11D00000000000000000003 /* Workspace+MobileAgentStatus.swift in Sources */,
