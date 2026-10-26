@@ -239,7 +239,10 @@ def keep_only_first_workspace(client: cmux) -> str:
     for _index, wid, _title, _selected in reversed(workspaces[1:]):
         if wid == first_id:
             continue
-        client.close_workspace(wid)
+        # This job reuses an isolated CI app after display fixtures. Their live
+        # shells are disposable here; every other socket retains the normal guard.
+        force = os.environ.get("GITHUB_ACTIONS") == "true" and client.socket_path == "/tmp/cmux-debug-ci-lag.sock"
+        client.close_workspace(wid, force=force)
 
     def only_first() -> bool:
         current = sorted(client.list_workspaces(), key=lambda row: row[0])

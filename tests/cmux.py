@@ -940,9 +940,10 @@ class cmux:
             return response[3:]
         raise cmuxError(response)
 
-    def close_workspace(self, workspace_id: str) -> None:
+    def close_workspace(self, workspace_id: str, *, force: bool = False) -> None:
         """Close a workspace by ID."""
-        response = self._send_command(f"close_workspace {workspace_id}")
+        suffix = " --force" if force else ""
+        response = self._send_command(f"close_workspace {workspace_id}{suffix}")
         if response.startswith("ERROR: Unknown command"):
             self.close_tab(workspace_id)
             return
