@@ -282,6 +282,10 @@ jobs:
         if: ${{ matrix.group == 'preflight' }}
         run: python3 tests/test_docs_deploy_auth_guard.py
 
+      - name: Validate scoped personal Codex observer
+        if: ${{ matrix.group == 'preflight' }}
+        run: python3 tests/test_personal_codex_observer.py
+
       - name: Validate web complexity scan scoping
         if: ${{ matrix.group == 'preflight' }}
         run: python3 tests/test_web_complexity_scope.py
