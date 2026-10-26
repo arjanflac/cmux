@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import platform
 import shutil
@@ -24,20 +25,41 @@ def main():
     if run(['git', 'status', '--porcelain'], source).strip():
         raise RuntimeError('A clean source checkout is required')
     prepare_release_lock(source, output)
-    patches = ['regression-tests.patch', 'quiet-fullscreen.patch', 'attach-only.patch']
+    patches = manifest['patches']
     for name in patches:
+        if name == 'focus-mode.patch': continue
         run(['git', 'apply', '--check', str(HERE / name)], source)
         run(['git', 'apply', str(HERE / name)], source)
     root = source / 'codex-rs'
-    command = ['cargo', 'test', '--locked', '-p', 'codex-tui', '--features', 'cmux-quiet']
-    # Require executed tests, not a successful compilation or an unmatched filter.
-    for target, selector, count in [('--lib', 'cmux_quiet_', 7), ('--lib', 'cmux_attach_', 3), ('--bin', 'cmux_attach_', 2)]:
-        arguments = command + ([target, 'cmux-codex-quiet'] if target == '--bin' else [target])
-        with (output / f'{target[2:]}-{selector}.log').open('w') as log:
-            subprocess.run(arguments + [selector, '--', '--test-threads=1'], cwd=root, check=True, stdout=log, stderr=subprocess.STDOUT)
-        text = (output / f'{target[2:]}-{selector}.log').read_text()
-        if f'test result: ok. {count} passed; 0 failed; 0 ignored;' not in text:
-            raise RuntimeError(f'Expected {count} executed {selector} tests')
+
+    def tests(target, selector, count, *, feature=True, should_fail=False, label=None):
+        command = ['cargo', 'test', '--locked', '-p', 'codex-tui']
+        if feature: command += ['--features', 'cmux-quiet']
+        command += ['--bin', 'cmux-codex-quiet'] if target == 'bin' else ['--lib']
+        log = output / f"{label or target + '-' + selector}.log"
+        print(f"Running {label or selector}: {count} behavioral cases", flush=True)
+        with log.open('w') as stream:
+            outcome = subprocess.run(command + [selector, '--', '--test-threads=1'], cwd=root, stdout=stream, stderr=subprocess.STDOUT)
+        text = log.read_text()
+        summaries = re.findall(r'test result: (ok|FAILED)\. (\d+) passed; (\d+) failed; (\d+) ignored;', text)
+        if len(summaries) != 1:
+            print(text[-6000:]); raise RuntimeError('Expected executed tests; compilation/setup failure is not a behavioral regression')
+        state, passed, failed, ignored = summaries[0]
+        if int(passed) + int(failed) != count or int(ignored):
+            raise RuntimeError(f'Expected {count} executed tests: {summaries[0]}')
+        valid = outcome.returncode != 0 and int(failed) > 0 if should_fail else outcome.returncode == 0 and int(failed) == 0
+        if not valid:
+            print(text[-6000:]); raise RuntimeError('Unexpected behavioral result')
+        print(f"Observed {passed} passed / {failed} failed", flush=True)
+
+    tests('lib', 'cmux_quiet_', 7, feature=False)
+    tests('lib', 'cmux_attach_', 3)
+    tests('bin', 'cmux_attach_', 2)
+    tests('lib', 'cmux_focus_', manifest['focusTestCount'], should_fail=True, label='focus-before')
+    run(['git', 'apply', '--check', str(HERE / 'focus-mode.patch')], source)
+    run(['git', 'apply', str(HERE / 'focus-mode.patch')], source)
+    tests('lib', 'cmux_focus_', manifest['focusTestCount'], label='focus-after')
+    print('Building the installable quiet frontend', flush=True)
     with (output / 'build.log').open('w') as log:
         subprocess.run(['cargo', 'build', '--locked', '--release', '-p', 'codex-tui', '--bin', 'cmux-codex-quiet', '--features', 'cmux-quiet'], cwd=root, check=True, stdout=log, stderr=subprocess.STDOUT)
     target = Path(os.environ.get('CARGO_TARGET_DIR', root / 'target')) / 'release' / 'cmux-codex-quiet'

@@ -1,0 +1,146 @@
+--- a/codex-rs/tui/src/history_cell/mod.rs
++++ b/codex-rs/tui/src/history_cell/mod.rs
+@@ -248,6 +248,9 @@
+     /// Optional one-row tool summary for the normal owned fullscreen viewport only.
+     /// Unknown cells decline it. Inline, expanded, raw, and detailed rendering retain their
+     /// original content; the viewport supplies disclosure for every accepted summary.
++    /// Only positively classified routine activity can disappear in focus mode.
++    fn quiet_fullscreen_is_routine(&self) -> bool { false }
++
+     fn quiet_fullscreen_line(&self, _width: u16) -> Option<HyperlinkLine> {
+         None
+     }
+--- a/codex-rs/tui/src/exec_cell/render.rs
++++ b/codex-rs/tui/src/exec_cell/render.rs
+@@ -210,6 +210,13 @@
+ }
+ 
+ impl HistoryCell for ExecCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool {
++        !self.group.calls.is_empty() && self.iter_calls().all(|call| {
++            matches!(call.source, ExecCommandSource::Agent | ExecCommandSource::UnifiedExecStartup)
++                && call.output.as_ref().is_none_or(|output| output.exit_code == 0)
++        })
++    }
++
+     fn quiet_fullscreen_line(&self, width: u16) -> Option<HyperlinkLine> {
+         // User-shell commands and terminal interaction records retain their existing display.
+         if self.group.calls.is_empty()
+--- a/codex-rs/tui/src/history_cell/mcp.rs
++++ b/codex-rs/tui/src/history_cell/mcp.rs
+@@ -356,6 +356,12 @@
+ }
+ 
+ impl HistoryCell for McpToolCallCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool {
++        self.success() != Some(false) && self.result.as_ref().is_none_or(|result| {
++            result.as_ref().is_ok_and(|result| result.content.iter().all(|block| block.is_plain_text()))
++        })
++    }
++
+     fn quiet_fullscreen_line(&self, width: u16) -> Option<HyperlinkLine> {
+         if let Some(Ok(result)) = &self.result
+             && result.content.iter().any(|block| !block.is_plain_text())
+--- a/codex-rs/tui/src/history_cell/dynamic.rs
++++ b/codex-rs/tui/src/history_cell/dynamic.rs
+@@ -180,6 +180,11 @@
+ }
+ 
+ impl HistoryCell for DynamicToolCallCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool {
++        let data = self.data.read().unwrap_or_else(std::sync::PoisonError::into_inner);
++        !data.has_non_text_output && !data.interrupted && !matches!(data.status, DynamicToolCallStatus::Failed)
++    }
++
+     fn quiet_fullscreen_line(&self, width: u16) -> Option<HyperlinkLine> {
+         let data = self
+             .data
+--- a/codex-rs/tui/src/transcript_view/layout.rs
++++ b/codex-rs/tui/src/transcript_view/layout.rs
+@@ -168,6 +168,9 @@
+             return Some(Arc::new(TextLayout::new(Vec::new(), width)));
+         }
+         let mode = self.mode;
++        if self.is_cmux_quiet() && !full_content && cell.quiet_fullscreen_is_routine() {
++            return Some(Arc::new(TextLayout::new(Vec::new(), width)));
++        }
+         let ids = cell.activity_ids();
+         let disclosure = !self.detailed && mode == HistoryRenderMode::Rich && !ids.is_empty();
+         let manually_expanded = self.disclosure.is_expanded(&ids);
+@@ -191,9 +194,10 @@
+             .disclosure
+             .keymap
+             .primary_hint(KeymapContext::Global, "open_transcript");
++        let cmux_quiet = self.is_cmux_quiet();
+         Some(self.cache.get(cell, width, presentation, || {
+             let mut layout = if disclosure {
+-                let quiet = (!expanded)
++                let quiet = (!expanded && (!cfg!(feature = "cmux-quiet") || cmux_quiet))
+                     .then(|| cell.quiet_fullscreen_line(width))
+                     .flatten();
+                 let quiet_disclosure = quiet.is_some();
+--- a/codex-rs/tui/src/chatwidget/activity_presentation.rs
++++ b/codex-rs/tui/src/chatwidget/activity_presentation.rs
+@@ -22,7 +22,7 @@
+     }
+ 
+     pub(crate) fn active_cell_owned_transcript_lines_with_focus(
+-        &self, width: u16, expanded: bool, _quiet: bool,
++        &self, width: u16, expanded: bool, quiet: bool,
+     ) -> Option<ActivityTranscriptLines> {
+         let active = self.transcript.active_cell.as_deref();
+         let mode = self.history_render_mode();
+@@ -37,11 +37,12 @@
+         };
+         let has_activity = mode == HistoryRenderMode::Rich
+             && active.is_some_and(|cell| !cell.activity_ids().is_empty());
+-        let quiet = active
+-            .filter(|_| has_activity && !expanded)
++        let hidden = quiet && !expanded && active.is_some_and(|cell| cell.quiet_fullscreen_is_routine());
++        let quiet_line = active
++            .filter(|_| has_activity && !expanded && (!cfg!(feature = "cmux-quiet") || quiet))
+             .and_then(|cell| cell.quiet_fullscreen_line(width));
+-        let quiet_disclosure = quiet.is_some();
+-        let activity = if let Some(line) = quiet {
++        let quiet_disclosure = quiet_line.is_some();
++        let activity = if hidden { Vec::new() } else if let Some(line) = quiet_line {
+             vec![line]
+         } else {
+             active.map_or_else(Vec::new, |cell| {
+@@ -52,7 +53,7 @@
+                 }
+             })
+         };
+-        let disclosure = if quiet_disclosure {
++        let disclosure = if hidden { None } else if quiet_disclosure {
+             Some(history_cell::ActivityDisclosure::Generic)
+         } else {
+             active
+--- a/codex-rs/tui/src/app/owned_transcript.rs
++++ b/codex-rs/tui/src/app/owned_transcript.rs
+@@ -107,7 +107,7 @@
+             })
+         } else {
+             view.sync_live_activity_tail(transcript_width, active_key, expanded, |width| {
+-                chat_widget.active_cell_owned_transcript_lines(width, expanded)
++                chat_widget.active_cell_owned_transcript_lines_with_focus(width, expanded, view.is_cmux_quiet())
+             })
+         };
+         changed || search_changed
+--- a/codex-rs/tui/src/app/input.rs
++++ b/codex-rs/tui/src/app/input.rs
+@@ -583,6 +583,14 @@
+         }
+ 
+         let find_transcript = self.keymap.app.find_transcript.is_pressed(key_event);
++        if cfg!(feature = "cmux-quiet") && app_keymap_shortcuts_available
++            && !find_transcript && self.keymap.app.open_transcript.is_pressed(key_event)
++            && tui.is_owned_screen() && self.overlay.is_none()
++        {
++            self.transcript_view.toggle_cmux_quiet();
++            tui.frame_requester().schedule_frame();
++            return;
++        }
+         if app_keymap_shortcuts_available
+             && (self.keymap.app.open_transcript.is_pressed(key_event) || find_transcript)
+         {

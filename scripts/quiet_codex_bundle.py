@@ -26,7 +26,7 @@ def validate_artifact(artifact: Path, proof: Path = PROOF) -> Path:
             or manifest.get('architecture') not in ['arm64', 'aarch64']):
         raise ValueError('Expected an attach-only macOS arm64 frontend')
     expected_patches = {name: hashlib.sha256((proof / name).read_bytes()).hexdigest()
-                        for name in ['regression-tests.patch', 'quiet-fullscreen.patch', 'attach-only.patch']}
+                        for name in expected['patches']}
     if manifest.get('patches') != expected_patches:
         raise ValueError('Quiet frontend patch provenance mismatch')
     if manifest.get('binary_sha256') != hashlib.sha256(binary.read_bytes()).hexdigest():

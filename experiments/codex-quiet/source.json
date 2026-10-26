@@ -3,5 +3,13 @@
   "commit": "6aaac694803004a63c6f393d153c96d22521a6b9",
   "release": "rust-v0.164.0",
   "testCount": 7,
-  "testFilter": "cmux_quiet_"
+  "testFilter": "cmux_quiet_",
+  "patches": [
+    "regression-tests.patch",
+    "quiet-fullscreen.patch",
+    "attach-only.patch",
+    "focus-tests.patch",
+    "focus-mode.patch"
+  ],
+  "focusTestCount": 4
 }

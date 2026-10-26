@@ -23,7 +23,7 @@ class BundleTests(unittest.TestCase):
             platform='Darwin', architecture='arm64', attach_only=True,
             binary_sha256=hashlib.sha256((self.artifact / 'cmux-codex-quiet').read_bytes()).hexdigest(),
             patches={name: hashlib.sha256((bundle.PROOF / name).read_bytes()).hexdigest()
-                     for name in ['regression-tests.patch', 'quiet-fullscreen.patch', 'attach-only.patch']})
+                     for name in json.loads((bundle.PROOF / 'source.json').read_text())['patches']})
         self.write_manifest()
 
     def write_manifest(self):
