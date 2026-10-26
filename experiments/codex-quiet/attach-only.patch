@@ -184,9 +184,10 @@
 +}
 --- a/codex-rs/tui/src/bin/cmux-quiet.rs
 +++ b/codex-rs/tui/src/bin/cmux-quiet.rs
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,99 @@
 +//! A deliberately narrow entrypoint. The cmux wrapper handles stock fallback
 +//! before calling this binary. Errors here never replay input through stock.
++#![recursion_limit = "256"]
 +use clap::Parser;
 +use codex_app_server_client::{RemoteAppServerClient, RemoteAppServerConnectArgs, RemoteAppServerEndpoint};
 +use codex_arg0::Arg0DispatchPaths;
