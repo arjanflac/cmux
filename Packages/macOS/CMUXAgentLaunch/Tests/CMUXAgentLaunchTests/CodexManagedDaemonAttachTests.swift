@@ -102,7 +102,9 @@ import Testing
         #expect(start.duration(to: .now) < .seconds(2))
         #expect(try String(contentsOf: termFile, encoding: .utf8) == "TERM")
         let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
-        #expect(kill(pid, 0) != 0 && errno == ESRCH, "Only the spawned probe must have exited and been reaped")
+        let presence = kill(pid, 0)
+        let presenceError = errno
+        #expect(presence == -1 && presenceError == ESRCH, "Only the spawned probe must have exited and been reaped")
     }
 
     @Test("A normally exiting native probe completes before either termination deadline")
