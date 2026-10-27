@@ -1,0 +1,270 @@
+--- a/codex-rs/tui/src/chatwidget/activity_presentation.rs
++++ b/codex-rs/tui/src/chatwidget/activity_presentation.rs
+@@ -26,11 +26,16 @@
+     ) -> Option<ActivityTranscriptLines> {
+         let active = self.transcript.active_cell.as_deref();
+         let mode = self.history_render_mode();
++        let quiet = cfg!(feature = "cmux-quiet") && quiet && mode == HistoryRenderMode::Rich;
+         let render_compact = |cell: &dyn HistoryCell, width| {
+-            if cell.as_any().is::<history_cell::SessionInfoCell>() {
++            if quiet && !expanded && cell.quiet_fullscreen_is_routine() {
++                Vec::new()
++            } else if cell.as_any().is::<history_cell::SessionInfoCell>() {
+                 history_cell::fullscreen_session_lines(cell, width, /*detailed*/ false, mode)
+             } else if mode == HistoryRenderMode::Raw {
+                 cell.display_hyperlink_lines_for_mode(width, mode)
++            } else if quiet && !expanded {
++                cell.quiet_fullscreen_hyperlink_lines(width)
+             } else {
+                 cell.compact_hyperlink_lines(width)
+             }
+--- a/codex-rs/tui/src/exec_cell/render.rs
++++ b/codex-rs/tui/src/exec_cell/render.rs
+@@ -211,13 +211,26 @@
+ 
+ impl HistoryCell for ExecCell {
+     fn quiet_fullscreen_is_routine(&self) -> bool {
+-        !self.group.calls.is_empty() && self.iter_calls().all(|call| {
+-            matches!(call.source, ExecCommandSource::Agent | ExecCommandSource::UnifiedExecStartup | ExecCommandSource::UnifiedExecInteraction)
+-                && call.output.as_ref().is_none_or(|output| output.exit_code == 0)
+-        })
++        !self.group.calls.is_empty()
++            && self.group.details.quiet_fullscreen_is_routine()
++            && self.iter_calls().all(|call| {
++                matches!(call.source, ExecCommandSource::Agent | ExecCommandSource::UnifiedExecStartup | ExecCommandSource::UnifiedExecInteraction)
++                    && call.output.as_ref().is_none_or(|output| output.exit_code == 0)
++            })
++    }
++
++    fn quiet_fullscreen_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
++        if self.group.details.quiet_fullscreen_is_routine() {
++            self.compact_hyperlink_lines(width)
++        } else {
++            self.transcript_hyperlink_lines(width)
++        }
+     }
+ 
+     fn quiet_fullscreen_line(&self, width: u16) -> Option<HyperlinkLine> {
++        if cfg!(feature = "cmux-quiet") && !self.group.details.quiet_fullscreen_is_routine() {
++            return None;
++        }
+         // User-shell commands and terminal interaction records retain their existing display.
+         if self.group.calls.is_empty()
+             || self.iter_calls().any(|call| {
+--- a/codex-rs/tui/src/history_cell/activity_details.rs
++++ b/codex-rs/tui/src/history_cell/activity_details.rs
+@@ -28,6 +28,15 @@
+         *self = older;
+     }
+ 
++    pub(crate) fn quiet_fullscreen_is_routine(&self) -> bool {
++        self.entries.iter().all(|(_, cell)| {
++            cell.quiet_fullscreen_is_routine()
++                || cell.as_any()
++                    .downcast_ref::<super::ReasoningSummaryCell>()
++                    .is_some_and(super::ReasoningSummaryCell::is_transcript_only)
++        })
++    }
++
+     pub(crate) fn lines_after(
+         &self,
+         after_calls: usize,
+--- a/codex-rs/tui/src/history_cell/base.rs
++++ b/codex-rs/tui/src/history_cell/base.rs
+@@ -117,6 +117,27 @@
+ }
+ 
+ impl HistoryCell for CompositeHistoryCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool {
++        !self.parts.is_empty() && self.parts.iter().all(|part| part.quiet_fullscreen_is_routine())
++    }
++
++    fn quiet_fullscreen_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
++        let mut lines = Vec::new();
++        for part in &self.parts {
++            if part.quiet_fullscreen_is_routine() {
++                continue;
++            }
++            let part = part.quiet_fullscreen_hyperlink_lines(width);
++            if !part.is_empty() {
++                if !lines.is_empty() {
++                    lines.push(HyperlinkLine::from(""));
++                }
++                lines.extend(part);
++            }
++        }
++        lines
++    }
++
+     fn warning_entries(&self) -> Vec<WarningEntry> {
+         self.parts
+             .iter()
+--- a/codex-rs/tui/src/history_cell/computer_activity.rs
++++ b/codex-rs/tui/src/history_cell/computer_activity.rs
+@@ -119,6 +119,23 @@
+ }
+ 
+ impl HistoryCell for ComputerActivityCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool {
++        !self.group.calls.is_empty()
++            && self.group
++                .calls
++                .iter()
++                .all(HistoryCell::quiet_fullscreen_is_routine)
++            && self.group.details.quiet_fullscreen_is_routine()
++    }
++
++    fn quiet_fullscreen_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
++        if self.group.details.quiet_fullscreen_is_routine() {
++            self.compact_hyperlink_lines(width)
++        } else {
++            self.transcript_hyperlink_lines(width)
++        }
++    }
++
+     fn append_reasoning(&mut self, cell: Box<dyn HistoryCell>) -> Result<(), Box<dyn HistoryCell>> {
+         if self.group.calls.is_empty() {
+             Err(cell)
+--- a/codex-rs/tui/src/history_cell/exec.rs
++++ b/codex-rs/tui/src/history_cell/exec.rs
+@@ -24,6 +24,11 @@
+ }
+ 
+ impl HistoryCell for UnifiedExecInteractionCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool {
++        // Agent terminal polling/stdin bookkeeping is already transcript-only upstream.
++        true
++    }
++
+     fn display_lines(&self, _width: u16) -> Vec<Line<'static>> {
+         Vec::new()
+     }
+--- a/codex-rs/tui/src/history_cell/mcp.rs
++++ b/codex-rs/tui/src/history_cell/mcp.rs
+@@ -358,7 +358,9 @@
+ impl HistoryCell for McpToolCallCell {
+     fn quiet_fullscreen_is_routine(&self) -> bool {
+         self.success() != Some(false) && self.result.as_ref().is_none_or(|result| {
+-            result.as_ref().is_ok_and(|result| result.content.iter().all(|block| block.is_plain_text()))
++            result.as_ref().is_ok_and(|result| result.content.iter().all(|block| {
++                block.is_plain_text() || (self.invocation.is_computer_activity() && block.is_image)
++            }))
+         })
+     }
+ 
+--- a/codex-rs/tui/src/history_cell/mod.rs
++++ b/codex-rs/tui/src/history_cell/mod.rs
+@@ -251,6 +251,12 @@
+     /// Only positively classified routine activity can disappear in focus mode.
+     fn quiet_fullscreen_is_routine(&self) -> bool { false }
+ 
++    /// Quiet presentation for a retained group that also contains protected content.
++    /// Leaves may use their compact view; containers must keep protected descendants visible.
++    fn quiet_fullscreen_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
++        self.compact_hyperlink_lines(width)
++    }
++
+     fn quiet_fullscreen_line(&self, _width: u16) -> Option<HyperlinkLine> {
+         None
+     }
+--- a/codex-rs/tui/src/history_cell/patches.rs
++++ b/codex-rs/tui/src/history_cell/patches.rs
+@@ -24,6 +24,10 @@
+ }
+ 
+ impl HistoryCell for PatchHistoryCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool {
++        true
++    }
++
+     fn activity_ids(&self) -> Vec<String> {
+         vec![self.activity_id.clone()]
+     }
+@@ -165,6 +169,10 @@
+ }
+ 
+ impl HistoryCell for ViewImageHistoryCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool {
++        true
++    }
++
+     fn activity_ids(&self) -> Vec<String> {
+         vec![self.activity_id.clone()]
+     }
+--- a/codex-rs/tui/src/history_cell/plans.rs
++++ b/codex-rs/tui/src/history_cell/plans.rs
+@@ -239,6 +239,8 @@
+ }
+ 
+ impl HistoryCell for PlanUpdateCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool { true }
++
+     fn activity_ids(&self) -> Vec<String> {
+         vec![self.activity_id.clone()]
+     }
+--- a/codex-rs/tui/src/history_cell/search.rs
++++ b/codex-rs/tui/src/history_cell/search.rs
+@@ -121,6 +121,12 @@
+ }
+ 
+ impl HistoryCell for WebSearchCell {
++    fn quiet_fullscreen_is_routine(&self) -> bool {
++        // The pinned protocol has no failure status here. Diagnostics are separate cells.
++        // Future/unknown actions keep their upstream presentation.
++        !matches!(self.action, Some(WebSearchAction::Other))
++    }
++
+     fn display_lines(&self, width: u16) -> Vec<Line<'static>> {
+         let bullet = if self.completed {
+             "•".dim()
+--- a/codex-rs/tui/src/transcript_view.rs
++++ b/codex-rs/tui/src/transcript_view.rs
+@@ -426,11 +426,18 @@
+     }
+ 
+     pub(crate) fn is_cmux_quiet(&self) -> bool {
+-        cfg!(feature = "cmux-quiet") && self.cmux_quiet && !self.detailed
++        cfg!(feature = "cmux-quiet")
++            && self.cmux_quiet
++            && !self.detailed
++            && self.mode == HistoryRenderMode::Rich
+     }
+ 
+     pub(crate) fn toggle_cmux_quiet(&mut self) {
+         self.cmux_quiet = !self.cmux_quiet;
++        if cfg!(feature = "cmux-quiet") && self.cmux_quiet {
++            self.disclosure.expanded.clear();
++            self.disclosure.focused = None;
++        }
+         self.cache.clear();
+         self.live_key = None;
+         self.selection = None;
+--- a/codex-rs/tui/src/transcript_view/layout.rs
++++ b/codex-rs/tui/src/transcript_view/layout.rs
+@@ -194,7 +194,7 @@
+             .disclosure
+             .keymap
+             .primary_hint(KeymapContext::Global, "open_transcript");
+-        let cmux_quiet = self.is_cmux_quiet();
++        let cmux_quiet = self.is_cmux_quiet() && !full_content;
+         Some(self.cache.get(cell, width, presentation, || {
+             let mut layout = if disclosure {
+                 let quiet = (!expanded && (!cfg!(feature = "cmux-quiet") || cmux_quiet))
+@@ -207,6 +207,8 @@
+                             cell.expanded_hyperlink_lines(width)
+                         } else if let Some(line) = quiet {
+                             vec![line]
++                        } else if cmux_quiet {
++                            cell.quiet_fullscreen_hyperlink_lines(width)
+                         } else {
+                             cell.compact_hyperlink_lines(width)
+                         },
+@@ -221,6 +223,8 @@
+                     expanded,
+                     shortcut,
+                 )
++            } else if cmux_quiet && !cell.as_any().is::<crate::history_cell::SessionInfoCell>() {
++                TextLayout::new(cell.quiet_fullscreen_hyperlink_lines(width), width)
+             } else {
+                 TextLayout::new(
+                     crate::history_cell::fullscreen_session_lines(

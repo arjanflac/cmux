@@ -16,11 +16,14 @@
     "orchestration-tests.patch",
     "orchestration.patch",
     "resume-compat-tests.patch",
-    "resume-compat.patch"
+    "resume-compat.patch",
+    "tool-coverage-tests.patch",
+    "tool-coverage.patch"
   ],
   "focusTestCount": 4,
   "bindingTestCount": 5,
   "workingTipTestCount": 2,
   "orchestrationTestCount": 23,
-  "resumeCompatTestCount": 9
+  "resumeCompatTestCount": 9,
+  "toolCoverageTestCount": 21
 }

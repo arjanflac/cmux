@@ -6,11 +6,42 @@ apps, global configuration and phone access are unchanged.
 
 `terminal.codexQuietFrontend` defaults off. Enable **Hide Codex Tool Calls** in
 Terminal settings, open a new cmux terminal, and run normal `codex`. Positively
-identified routine agent command calls (including terminal polling), text MCP
-calls and dynamic text tool calls occupy no transcript rows. **Ctrl+T** switches
+identified routine agent commands, successful file edits, web search/open/find,
+image-view bookkeeping, text MCP/dynamic calls and native computer activity
+(including returned screenshots) occupy no transcript rows. **Ctrl+T** switches
 between true quiet and the original compact view. Assistant messages, user shell
-commands, failures, approvals, unknown/media content and meaningful status stay
+commands, failures, approvals, questions, unknown tool/media content and meaningful
+status stay visible. User images and generated assistant image artifacts remain
 visible. Full-content search and F4 retain the original tool data.
+
+## Tool coverage at the pinned source
+
+The inventory covers all 40 `HistoryCell` implementations in `history_cell/`
+and `exec_cell/render.rs`. Quiet classification defaults to visible; it does not
+inspect rendered wording, strip terminal output, or hide arbitrary media.
+
+| Cells | Quiet behavior |
+| --- | --- |
+| `ExecCell` | Hide active/successful agent command, read/list/search and polling groups; preserve user shell, nonzero exits and interruption. |
+| `PatchHistoryCell`, `PatchFailureCell` | Hide successful add/update/delete/rename summaries and diffs; preserve failed patch diagnostics. |
+| `WebSearchCell`, `ViewImageHistoryCell` | Hide known search/open/find activity and viewed-image metadata; preserve unknown web actions. The pinned web cell has no failure status; separate diagnostics stay visible. |
+| `McpToolCallCell`, `ComputerActivityCell`, `DynamicToolCallCell` | Hide active/successful text calls and grouped native `cua_repl` activity, including its screenshot results. Preserve transport/tool errors, interruptions, other media, resources and unknown blocks. |
+| `CompositeHistoryCell`, `ActivityDetails`/`ActivityGroup` | Recurse through known routine members. Preserve protected descendants; show retained group details when they contain assistant content or errors. Transcript-only reasoning and terminal bookkeeping remain in backing content. |
+| `PlanUpdateCell` | Hide routine plan-tool checklists; preserve authored proposed plans and streamed plan text. |
+| `ImageGenerationHistoryCell`, user/assistant message and authored plan cells | Preserve generated artifacts, image attachments, spoken artifact links, chat, final results and proposed plans. |
+| Plain/wrapped/link cells, requests/approval results, hooks, warnings, safety, session, recap, update and separator cells | Preserve upstream behavior. Explicit `/ps` process summaries stay visible; `UnifiedExecInteractionCell` remains transcript-only. |
+
+`tool-coverage-tests.patch` appends dedicated retained/live rendering fixtures
+after the original twelve patches. `tool-coverage.patch` adds the classification
+and shared group presentation. Both proof entrypoints require the same 21 tests
+to fail behaviorally before the fix, pass after it, and pass with the feature
+disabled. Fixtures cover active/completed calls, five-action computer groups,
+screenshots, two-file edits, nested protected content, repeated Ctrl+T-equivalent
+toggles, clearing stale live expansion when entering quiet mode, search and
+detailed/raw backing content. Hooks already discard routine context-only success
+upstream; warning/error/stop/feedback output remains visible even on a Completed
+status. Rust execution belongs to CI;
+Python gate tests and patch/syntax checks alone do not establish those results.
 
 The derived frontend also suppresses the recurring **Working** tip. Startup and
 completion guidance stays available. With **Background Agent Coordination**
