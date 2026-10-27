@@ -112,13 +112,15 @@ def main():
     # preserve the independent original rendering proof above.
     for patch_name in manifest["patches"]:
         if patch_name in ("regression-tests.patch", "quiet-fullscreen.patch", "working-tip.patch", "orchestration.patch",
-                          "resume-compat-tests.patch", "resume-compat.patch"):
+                          "resume-compat-tests.patch", "resume-compat.patch",
+                          "tool-coverage-tests.patch", "tool-coverage.patch"):
             continue
         run(["git", "apply", "--check", str(HERE / patch_name)], source)
         run(["git", "apply", str(HERE / patch_name)], source)
     working_tip_proof(source, logs, manifest)
     orchestration_proof(source, logs, manifest)
     resume_compat_proof(source, logs, manifest)
+    tool_coverage_proof(source, logs, manifest)
 
 
 def working_tip_proof(source, logs, manifest):
@@ -167,6 +169,25 @@ def resume_compat_proof(source, logs, manifest):
     test(source, logs / "resume-compat-after.log", feature=True, should_fail=False, **arguments)
     test(source, logs / "resume-compat-stock.log", feature=False, should_fail=False, **arguments)
     print("PASS: exact native restore argv eligible; permission flags and stock feature controls retained")
+
+
+def tool_coverage_proof(source, logs, manifest):
+    """Require actual quiet/compact rendering failures after the original twelve patches.
+
+    Fixtures exercise retained and live cells, native computer screenshots, nested
+    groups, search and detailed backing content without provider or socket work.
+    """
+    run(["git", "apply", "--check", str(HERE / "tool-coverage-tests.patch")], source)
+    run(["git", "apply", str(HERE / "tool-coverage-tests.patch")], source)
+    run(["git", "diff", "--check"], source)
+    arguments = dict(selector="cmux_tool_coverage_", expected_count=manifest["toolCoverageTestCount"])
+    test(source, logs / "tool-coverage-before.log", feature=True, should_fail=True, **arguments)
+    run(["git", "apply", "--check", str(HERE / "tool-coverage.patch")], source)
+    run(["git", "apply", str(HERE / "tool-coverage.patch")], source)
+    run(["git", "diff", "--check"], source)
+    test(source, logs / "tool-coverage-after.log", feature=True, should_fail=False, **arguments)
+    test(source, logs / "tool-coverage-stock.log", feature=False, should_fail=False, **arguments)
+    print("PASS: known routine cells hidden; protected content, compact/details/search and stock controls retained")
 
 
 if __name__ == "__main__":

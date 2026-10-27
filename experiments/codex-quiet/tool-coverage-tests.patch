@@ -1,0 +1,950 @@
+--- a/codex-rs/tui/src/transcript_view.rs
++++ b/codex-rs/tui/src/transcript_view.rs
+@@ -721,3 +721,6 @@
+ #[cfg(test)]
+ #[path = "transcript_view/copy_on_select_tests.rs"]
+ mod copy_on_select_tests;
++
++#[cfg(test)]
++pub(crate) mod cmux_tool_coverage_tests;
+--- a/codex-rs/tui/src/chatwidget/tests/tool_activity_tests.rs
++++ b/codex-rs/tui/src/chatwidget/tests/tool_activity_tests.rs
+@@ -152,3 +152,6 @@
+         &full_before,
+     ));
+ }
++
++#[path = "cmux_tool_coverage_tests.rs"]
++mod cmux_tool_coverage_tests;
+--- /dev/null
++++ b/codex-rs/tui/src/transcript_view/cmux_tool_coverage_tests.rs
+@@ -0,0 +1,697 @@
++//! Behavioral coverage for known routine cells in the owned quiet viewport.
++//! The same fixtures run with the feature disabled; no provider or socket work.
++//! Image preservation uses only a tiny disposable PNG fixture.
++
++use super::*;
++use crate::diff_model::FileChange;
++use crate::exec_cell::{CommandOutput, ExecCall, ExecCell};
++use crate::history_cell::*;
++use crate::test_support::{PathBufExt, test_path_buf};
++use codex_app_server_protocol::CommandExecutionSource as ExecCommandSource;
++use codex_app_server_protocol::{DynamicToolCallStatus, ThreadItem, WebSearchAction};
++use codex_protocol::mcp::CallToolResult;
++use codex_protocol::parse_command::ParsedCommand;
++use codex_utils_path_uri::LegacyAppPathString;
++use serde_json::json;
++use std::collections::HashMap;
++use std::path::{Path, PathBuf};
++use std::time::{Duration, Instant};
++
++pub(crate) const TOKEN: &str = "COVERAGE_NEEDLE";
++const PNG: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
++
++pub(crate) fn patch() -> Box<dyn HistoryCell> {
++    Box::new(new_patch_event(
++        HashMap::from([
++            (
++                PathBuf::from("one.txt"),
++                FileChange::Add {
++                    content: format!("{TOKEN}\n"),
++                },
++            ),
++            (
++                PathBuf::from("two.txt"),
++                FileChange::Update {
++                    unified_diff: format!("@@ -1 +1 @@\n-before\n+{TOKEN}\n"),
++                    move_path: None,
++                },
++            ),
++        ]),
++        Path::new("/workspace"),
++    ))
++}
++
++pub(crate) fn mcp(server: &str, outcome: &str) -> McpToolCallCell {
++    let mut call = McpToolCallCell::new(
++        format!("{server}-{outcome}"),
++        McpInvocation {
++            server: server.into(),
++            tool: "js".into(),
++            arguments: Some(json!({"title": TOKEN, "code": TOKEN})),
++        },
++        false,
++    );
++    if outcome == "interrupted" {
++        call.mark_failed();
++    } else if outcome != "active" {
++        let result = if outcome == "transport" {
++            Err(format!("{TOKEN} transport error"))
++        } else {
++            let block = match outcome {
++                "image" | "failed-image" => {
++                    json!({"type": "image", "mimeType": "image/png", "data": PNG})
++                }
++                "audio" => json!({"type": "audio", "mimeType": "audio/wav", "data": ""}),
++                "resource" => {
++                    json!({"type": "resource_link", "uri": "file:///workspace/artifact.pdf", "name": TOKEN})
++                }
++                "unknown" => json!({"type": "future", "value": TOKEN}),
++                _ => json!({"type": "text", "text": TOKEN}),
++            };
++            Ok(CallToolResult {
++                content: vec![block],
++                structured_content: None,
++                is_error: Some(outcome.starts_with("failed")),
++                meta: None,
++            })
++        };
++        call.complete(Duration::ZERO, result);
++    }
++    call
++}
++
++pub(crate) fn computer(outcome: &str) -> ComputerActivityCell {
++    let mut cell = ComputerActivityCell::default();
++    for index in 0..5 {
++        // Distinct invocation IDs exercise the real five-action grouping rather than deduplication.
++        let call = if index == 4 {
++            mcp("cua_repl", outcome)
++        } else {
++            let mut call = McpToolCallCell::new(
++                format!("computer-{index}"),
++                McpInvocation {
++                    server: "cua_repl".into(),
++                    tool: "js".into(),
++                    arguments: Some(json!({"title": TOKEN, "code": TOKEN})),
++                },
++                false,
++            );
++            call.complete(
++                Duration::ZERO,
++                Ok(CallToolResult {
++                    content: vec![json!({"type": "text", "text": TOKEN})],
++                    structured_content: None,
++                    is_error: Some(false),
++                    meta: None,
++                }),
++            );
++            call
++        };
++        cell.start(call);
++    }
++    cell
++}
++
++pub(crate) fn dynamic(
++    status: DynamicToolCallStatus,
++    success: Option<bool>,
++    media: bool,
++) -> DynamicToolCallCell {
++    let item: ThreadItem = serde_json::from_value(json!({
++        "type": "dynamicToolCall", "id": "dynamic-coverage", "namespace": "browser", "tool": "open",
++        "arguments": {"url": TOKEN}, "status": status, "success": success,
++        "contentItems": if media { json!([{"type": "inputImage", "imageUrl": "data:image/png;base64,AA=="}]) }
++                        else { json!([{"type": "inputText", "text": TOKEN}]) },
++        "durationMs": null
++    })).expect("pinned dynamic tool shape");
++    DynamicToolCallCell::from_item(item).unwrap()
++}
++
++pub(crate) fn exec(code: Option<i32>, source: ExecCommandSource) -> ExecCell {
++    let mut cell = ExecCell::new(
++        ExecCall {
++            call_id: "exec-coverage".into(),
++            command: vec!["echo".into(), TOKEN.into()],
++            parsed: if matches!(source, ExecCommandSource::Agent) {
++                vec![ParsedCommand::Search {
++                    cmd: format!("rg {TOKEN}"),
++                    query: Some(TOKEN.into()),
++                    path: None,
++                }]
++            } else {
++                Vec::new()
++            },
++            output: None,
++            source,
++            start_time: Some(Instant::now()),
++            duration: None,
++            interaction_input: None,
++        },
++        false,
++    );
++    if let Some(code) = code {
++        assert!(cell.complete_call(
++            "exec-coverage",
++            CommandOutput::new(code, TOKEN.into()),
++            Duration::ZERO
++        ));
++    }
++    cell
++}
++
++pub(crate) fn routine_cells() -> Vec<Box<dyn HistoryCell>> {
++    let mut cells: Vec<Box<dyn HistoryCell>> = vec![
++        patch(),
++        Box::new(computer("active")),
++        Box::new(computer("completed")),
++        Box::new(computer("image")),
++        Box::new(mcp("cua_repl", "image")),
++        Box::new(mcp("browser", "completed")),
++        Box::new(dynamic(DynamicToolCallStatus::InProgress, None, false)),
++        Box::new(dynamic(DynamicToolCallStatus::Completed, Some(true), false)),
++        Box::new(exec(None, ExecCommandSource::Agent)),
++        Box::new(exec(Some(0), ExecCommandSource::UnifiedExecStartup)),
++        Box::new(exec(Some(0), ExecCommandSource::UnifiedExecInteraction)),
++        Box::new(new_view_image_tool_call(
++            "view".into(),
++            LegacyAppPathString::from_string(format!("/workspace/{TOKEN}.png")),
++        )),
++    ];
++    for action in [
++        None,
++        Some(WebSearchAction::Search {
++            query: Some(TOKEN.into()),
++            queries: None,
++        }),
++        Some(WebSearchAction::OpenPage {
++            url: Some(format!("https://example.test/{TOKEN}")),
++        }),
++        Some(WebSearchAction::FindInPage {
++            url: None,
++            pattern: Some(TOKEN.into()),
++        }),
++    ] {
++        let mut active = WebSearchCell::new("web".into(), TOKEN.into(), action.clone(), false);
++        cells.push(Box::new(WebSearchCell::new(
++            "web-active".into(),
++            TOKEN.into(),
++            action,
++            false,
++        )));
++        active.complete();
++        cells.push(Box::new(active));
++    }
++    for status in ["pending", "in_progress", "completed"] {
++        cells.push(Box::new(new_plan_update(serde_json::from_value(json!({
++            "explanation": TOKEN,
++            "plan": [{"step": TOKEN, "status": status}]
++        })).unwrap())));
++    }
++    cells
++}
++
++fn draw(view: &mut TranscriptView, cells: &[Arc<dyn HistoryCell>], width: u16) -> Buffer {
++    let area = Rect::new(0, 0, width, 36);
++    let mut buffer = Buffer::empty(area);
++    view.render(area, &mut buffer, cells);
++    buffer
++}
++
++pub(crate) fn assert_routine(cell: Box<dyn HistoryCell>) {
++    let cell: Arc<dyn HistoryCell> = Arc::from(cell);
++    let raw = cell.raw_lines();
++    let full = cell.transcript_hyperlink_lines(100);
++    let cells = [cell.clone()];
++    let mut view = TranscriptView::default();
++    for width in [100, 1, 8, 24, 100] {
++        draw(&mut view, &cells, width);
++        let quiet = view.entry_layout(&cells, 0, false).unwrap();
++        if cfg!(feature = "cmux-quiet") {
++            assert_eq!(quiet.row_count(), 0, "{cell:?}: {}", quiet.text());
++            assert!(quiet.image.is_none());
++        }
++        // Search uses this full-content layout, independently of presentation.
++        assert!(
++            !view
++                .entry_layout(&cells, 0, true)
++                .unwrap()
++                .text()
++                .is_empty()
++        );
++    }
++    for _ in 0..3 {
++        view.toggle_cmux_quiet();
++        draw(&mut view, &cells, 100);
++        assert!(
++            !view
++                .entry_layout(&cells, 0, false)
++                .unwrap()
++                .text()
++                .is_empty()
++        );
++        view.toggle_cmux_quiet();
++        draw(&mut view, &cells, 100);
++        assert_eq!(
++            view.entry_layout(&cells, 0, false).unwrap().row_count() == 0,
++            cfg!(feature = "cmux-quiet")
++        );
++    }
++    view.set_presentation(true, HistoryRenderMode::Rich);
++    draw(&mut view, &cells, 100);
++    assert!(view.layout(&cells, 0).unwrap().text().contains(TOKEN));
++    view.set_presentation(true, HistoryRenderMode::Raw);
++    draw(&mut view, &cells, 100);
++    assert!(!view.layout(&cells, 0).unwrap().text().is_empty());
++    assert_eq!(cell.raw_lines(), raw);
++    assert!(crate::terminal_hyperlinks::lines_with_sources_eq(
++        &cell.transcript_hyperlink_lines(100),
++        &full
++    ));
++}
++
++#[test]
++fn cmux_tool_coverage_known_routine_cells_have_zero_rows_and_reversible_compact() {
++    for cell in routine_cells() {
++        assert_routine(cell);
++    }
++}
++
++#[test]
++fn cmux_tool_coverage_all_successful_file_change_kinds() {
++    for change in [
++        FileChange::Add {
++            content: format!("{TOKEN}\n"),
++        },
++        FileChange::Delete {
++            content: format!("{TOKEN}\n"),
++        },
++        FileChange::Update {
++            unified_diff: format!("@@ -1 +1 @@\n-before\n+{TOKEN}\n"),
++            move_path: Some(PathBuf::from("renamed.txt")),
++        },
++    ] {
++        assert_routine(Box::new(new_patch_event(
++            HashMap::from([(PathBuf::from("file.txt"), change)]),
++            Path::new("/workspace"),
++        )));
++    }
++}
++
++#[test]
++fn cmux_tool_coverage_nested_all_routine_composites() {
++    assert_routine(Box::new(CompositeHistoryCell::new(vec![
++        patch(),
++        Box::new(CompositeHistoryCell::new(vec![
++            Box::new(computer("image")),
++            Box::new(mcp("browser", "completed")),
++        ])),
++    ])));
++}
++
++#[test]
++fn cmux_tool_coverage_computer_group_retains_transcript_only_reasoning() {
++    let mut group = computer("image");
++    group
++        .append_reasoning(new_reasoning_summary_block(
++            vec![format!("Reasoning {TOKEN}")],
++            Path::new("/workspace"),
++        ))
++        .unwrap();
++    assert_routine(Box::new(group));
++}
++
++#[test]
++fn cmux_tool_coverage_empty_groups_and_unknown_web_actions_are_visible() {
++    let cells: Vec<Arc<dyn HistoryCell>> = vec![
++        Arc::new(ComputerActivityCell::default()),
++        Arc::new(WebSearchCell::new(
++            "other".into(),
++            TOKEN.into(),
++            Some(WebSearchAction::Other),
++            false,
++        )),
++    ];
++    let mut view = TranscriptView::default();
++    draw(&mut view, &cells, 100);
++    for index in 0..cells.len() {
++        assert!(
++            !view
++                .entry_layout(&cells, index, false)
++                .unwrap()
++                .text()
++                .is_empty()
++        );
++    }
++}
++
++pub(crate) fn protected_cells() -> Vec<Box<dyn HistoryCell>> {
++    let mut interrupted_exec = exec(None, ExecCommandSource::Agent);
++    interrupted_exec.mark_failed();
++    let interrupted = dynamic(DynamicToolCallStatus::InProgress, None, false);
++    interrupted.mark_interrupted();
++    let mut cells: Vec<Box<dyn HistoryCell>> = vec![
++        Box::new(new_patch_apply_failure(TOKEN.into())),
++        Box::new(new_patch_apply_failure(String::new())),
++        Box::new(computer("failed")),
++        Box::new(computer("failed-image")),
++        Box::new(interrupted_exec),
++        Box::new(computer("transport")),
++        Box::new(computer("interrupted")),
++        Box::new(mcp("browser", "failed")),
++        Box::new(mcp("browser", "transport")),
++        Box::new(mcp("browser", "interrupted")),
++        Box::new(dynamic(DynamicToolCallStatus::Failed, None, false)),
++        Box::new(dynamic(
++            DynamicToolCallStatus::Completed,
++            Some(false),
++            false,
++        )),
++        Box::new(interrupted),
++        Box::new(exec(Some(1), ExecCommandSource::Agent)),
++        Box::new(exec(Some(130), ExecCommandSource::UnifiedExecStartup)),
++        Box::new(exec(Some(0), ExecCommandSource::UserShell)),
++        Box::new(mcp("browser", "image")),
++        Box::new(mcp("node_repl", "image")),
++        Box::new(mcp("cua_repl", "audio")),
++        Box::new(mcp("cua_repl", "resource")),
++        Box::new(mcp("cua_repl", "unknown")),
++        Box::new(dynamic(DynamicToolCallStatus::Completed, Some(true), true)),
++        Box::new(PlainHistoryCell::new(vec![TOKEN.into()])),
++        Box::new(AgentMessageCell::new(
++            vec![format!("Assistant final {TOKEN}").into()],
++            true,
++        )),
++        Box::new(new_user_prompt(TOKEN.into(), vec![], vec![], vec![])),
++        Box::new(new_user_prompt(
++            String::new(),
++            vec![],
++            vec![PathBuf::from("user-image.png")],
++            vec![],
++        )),
++        Box::new(new_image_generation_call(
++            "image".into(),
++            "completed",
++            Some(TOKEN.into()),
++            Some(test_path_buf("/workspace/assistant-image.png").abs()),
++        )),
++        Box::new(new_image_generation_call(
++            "image".into(),
++            "failed",
++            Some(TOKEN.into()),
++            None,
++        )),
++        new_approval_decision_cell(
++            ApprovalDecisionSubject::Command(vec![TOKEN.into()]),
++            ReviewDecision::Approved,
++            ApprovalDecisionActor::User,
++        ),
++        new_guardian_denied_action_request(TOKEN.into()),
++        Box::new(RequestUserInputResultCell {
++            questions: vec![],
++            answers: HashMap::new(),
++            interrupted: true,
++        }),
++    ];
++    for status in [codex_app_server_protocol::HookRunStatus::Completed,
++                   codex_app_server_protocol::HookRunStatus::Failed,
++                   codex_app_server_protocol::HookRunStatus::Blocked,
++                   codex_app_server_protocol::HookRunStatus::Stopped] {
++        for kind in [codex_app_server_protocol::HookOutputEntryKind::Warning,
++                     codex_app_server_protocol::HookOutputEntryKind::Error,
++                     codex_app_server_protocol::HookOutputEntryKind::Stop,
++                     codex_app_server_protocol::HookOutputEntryKind::Feedback] {
++            cells.push(Box::new(new_completed_hook_cell(codex_app_server_protocol::HookRunSummary {
++                id: "hook-coverage".into(),
++                event_name: codex_app_server_protocol::HookEventName::PostToolUse,
++                handler_type: codex_app_server_protocol::HookHandlerType::Command,
++                execution_mode: codex_app_server_protocol::HookExecutionMode::Sync,
++                scope: codex_app_server_protocol::HookScope::Turn,
++                source_path: test_path_buf("/tmp/hooks.json").abs(),
++                source: codex_app_server_protocol::HookSource::User,
++                display_order: 0, status: status.clone(), status_message: None,
++                started_at: 1, completed_at: Some(2), duration_ms: Some(1),
++                entries: vec![codex_app_server_protocol::HookOutputEntry { kind, text: TOKEN.into() }],
++            })));
++        }
++    }
++    cells
++}
++
++#[test]
++fn cmux_tool_coverage_failures_interruptions_questions_chat_and_media_survive() {
++    let cells: Vec<Arc<dyn HistoryCell>> = protected_cells().into_iter().map(Arc::from).collect();
++    let mut view = TranscriptView::default();
++    for _ in 0..3 {
++        draw(&mut view, &cells, 100);
++        for index in 0..cells.len() {
++            assert!(
++                !view
++                    .entry_layout(&cells, index, false)
++                    .unwrap()
++                    .text()
++                    .is_empty(),
++                "{:?}",
++                cells[index]
++            );
++            assert!(
++                !view
++                    .entry_layout(&cells, index, true)
++                    .unwrap()
++                    .text()
++                    .is_empty()
++            );
++        }
++        view.toggle_cmux_quiet();
++    }
++}
++
++#[test]
++fn cmux_tool_coverage_mixed_nested_composites_keep_assistant_and_errors() {
++    for important in [
++        Box::new(AgentMessageCell::new(
++            vec![format!("PROTECTED_DETAIL {TOKEN}").into()],
++            true,
++        )) as Box<dyn HistoryCell>,
++        Box::new(new_patch_apply_failure(format!("PROTECTED_DETAIL {TOKEN}"))),
++    ] {
++        let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(CompositeHistoryCell::new(vec![
++            patch(),
++            Box::new(CompositeHistoryCell::new(vec![
++                Box::new(computer("image")),
++                important,
++            ])),
++        ]))];
++        let mut view = TranscriptView::default();
++        draw(&mut view, &cells, 100);
++        assert!(
++            view.entry_layout(&cells, 0, false)
++                .unwrap()
++                .text()
++                .contains("PROTECTED_DETAIL")
++        );
++    }
++}
++
++#[test]
++fn cmux_tool_coverage_computer_group_never_hides_protected_nested_details() {
++    for important in [
++        Box::new(AgentMessageCell::new(
++            vec![format!("ASSISTANT_DETAIL {TOKEN}").into()],
++            true,
++        )) as Box<dyn HistoryCell>,
++        Box::new(new_patch_apply_failure(format!("FAILURE_DETAIL {TOKEN}"))),
++    ] {
++        let mut group = computer("completed");
++        group.append_reasoning(important).unwrap();
++        let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(group)];
++        let mut view = TranscriptView::default();
++        draw(&mut view, &cells, 100);
++        let text = view
++            .entry_layout(&cells, 0, false)
++            .unwrap()
++            .text()
++            .to_string();
++        if cfg!(feature = "cmux-quiet") {
++            assert!(text.contains("_DETAIL"), "{text}");
++        }
++        assert!(
++            view.entry_layout(&cells, 0, true)
++                .unwrap()
++                .text()
++                .contains("_DETAIL")
++        );
++    }
++}
++
++#[test]
++fn cmux_tool_coverage_exec_group_never_hides_protected_nested_details() {
++    let mut group = exec(Some(0), ExecCommandSource::Agent);
++    group
++        .append_reasoning(Box::new(new_patch_apply_failure(format!(
++            "FAILURE_DETAIL {TOKEN}"
++        ))))
++        .unwrap();
++    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(group)];
++    let mut view = TranscriptView::default();
++    draw(&mut view, &cells, 100);
++    if cfg!(feature = "cmux-quiet") {
++        assert!(
++            view.entry_layout(&cells, 0, false)
++                .unwrap()
++                .text()
++                .contains("FAILURE_DETAIL")
++        );
++    }
++    assert!(
++        view.entry_layout(&cells, 0, true)
++            .unwrap()
++            .text()
++            .contains("FAILURE_DETAIL")
++    );
++}
++
++#[test]
++fn cmux_tool_coverage_search_finds_hidden_edit_and_computer_backing_content() {
++    for cell in [patch(), Box::new(computer("image")) as Box<dyn HistoryCell>] {
++        let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::from(cell)];
++        let mut view = TranscriptView::default();
++        draw(&mut view, &cells, 100);
++        view.begin_search();
++        assert!(view.paste_search(TOKEN));
++        while view.advance_search(&cells) {}
++        let found = view
++            .search
++            .match_layout(EntryKey::cell(&cells[0]))
++            .expect("hidden source is searchable");
++        assert!(found.text().contains(TOKEN));
++        view.cancel_search();
++        draw(&mut view, &cells, 100);
++        assert_eq!(
++            view.entry_layout(&cells, 0, false).unwrap().row_count() == 0,
++            cfg!(feature = "cmux-quiet")
++        );
++    }
++}
++
++#[test]
++fn cmux_tool_coverage_completed_dynamic_failure_invalidates_hidden_live_layout() {
++    let call = dynamic(DynamicToolCallStatus::InProgress, None, false);
++    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(call.clone())];
++    let mut view = TranscriptView::default();
++    draw(&mut view, &cells, 100);
++    assert!(call.update_from_item(serde_json::from_value(json!({
++        "type": "dynamicToolCall", "id": "dynamic-coverage", "namespace": "browser", "tool": "open",
++        "arguments": {"url": TOKEN}, "status": "failed", "success": false,
++        "contentItems": [{"type": "inputText", "text": "FAILED_DETAIL"}], "durationMs": 1
++    })).unwrap()));
++    draw(&mut view, &cells, 100);
++    assert!(
++        !view
++            .entry_layout(&cells, 0, false)
++            .unwrap()
++            .text()
++            .is_empty()
++    );
++    assert!(
++        view.entry_layout(&cells, 0, true)
++            .unwrap()
++            .text()
++            .contains("FAILED_DETAIL")
++    );
++}
++
++#[test]
++fn cmux_tool_coverage_raw_presentation_does_not_hide_tool_source() {
++    for cell in [patch(), Box::new(computer("image")) as Box<dyn HistoryCell>, Box::new(exec(Some(0), ExecCommandSource::Agent))] {
++        let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::from(cell)];
++        let mut view = TranscriptView::default();
++        view.set_presentation(false, HistoryRenderMode::Raw);
++        draw(&mut view, &cells, 100);
++        assert!(
++            view.entry_layout(&cells, 0, false)
++                .unwrap()
++                .text()
++                .contains(TOKEN)
++        );
++    }
++}
++
++#[test]
++fn cmux_tool_coverage_terminal_bookkeeping_group_keeps_raw_source() {
++    let mut group = exec(Some(0), ExecCommandSource::Agent);
++    group
++        .append_reasoning(Box::new(new_unified_exec_interaction(
++            Some(TOKEN.into()),
++            String::new(),
++        )))
++        .unwrap();
++    assert_routine(Box::new(group));
++}
++
++#[test]
++fn cmux_tool_coverage_generated_image_pixels_survive_while_view_metadata_hides() {
++    let directory = tempfile::tempdir().unwrap();
++    let path = directory.path().join("artifact.png");
++    image::RgbaImage::from_pixel(32, 16, image::Rgba([255, 0, 0, 255]))
++        .save(&path)
++        .unwrap();
++    let cells: Vec<Arc<dyn HistoryCell>> = vec![
++        Arc::new(new_view_image_tool_call(
++            "view".into(),
++            LegacyAppPathString::from_string(path.to_string_lossy().into_owned()),
++        )),
++        Arc::new(new_image_generation_call(
++            "generated".into(),
++            "completed",
++            Some(TOKEN.into()),
++            Some(codex_utils_absolute_path::AbsolutePathBuf::try_from(path).unwrap()),
++        )),
++    ];
++    let mut view = TranscriptView::default();
++    view.image_protocol = Some(crate::pets::ImageProtocol::Kitty);
++    draw(&mut view, &cells, 100);
++    let viewed = view.entry_layout(&cells, 0, false).unwrap();
++    assert_eq!(viewed.row_count() == 0, cfg!(feature = "cmux-quiet"));
++    assert!(viewed.image.is_none());
++    let generated = view.entry_layout(&cells, 1, false).unwrap();
++    assert!(generated.text().contains(TOKEN));
++    assert!(
++        generated.image.is_some(),
++        "assistant artifact pixels must remain available"
++    );
++    view.toggle_cmux_quiet();
++    draw(&mut view, &cells, 100);
++    assert!(
++        !view
++            .entry_layout(&cells, 0, false)
++            .unwrap()
++            .text()
++            .is_empty()
++    );
++    assert!(view.entry_layout(&cells, 1, false).unwrap().image.is_some());
++}
++
++
++#[test]
++fn cmux_tool_coverage_mixed_group_search_keeps_hidden_child_source() {
++    let cells: Vec<Arc<dyn HistoryCell>> = vec![Arc::new(CompositeHistoryCell::new(vec![
++        Box::new(PlainHistoryCell::new(vec!["ASSISTANT_RESULT".into()])), patch(),
++    ]))];
++    let mut view = TranscriptView::default();
++    draw(&mut view, &cells, 100);
++    let visible = view.entry_layout(&cells, 0, false).unwrap();
++    assert!(visible.text().contains("ASSISTANT_RESULT"));
++    assert_eq!(visible.text().contains(TOKEN), !cfg!(feature = "cmux-quiet"));
++    assert!(view.entry_layout(&cells, 0, true).unwrap().text().contains(TOKEN));
++    view.set_presentation(true, HistoryRenderMode::Rich);
++    draw(&mut view, &cells, 100);
++    assert!(view.entry_layout(&cells, 0, false).unwrap().text().contains(TOKEN));
++}
++
++pub(crate) fn expanded_view_for_activity(ids: Vec<String>) -> TranscriptView {
++    let mut view = TranscriptView::default();
++    if view.is_cmux_quiet() { view.toggle_cmux_quiet(); }
++    view.disclosure.expanded.extend(ids.iter().cloned());
++    view.disclosure.focused = Some(ids);
++    view
++}
+--- /dev/null
++++ b/codex-rs/tui/src/chatwidget/tests/cmux_tool_coverage_tests.rs
+@@ -0,0 +1,229 @@
++//! Exercise the actual live projection with the same retained-cell fixtures as history.
++use super::*;
++use crate::transcript_view::cmux_tool_coverage_tests::{
++    TOKEN, computer, patch, protected_cells, routine_cells,
++};
++
++#[tokio::test]
++async fn cmux_tool_coverage_live_known_cells_match_quiet_compact_and_expanded() {
++    let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
++    for cell in routine_cells() {
++        chat.transcript.active_cell = Some(cell);
++        chat.realtime_conversation.pending_history_cells.clear();
++        chat.realtime_conversation
++            .pending_history_cells
++            .push_back(Box::new(history_cell::AgentMessageCell::new(
++                vec!["AUXILIARY_ASSISTANT".into()],
++                true,
++            )));
++        let full = chat.active_cell_transcript_hyperlink_lines(100).unwrap();
++        for width in [1, 8, 24, 100] {
++            let quiet = chat
++                .active_cell_owned_transcript_lines_with_focus(width, false, true)
++                .unwrap();
++            assert_eq!(quiet.activity.is_empty(), cfg!(feature = "cmux-quiet"));
++            if cfg!(feature = "cmux-quiet") {
++                assert!(quiet.disclosure.is_none());
++            }
++            if width == 100 {
++                assert!(
++                    quiet
++                        .auxiliary
++                        .iter()
++                        .any(|line| line.line.to_string().contains("AUXILIARY_ASSISTANT"))
++                );
++            }
++            assert!(
++                !chat
++                    .active_cell_owned_transcript_lines_with_focus(width, false, false)
++                    .unwrap()
++                    .activity
++                    .is_empty()
++            );
++            assert!(
++                !chat
++                    .active_cell_owned_transcript_lines_with_focus(width, true, true)
++                    .unwrap()
++                    .activity
++                    .is_empty()
++            );
++        }
++        assert!(crate::terminal_hyperlinks::lines_with_sources_eq(
++            &chat.active_cell_transcript_hyperlink_lines(100).unwrap(),
++            &full
++        ));
++        chat.realtime_conversation.pending_history_cells.clear();
++        assert_eq!(
++            chat.active_cell_owned_transcript_lines_with_focus(100, false, true)
++                .is_none(),
++            cfg!(feature = "cmux-quiet")
++        );
++    }
++}
++
++#[tokio::test]
++async fn cmux_tool_coverage_live_protected_cells_remain_visible() {
++    let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
++    for cell in protected_cells() {
++        chat.transcript.active_cell = Some(cell);
++        let full = chat.active_cell_transcript_hyperlink_lines(100).unwrap();
++        let quiet = chat
++            .active_cell_owned_transcript_lines_with_focus(100, false, true)
++            .unwrap();
++        assert!(!quiet.activity.is_empty());
++        assert!(crate::terminal_hyperlinks::lines_with_sources_eq(
++            &chat.active_cell_transcript_hyperlink_lines(100).unwrap(),
++            &full
++        ));
++    }
++}
++
++#[tokio::test]
++async fn cmux_tool_coverage_live_auxiliary_tools_hide_without_losing_assistant() {
++    let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
++    chat.transcript.active_cell = Some(Box::new(computer("image")));
++    chat.realtime_conversation
++        .pending_history_cells
++        .push_back(patch());
++    chat.realtime_conversation
++        .pending_history_cells
++        .push_back(Box::new(history_cell::AgentMessageCell::new(
++            vec!["AUXILIARY_ASSISTANT".into()],
++            true,
++        )));
++    let quiet = chat
++        .active_cell_owned_transcript_lines_with_focus(100, false, true)
++        .unwrap();
++    let text = quiet
++        .auxiliary
++        .iter()
++        .map(|line| line.line.to_string())
++        .collect::<Vec<_>>()
++        .join("\n");
++    assert!(text.contains("AUXILIARY_ASSISTANT"));
++    if cfg!(feature = "cmux-quiet") {
++        assert!(!text.contains(TOKEN));
++    }
++    let compact = chat
++        .active_cell_owned_transcript_lines_with_focus(100, false, false)
++        .unwrap();
++    assert!(
++        compact
++            .auxiliary
++            .iter()
++            .any(|line| line.line.to_string().contains(TOKEN))
++    );
++}
++
++#[tokio::test]
++async fn cmux_tool_coverage_live_and_replayed_native_computer_screenshot() {
++    for replay in [false, true] {
++        let (mut chat, mut events, _ops) = make_chatwidget_manual(None).await;
++        let item: AppServerThreadItem = serde_json::from_value(json!({
++            "type": "mcpToolCall", "id": "computer-image", "server": "cua_repl", "tool": "js",
++            "status": "completed", "arguments": {"title": TOKEN, "code": "await cua.getState()"},
++            "result": {"content": [{"type": "image", "mimeType": "image/png",
++                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=="}]},
++            "durationMs": 1
++        })).unwrap();
++        if replay {
++            chat.replay_thread_item(item, "turn".into(), ReplayKind::ThreadSnapshot);
++        } else {
++            let mut started = item.clone();
++            if let AppServerThreadItem::McpToolCall { status, result, .. } = &mut started {
++                *status = codex_app_server_protocol::McpToolCallStatus::InProgress;
++                *result = None;
++            }
++            chat.on_mcp_tool_call_started(started);
++            assert_eq!(
++                chat.active_cell_owned_transcript_lines_with_focus(100, false, true)
++                    .is_none(),
++                cfg!(feature = "cmux-quiet")
++            );
++            chat.on_mcp_tool_call_completed(item);
++        }
++        // Group may remain active until its boundary or be committed during replay.
++        if let Some(cell) = chat.transcript.active_cell.as_deref() {
++            assert!(cell.as_any().is::<history_cell::ComputerActivityCell>());
++            assert!(
++                cell.transcript_lines(100)
++                    .iter()
++                    .any(|line| line.to_string().contains(TOKEN))
++            );
++            assert_eq!(
++                chat.active_cell_owned_transcript_lines_with_focus(100, false, true)
++                    .is_none(),
++                cfg!(feature = "cmux-quiet")
++            );
++        } else {
++            let mut cells = Vec::new();
++            while let Ok(event) = events.try_recv() {
++                if let AppEvent::InsertHistoryCell(cell) = event {
++                    cells.push(cell);
++                }
++            }
++            assert_eq!(cells.len(), 1);
++            assert!(cells[0].as_any().is::<history_cell::ComputerActivityCell>());
++            crate::transcript_view::cmux_tool_coverage_tests::assert_routine(cells.remove(0));
++        }
++    }
++}
++
++#[tokio::test]
++async fn cmux_tool_coverage_live_nested_group_keeps_protected_detail() {
++    let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
++    let mut group = computer("image");
++    group
++        .append_reasoning(Box::new(history_cell::AgentMessageCell::new(
++            vec!["PROTECTED_DETAIL".into()],
++            true,
++        )))
++        .unwrap();
++    chat.transcript.active_cell = Some(Box::new(history_cell::CompositeHistoryCell::new(vec![
++        patch(),
++        Box::new(group),
++    ])));
++    let quiet = chat
++        .active_cell_owned_transcript_lines_with_focus(100, false, true)
++        .unwrap();
++    if cfg!(feature = "cmux-quiet") {
++        assert!(
++            quiet
++                .activity
++                .iter()
++                .any(|line| line.line.to_string().contains("PROTECTED_DETAIL"))
++        );
++    }
++    let full = chat.active_cell_transcript_hyperlink_lines(100).unwrap();
++    assert!(
++        full.iter()
++            .any(|line| line.line.to_string().contains("PROTECTED_DETAIL"))
++    );
++}
++
++
++#[tokio::test]
++async fn cmux_tool_coverage_enter_quiet_clears_sticky_live_expansion() {
++    let (mut chat, _events, _ops) = make_chatwidget_manual(None).await;
++    chat.transcript.active_cell = Some(Box::new(computer("image")));
++    chat.realtime_conversation.pending_history_cells.clear();
++    let ids = chat.active_activity_ids();
++    assert!(!ids.is_empty());
++    let mut view = crate::transcript_view::cmux_tool_coverage_tests::expanded_view_for_activity(ids.clone());
++    assert!(view.sync_live_activity(&[], ids.clone()));
++    assert!(view.is_activity_focused());
++    assert!(!chat.active_cell_owned_transcript_lines_with_focus(100, true, false).unwrap().activity.is_empty());
++    view.toggle_cmux_quiet();
++    let expanded = view.sync_live_activity(&[], ids.clone());
++    if cfg!(feature = "cmux-quiet") {
++        assert!(view.is_cmux_quiet());
++        assert!(!expanded);
++        assert!(!view.is_activity_focused());
++        assert!(chat.active_cell_owned_transcript_lines_with_focus(100, expanded, view.is_cmux_quiet()).is_none());
++    } else {
++        assert!(expanded);
++        assert!(!chat.active_cell_owned_transcript_lines_with_focus(100, expanded, view.is_cmux_quiet()).unwrap().activity.is_empty());
++    }
++    view.toggle_cmux_quiet();
++    assert!(!chat.active_cell_owned_transcript_lines_with_focus(100, view.sync_live_activity(&[], ids), view.is_cmux_quiet()).unwrap().activity.is_empty());
++}
