@@ -43,6 +43,7 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
     private var shouldStop = false
     private var listenerOpen = true
     private var activeClient: Int32?
+    private var replying = false
     private let workerFinished = DispatchGroup()
 
     var requests: [Data] {
@@ -116,8 +117,6 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
                 if client < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) { continue }
                 if client < 0 { return }
                 _ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) & ~O_NONBLOCK)
-                var noSignal: Int32 = 1
-                _ = setsockopt(client, SOL_SOCKET, SO_NOSIGPIPE, &noSignal, socklen_t(MemoryLayout<Int32>.size))
                 self.lock.lock()
                 let stopped = self.shouldStop
                 if !stopped { self.activeClient = client }
@@ -129,6 +128,7 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
                 self.serve(client: client)
                 self.lock.lock()
                 self.activeClient = nil
+                self.replying = false
                 Darwin.close(client)
                 self.lock.unlock()
             }
@@ -150,9 +150,29 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
         lock.lock()
         guard !shouldStop else { lock.unlock(); return }
         _requests.append(request)
+        replying = true
         lock.unlock()
-        responseBody.withUnsafeBytes { raw in
-            _ = Darwin.write(client, raw.baseAddress, raw.count)
+        // A fixture stop must not shut down its own write or wait for a peer
+        // that stopped reading. The worker closes the descriptor after this
+        // cancellable nonblocking reply; no socket syscall holds the state lock.
+        guard fcntl(client, F_SETFL, fcntl(client, F_GETFL) | O_NONBLOCK) == 0 else { return }
+        var sent = 0
+        while sent < responseBody.count {
+            lock.lock()
+            let stopped = shouldStop
+            lock.unlock()
+            if stopped { return }
+            let count = responseBody.withUnsafeBytes { raw in
+                Darwin.write(client, raw.baseAddress!.advanced(by: sent), raw.count - sent)
+            }
+            if count > 0 { sent += count; continue }
+            if count < 0 && errno == EINTR { continue }
+            if count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
+                var ready = pollfd(fd: client, events: Int16(POLLOUT), revents: 0)
+                _ = Darwin.poll(&ready, 1, 20)
+                continue
+            }
+            return
         }
     }
 
@@ -160,7 +180,7 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
         lock.lock()
         guard !shouldStop else { lock.unlock(); return }
         shouldStop = true
-        if let activeClient { _ = shutdown(activeClient, SHUT_RDWR) }
+        if let activeClient, !replying { _ = shutdown(activeClient, SHUT_RDWR) }
         // Closing a listener alone need not wake another thread's accept.
         // Stop and join the worker before its descriptor can be reused.
         if listenerOpen { _ = shutdown(listenFD, SHUT_RDWR) }
