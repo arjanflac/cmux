@@ -11,6 +11,9 @@ public import Foundation
 /// other call becomes an approval card. When the process dies, the next turn
 /// starts a new one with `--resume` of the last session.
 ///
+/// ``Configuration/managedConversation`` turns this into the strict driver of
+/// an orchestrated task conversation: see that property for what changes.
+///
 /// ```swift
 /// let brain = ClaudeCodeBrain(configuration: .init(model: "claude-opus-5-5", effort: "high"))
 /// for try await event in brain.run(request) { … }
@@ -29,6 +32,19 @@ public actor ClaudeCodeBrain: ChiefBrain {
         /// Arguments added after the stream-json flags: by default the
         /// Chief's tool set, project settings only and no slash commands.
         public var extraArguments: [String]
+        /// Whether this brain drives a managed task conversation instead of a Chief. Off by default.
+        ///
+        /// A managed conversation resumes exactly its saved session and never
+        /// starts a replacement or resends a prompt; rejects a second turn while
+        /// one runs instead of interrupting it; writes the prompt only after
+        /// Claude Code acknowledged `initialize`; reports the session only when
+        /// Claude Code echoed the prompt; keeps an interrupted turn open until
+        /// Claude Code reports its outcome; asks about every permission request
+        /// (no Chief auto-allow); omits `--model` for an empty model; and drops
+        /// inherited `CMUX_*`, `IN_CMUX` and `CLAUDE_CODE_RESUME_INTERRUPTED_TURN`
+        /// from the child environment. Failures arrive as thrown
+        /// `ClaudeManagedTurnError` values, never as `.finished`.
+        public var managedConversation: Bool
 
         /// The tool set and settings a Chief runs with.
         public static let chiefArguments = [
@@ -46,14 +62,17 @@ public actor ClaudeCodeBrain: ChiefBrain {
         ///   - dangerouslySkipPermissions: Whether to bypass permission prompts.
         ///   - executableOverride: An explicit `claude` path.
         ///   - extraArguments: Arguments after the stream-json flags.
+        ///   - managedConversation: Strict task-conversation semantics; off keeps Chief behavior.
         public init(model: String, effort: String? = nil, dangerouslySkipPermissions: Bool = false,
                     executableOverride: URL? = nil,
-                    extraArguments: [String] = Configuration.chiefArguments) {
+                    extraArguments: [String] = Configuration.chiefArguments,
+                    managedConversation: Bool = false) {
             self.model = model
             self.effort = effort
             self.dangerouslySkipPermissions = dangerouslySkipPermissions
             self.executableOverride = executableOverride
             self.extraArguments = extraArguments
+            self.managedConversation = managedConversation
         }
     }
 
@@ -98,6 +117,20 @@ public actor ClaudeCodeBrain: ChiefBrain {
         await conversations[conversation]?.respond(toApproval: id, allow: ChiefToolPolicy.isAllow(choice))
     }
 
+    /// Managed mode: answers one pending permission request through Claude Code's control protocol.
+    ///
+    /// - Throws: ``ClaudeManagedTurnError/staleRequest`` when the request is not
+    ///   pending in the live process, so a late answer never reaches a later turn.
+    func answerPermission(_ id: String, allow: Bool, conversation: ConversationID) async throws {
+        guard let session = conversations[conversation] else { throw ClaudeManagedTurnError.staleRequest }
+        try await session.answerPermission(id, allow: allow)
+    }
+
+    /// Whether `conversation` has a turn whose outcome Claude Code has not reported yet.
+    func hasActiveTurn(conversation: ConversationID) async -> Bool {
+        await conversations[conversation]?.isTurnActive ?? false
+    }
+
     public func interrupt(conversation: ConversationID) async {
         pendingTurns.stop(conversation: conversation)
         await conversations[conversation]?.interrupt()
@@ -140,8 +173,11 @@ public actor ClaudeCodeBrain: ChiefBrain {
             "--include-partial-messages",
             "--replay-user-messages",
             "--permission-prompt-tool", "stdio",
-            "--model", configuration.model,
         ]
+        // A managed worker without an explicit model uses Claude Code's own default.
+        if !configuration.managedConversation || !configuration.model.isEmpty {
+            arguments += ["--model", configuration.model]
+        }
         if let effort = configuration.effort, !effort.isEmpty { arguments += ["--effort", effort] }
         switch session {
         case .new(let id): arguments += ["--session-id", id]
@@ -155,6 +191,34 @@ public actor ClaudeCodeBrain: ChiefBrain {
             extra[index] = "bypassPermissions"
         }
         return arguments + extra
+    }
+
+    /// Approval options of a managed permission request Claude Code may run once answered.
+    static let managedApprovalOptions = ["allow", "deny"]
+    /// Options of a managed request whose answer cmux cannot supply (questions, plan dialogs).
+    static let managedDeclineOnlyOptions = ["deny"]
+    /// Tools whose permission request carries a question for the user, not an action.
+    static let managedQuestionTools: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
+
+    /// The child environment of a managed conversation.
+    ///
+    /// Inherited cmux identity and authority (`CMUX_*`, `IN_CMUX`) belongs to
+    /// whichever terminal launched the app or daemon, never to this task, and an
+    /// inherited `CLAUDE_CODE_RESUME_INTERRUPTED_TURN` would restart unfinished
+    /// work on resume. Explicit per-invocation values survive, except that flag.
+    ///
+    /// - Parameters:
+    ///   - inherited: The app's environment.
+    ///   - request: The turn's explicit environment.
+    /// - Returns: The complete environment.
+    static func managedEnvironment(inherited: [String: String], request: [String: String]) -> [String: String] {
+        let resumeInterrupted = "CLAUDE_CODE_RESUME_INTERRUPTED_TURN"
+        var environment = inherited.filter {
+            !$0.key.hasPrefix("CMUX_") && $0.key != "IN_CMUX" && $0.key != resumeInterrupted
+        }
+        environment.merge(request.filter { $0.key != resumeInterrupted }) { _, new in new }
+        environment["CMUX_CLAUDE_HOOKS_DISABLED"] = "1"
+        return environment
     }
 
     /// The content blocks of a turn's prompt: the text, then each image.
@@ -190,6 +254,7 @@ actor ClaudeConversation {
 
     private let configuration: ClaudeCodeBrain.Configuration
     private let allowRules: ChiefAllowRules?
+    private let managed: Bool
     private var process: ChiefLineProcess?
     private var generation = 0
     private var parser = ClaudeStreamParser()
@@ -202,23 +267,45 @@ actor ClaudeConversation {
     /// The running turn's request and prompt, kept to retry a failed resume once.
     private var current: (request: ChiefTurnRequest, content: [ChiefJSON], resumed: Bool, retried: Bool)?
     private var turnOutput = false
+    /// Managed mode: the `initialize` request awaiting Claude Code's answer.
+    private var initializeRequest: String?
+    /// Managed mode: whether the live process acknowledged `initialize`.
+    private var initialized = false
+    /// Managed mode: the prompt line held until `initialize` is acknowledged.
+    private var heldPrompt: Data?
+    /// Managed mode: whether the running turn's prompt was handed to stdin.
+    private var promptWritten = false
+    /// Managed mode: whether the running turn was asked to interrupt.
+    private var interruptRequested = false
 
     init(configuration: ClaudeCodeBrain.Configuration, allowRules: ChiefAllowRules? = nil) {
         self.configuration = configuration
         self.allowRules = allowRules
+        managed = configuration.managedConversation
     }
 
     func start(_ request: ChiefTurnRequest, token: UUID, continuation: AsyncThrowingStream<ChiefTurnEvent, any Error>.Continuation,
                pending: ChiefPendingTurns) {
         // Claimed on this actor, so an `interrupt()` queued after a Stop always sees the turn.
         guard pending.claim(token) else {
-            continuation.finish()
+            // Stopped before it started: nothing was launched or sent.
+            if managed { continuation.finish(throwing: ClaudeManagedTurnError.interrupted) }
+            else { continuation.finish() }
             return
         }
-        if self.continuation != nil { interrupt() }
+        if self.continuation != nil {
+            // A managed conversation never interrupts accepted work to make room.
+            if managed {
+                continuation.finish(throwing: ClaudeManagedTurnError.busy)
+                return
+            }
+            interrupt()
+        }
         self.continuation = continuation
         self.token = token
         turnOutput = false
+        promptWritten = false
+        interruptRequested = false
         current = (request, ClaudeCodeBrain.promptContent(request), false, false)
         send(request)
     }
@@ -231,18 +318,32 @@ actor ClaudeConversation {
                 current = turn
             }
         } catch {
-            end(.failed(String(describing: error)))
+            if managed { endManaged(.notSent(String(describing: error))) }
+            else { end(.failed(String(describing: error))) }
             return
         }
-        if let session = parser.sessionID { continuation?.yield(.session(session)) }
-        let uuid = UUID().uuidString.lowercased()
+        // Managed: the session is reported once Claude Code echoes this prompt.
+        if !managed, let session = parser.sessionID { continuation?.yield(.session(session)) }
+        let uuid = (request.promptID ?? UUID()).uuidString.lowercased()
         parser.beginTurn(echo: uuid)
         let line = ClaudeStreamParser.userMessage(uuid: uuid, content: turn.content).line
+        if managed && !initialized {
+            heldPrompt = line
+            return
+        }
+        writePrompt(line)
+    }
+
+    private func writePrompt(_ line: Data) {
+        heldPrompt = nil
         // Queued, not written: a later EPIPE means the process died, and
         // `processEnded` reports it with stderr (and may retry a broken resume).
-        if process?.write(line) != true {
-            end(.failed(ChiefText.claudeStoppedBeforeReading))
+        guard process?.write(line) == true else {
+            if managed { endManaged(.notSent(ChiefText.claudeStoppedBeforeReading)) }
+            else { end(.failed(ChiefText.claudeStoppedBeforeReading)) }
+            return
         }
+        promptWritten = true
     }
 
     /// How the driver answers a `can_use_tool` request.
@@ -265,13 +366,23 @@ actor ClaudeConversation {
 
     /// Starts `claude`; returns whether it resumes an earlier session.
     private func launch(_ request: ChiefTurnRequest) throws -> Bool {
-        let environment = ChiefExecutableResolver.environment(request.environment,
-                                                              overrides: ["CMUX_CLAUDE_HOOKS_DISABLED": "1"])
+        let environment = managed
+            ? ClaudeCodeBrain.managedEnvironment(inherited: ProcessInfo.processInfo.environment, request: request.environment)
+            : ChiefExecutableResolver.environment(request.environment, overrides: ["CMUX_CLAUDE_HOOKS_DISABLED": "1"])
         guard let executable = ChiefExecutableResolver.resolve("claude", override: configuration.executableOverride,
                                                                environment: environment) else {
             throw ChiefBrainError.missingExecutable("claude")
         }
-        let resumeID = [lastSession, request.resumeSession].compactMap { $0 }.first { !brokenSessions.contains($0) }
+        let resumeID: String?
+        if managed {
+            // Exactly the saved session: no broken-session skip, no substitute.
+            if let lastSession, let requested = request.resumeSession, lastSession != requested {
+                throw ClaudeManagedTurnError.sessionChanged(lastSession)
+            }
+            resumeID = lastSession ?? request.resumeSession
+        } else {
+            resumeID = [lastSession, request.resumeSession].compactMap { $0 }.first { !brokenSessions.contains($0) }
+        }
         let start: ClaudeCodeBrain.SessionStart = resumeID.map { .resume($0) } ?? .new(UUID().uuidString.lowercased())
         let arguments = ClaudeCodeBrain.arguments(configuration, session: start, systemPrompt: request.systemPrompt)
         let child = try ChiefLineProcess(executable: executable, arguments: arguments, environment: environment,
@@ -281,10 +392,12 @@ actor ClaudeConversation {
         process = child
         switch start {
         case .new(let id), .resume(let id):
-            parser = ClaudeStreamParser(sessionID: id)
+            parser = ClaudeStreamParser(sessionID: id, strict: managed)
             lastSession = id
         }
         controlCounter += 1
+        initialized = false
+        initializeRequest = "init-\(controlCounter)"
         child.write(ClaudeStreamParser.initializeRequest(id: "init-\(controlCounter)").line)
         let lines = child.lines
         Task { [weak self] in
@@ -303,6 +416,17 @@ actor ClaudeConversation {
             switch output {
             case .event(let event):
                 deliver(event)
+            case .permission(let id, let tool, let input) where managed:
+                // Every request reaches the user; Chief auto-allow is not a worker policy.
+                guard continuation != nil else {
+                    write(ClaudeStreamParser.permissionResponse(requestID: id, allow: false, input: input))
+                    continue
+                }
+                approvals[id] = input
+                let options = ClaudeCodeBrain.managedQuestionTools.contains(tool)
+                    ? ClaudeCodeBrain.managedDeclineOnlyOptions : ClaudeCodeBrain.managedApprovalOptions
+                continuation?.yield(.approvalRequested(id: id, prompt: ChiefToolPolicy.claudePrompt(tool, input: input),
+                                                       options: options))
             case .permission(let id, let tool, let input):
                 let decision = Self.permissionDecision(
                     tool: tool,
@@ -324,6 +448,24 @@ actor ClaudeConversation {
                 write(ClaudeStreamParser.permissionResponse(requestID: id, allow: false, input: input))
             case .unsupportedControl(let id, let subtype):
                 write(ClaudeStreamParser.unsupportedResponse(requestID: id, subtype: subtype))
+            case .accepted:
+                if let session = parser.sessionID { continuation?.yield(.session(session)) }
+            case .interrupted:
+                endManaged(.interrupted)
+            case .controlResponse(let id, let error):
+                guard id == initializeRequest else { continue }
+                initializeRequest = nil
+                if let error {
+                    endManaged(.notSent("claude_initialize_failed: " + ChiefToolPolicy.truncate(error, to: 600)))
+                    stopProcess()
+                    return
+                }
+                initialized = true
+                if let line = heldPrompt { writePrompt(line) }
+            case .sessionChanged(let id):
+                endManaged(.sessionChanged(id))
+                stopProcess()
+                return
             }
         }
     }
@@ -347,6 +489,8 @@ actor ClaudeConversation {
     /// A resumed session whose transcript is gone ("No conversation found")
     /// fails before any output: start a new session once and send the prompt again.
     private func retryFreshSession(after failure: String) -> Bool {
+        // A managed conversation is its saved session; a replacement would resend the prompt.
+        guard !managed else { return false }
         guard failure.localizedCaseInsensitiveContains("no conversation found"),
               var turn = current, turn.resumed, !turn.retried, !turnOutput, let broken = lastSession else { return false }
         brokenSessions.insert(broken)
@@ -364,8 +508,16 @@ actor ClaudeConversation {
         process = nil
         parser.processExited()
         approvals = [:]
+        initialized = false
+        initializeRequest = nil
         guard continuation != nil else { return }
         let detail = child.stderrText
+        if managed {
+            let reason = detail.isEmpty ? "claude_exited" : "claude_exited: " + ChiefToolPolicy.truncate(detail, to: 600)
+            // A written prompt may have been read: uncertainty, never a retry.
+            endManaged(promptWritten ? .unconfirmed(reason) : .notSent(reason))
+            return
+        }
         if retryFreshSession(after: detail) { return }
         end(.failed(detail.isEmpty ? ChiefText.claudeExitedUnexpectedly : ChiefText.claudeExited(ChiefToolPolicy.truncate(detail, to: 600))))
     }
@@ -375,10 +527,35 @@ actor ClaudeConversation {
         write(ClaudeStreamParser.permissionResponse(requestID: id, allow: allow, input: input))
     }
 
+    /// Whether a turn is running (a managed one stays running until its outcome arrives).
+    var isTurnActive: Bool { continuation != nil }
+
+    /// Answers one request pending in the live process exactly once.
+    func answerPermission(_ id: String, allow: Bool) throws {
+        guard continuation != nil, let input = approvals.removeValue(forKey: id),
+              process?.write(ClaudeStreamParser.permissionResponse(requestID: id, allow: allow, input: input).line) == true else {
+            throw ClaudeManagedTurnError.staleRequest
+        }
+    }
+
     /// Stops the running turn: interrupts Claude Code, denies open approvals
-    /// and ends the stream.
+    /// and ends the stream. A managed turn stays open until Claude Code reports
+    /// its outcome, unless its prompt was never written.
     func interrupt() {
         guard continuation != nil else { return }
+        if managed {
+            guard promptWritten else {
+                endManaged(.interrupted)
+                return
+            }
+            guard !interruptRequested else { return }
+            interruptRequested = true
+            parser.noteInterruptRequested()
+            controlCounter += 1
+            write(ClaudeStreamParser.interruptRequest(id: "int-\(controlCounter)"))
+            denyApprovals()
+            return
+        }
         controlCounter += 1
         write(ClaudeStreamParser.interruptRequest(id: "int-\(controlCounter)"))
         denyApprovals()
@@ -392,10 +569,12 @@ actor ClaudeConversation {
         interrupt()
     }
 
-    func shutdown() {
+    func shutdown() async {
+        let ownedWriter = process
         end(nil)
         approvals = [:]
         stopProcess()
+        if configuration.managedConversation { await ownedWriter?.waitForExit() }
     }
 
     private func stopProcess() {
@@ -416,12 +595,25 @@ actor ClaudeConversation {
         process?.write(json.line)
     }
 
+    /// Ends a managed turn with what is known about its prompt.
+    private func endManaged(_ error: ClaudeManagedTurnError) {
+        let open = continuation
+        continuation = nil
+        token = nil
+        current = nil
+        heldPrompt = nil
+        interruptRequested = false
+        open?.finish(throwing: error)
+    }
+
     /// Ends the turn with `event` (nil just closes the stream).
     private func end(_ event: ChiefTurnEvent?) {
         let open = continuation
         continuation = nil
         token = nil
         current = nil
+        heldPrompt = nil
+        interruptRequested = false
         if case .failed(let message)? = event {
             // An unknown model reads as one, with a pointer to Chief Settings.
             open?.yield(.failed(ChiefHarness.claude.failureMessage(message, model: configuration.model)))

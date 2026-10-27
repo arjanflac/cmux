@@ -1,4 +1,5 @@
 import CmuxFoundation
+import CmuxWorkspaces
 import Foundation
 import os
 import Testing
@@ -30,6 +31,45 @@ struct RestorableAgentProcessGenerationTests {
     // longer than that to schedule the detached loader, the refresh timed out
     // and the index stayed nil. The test's time limit bounds a real hang.
     private static let loaderTimeoutOutsideTheTest: UInt64 = 600_000_000_000
+
+    @Test("The bundled quiet frontend uses its latest verified owner rather than startup argv")
+    func quietFrontendOwnerSurvivesCacheValidation() throws {
+        let fixture = try makeFixture(prefix: "cmux-quiet-owner")
+        defer { cleanup(fixture) }
+        let identity = AgentPIDProcessIdentity(pid: pid_t(fixture.processID),
+            startSeconds: Int64(fixture.updatedAt - 1), startMicroseconds: 0)
+        try writeStoredProcessIdentity(identity, to: fixture)
+        let executable = try #require(Bundle.main.resourceURL?.appendingPathComponent("bin/cmux-codex-quiet").path)
+        let arguments = CmuxTopProcessArguments(arguments: [executable, "resume", "old-startup-session"], environment: [
+            "CMUX_AGENT_LAUNCH_KIND": "codex", "CMUX_AGENT_LAUNCH_EXECUTABLE": "/usr/local/bin/codex",
+            "CMUX_WORKSPACE_ID": fixture.workspaceID.uuidString, "CMUX_SURFACE_ID": fixture.panelID.uuidString])
+        let index = loadRunningFixture(fixture, processArguments: arguments, processIdentity: identity)
+        #expect(index.entry(workspaceId: fixture.workspaceID, panelId: fixture.panelID)?.processLiveness == .running)
+        let process = CmuxTopProcessInfo(pid: fixture.processID, parentPID: 1, name: "cmux-codex-quiet", path: executable,
+            ttyDevice: nil, cmuxWorkspaceID: fixture.workspaceID, cmuxSurfaceID: fixture.panelID,
+            cmuxAttributionReason: "cmux-test", processGroupID: nil, terminalProcessGroupID: nil,
+            cpuPercent: 0, residentBytes: 0, virtualBytes: 0, threadCount: 1)
+        let census = CmuxTopProcessSnapshot(processes: [process], sampledAt: Date(), includesProcessDetails: true)
+        let cached = index.revalidatingCachedProcesses(against: census,
+            processArgumentsProvider: { _ in arguments }, processIdentityProvider: { _ in identity })
+        #expect(cached.entry(workspaceId: fixture.workspaceID, panelId: fixture.panelID)?.processLiveness == .running)
+        let owner = try #require(index.liveSessionOwners.owner(kind: "codex", sessionID: fixture.sessionID,
+            processIdentityProvider: { _ in identity }))
+        let snapshot = owner.validationSnapshot
+        func match(_ args: CmuxTopProcessArguments, _ current: AgentPIDProcessIdentity?, _ proof: LiveAgentSessionOwner?) -> RestorableAgentProcessMatch {
+            RestorableAgentSessionIndex.scopedProcessMatch(for: snapshot, workspaceId: fixture.workspaceID,
+                panelId: fixture.panelID, processID: fixture.processID, recordedProcessIdentity: identity,
+                currentProcessIdentity: current, processArgumentsProvider: { _ in args },
+                processPresenceProvider: { _ in .present }, validator: CachedAgentProcessIdentityValidator(), codexHookOwner: proof)
+        }
+        #expect(match(arguments, identity, owner) == .matches)
+        let reused = AgentPIDProcessIdentity(pid: identity.pid, startSeconds: identity.startSeconds + 1, startMicroseconds: 0)
+        #expect(match(arguments, reused, owner) == .mismatches)
+        var wrongScope = arguments.environment; wrongScope["CMUX_SURFACE_ID"] = UUID().uuidString
+        #expect(match(.init(arguments: arguments.arguments, environment: wrongScope), identity, owner) == .mismatches)
+        #expect(match(.init(arguments: ["/tmp/other/cmux-codex-quiet", "resume", "old-startup-session"], environment: arguments.environment), identity, owner) == .mismatches)
+        #expect(match(arguments, identity, nil) == .mismatches)
+    }
 
     @Test("Shared cache publishes unknown-to-exited liveness transitions")
     func sharedCachePublishesUnknownToExitedLivenessTransitions() async throws {

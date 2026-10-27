@@ -579,6 +579,15 @@ final class CmuxSettingsFileStore {
         snapshot: inout ResolvedSettingsSnapshot
     ) {
         applyBooleanSettings(TerminalSettingsFileMapping.booleanSettings, from: section, sourcePath: sourcePath, snapshot: &snapshot)
+        if let rawFolders = section["workspaceLaunchDirectories"] {
+            if let folders = rawFolders as? [String: String], folders.allSatisfy({
+                UUID(uuidString: $0.key) != nil && ($0.value as NSString).isAbsolutePath
+            }) {
+                snapshot.managedUserDefaults[TerminalCatalogSection().workspaceLaunchDirectories.userDefaultsKey] = .stringDictionary(folders)
+            } else {
+                logInvalid("terminal.workspaceLaunchDirectories", sourcePath: sourcePath)
+            }
+        }
         applyTerminalScrollSpeedSetting(from: section, assign: { snapshot.managedUserDefaults[$0] = .double($1) }, logInvalid: { logInvalid($0, sourcePath: sourcePath) })
         if let value = jsonDouble(section["sessionContentMaxWidth"]) {
             if value.isFinite, value >= SessionContentWidthSettings.minimumWidth {

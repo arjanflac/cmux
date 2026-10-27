@@ -1,3 +1,4 @@
+import CmuxSettings
 import Foundation
 import Testing
 
@@ -37,6 +38,57 @@ struct TerminalScrollSpeedSettingsFileStoreTests {
             )
             #expect(TerminalScrollSpeedSettings.multiplier(defaults: defaults) == TerminalScrollSpeedSettings.minimumMultiplier)
         }
+    }
+
+    @Test
+    func settingsFileImportsCmuxOnlyLaunchPreferences() throws {
+        let suiteName = "cmux-launch-settings-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("cmux.json")
+        let workspace = UUID().uuidString
+        try """
+        {"terminal":{"codexQuietFrontend":true,"workspaceLaunchDirectories":{"\(workspace)":"/products/lightwell"}}}
+        """.write(to: file, atomically: true, encoding: .utf8)
+        _ = KeyboardShortcutSettingsFileStore(primaryPath: file.path, fallbackPath: nil,
+            additionalFallbackPaths: [], notificationCenter: NotificationCenter(),
+            userDefaults: defaults, startWatching: false, isUserDefaultsKeyForcedByProfile: { _ in false })
+        #expect(defaults.object(forKey: "terminal.codexQuietFrontend") as? Bool == true)
+        #expect(defaults.dictionary(forKey: "terminal.workspaceLaunchDirectories") as? [String: String] == [workspace: "/products/lightwell"])
+    }
+
+    @Test
+    func settingsFileImportsAgentOrchestrationAndRestoresDefaultWhenRemoved() throws {
+        let suiteName = "cmux-agent-orchestration-json-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let directory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("cmux.json")
+        try "{}".write(to: file, atomically: true, encoding: .utf8)
+        let store = KeyboardShortcutSettingsFileStore(
+            primaryPath: file.path, fallbackPath: nil, additionalFallbackPaths: [],
+            notificationCenter: NotificationCenter(), userDefaults: defaults,
+            startWatching: false, isUserDefaultsKeyForcedByProfile: { _ in false }
+        )
+        let client = UserDefaultsSettingsClient(defaults: defaults)
+        let terminal = SettingCatalog().terminal
+        #expect(client.value(for: terminal.agentOrchestration) == false)
+        for enabled in [true, false] {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "terminal": ["agentOrchestration": enabled, "codexQuietFrontend": true]
+            ])
+            try data.write(to: file)
+            store.reload()
+            #expect(client.value(for: terminal.agentOrchestration) == enabled)
+            #expect(client.value(for: terminal.codexQuietFrontend) == true)
+        }
+        try "{}".write(to: file, atomically: true, encoding: .utf8)
+        store.reload()
+        #expect(defaults.object(forKey: terminal.agentOrchestration.userDefaultsKey) == nil)
+        #expect(client.value(for: terminal.agentOrchestration) == false)
     }
 
     private func loadScrollSpeedSetting(_ value: Double, verify: (UserDefaults) throws -> Void) throws {

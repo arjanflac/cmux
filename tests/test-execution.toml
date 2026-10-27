@@ -211,6 +211,10 @@ path = "tests/test_personal_codex_observer.py"
 lane = "linux-guard"
 
 [[test]]
+path = "tests/test_workspace_churn_fixture_cleanup.py"
+lane = "linux-guard"
+
+[[test]]
 path = "tests/test_codex_autoresume_chain.py"
 lane = "macos-cli-no-socket"
 

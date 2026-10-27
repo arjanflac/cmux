@@ -37,6 +37,7 @@ final class ChiefLineProcess: @unchecked Sendable {
     private var closed = false
     private var stdinClosed = false
     private var exited = false
+    private var exitWaiters: [CheckedContinuation<Void, Never>] = []
     private var stdoutEnded = false
     // Touched on `reaper` only (and in init before the source runs).
     private var exitSource: (any DispatchSourceProcess)?
@@ -181,6 +182,18 @@ final class ChiefLineProcess: @unchecked Sendable {
     /// Whether the child has not been reaped yet.
     var isRunning: Bool { !withLock { exited } }
 
+    /// Awaits the direct writer's reaping before an exclusive session handoff.
+    func waitForExit() async {
+        await withCheckedContinuation { continuation in
+            let finished = withLock {
+                if exited { return true }
+                exitWaiters.append(continuation)
+                return false
+            }
+            if finished { continuation.resume() }
+        }
+    }
+
     /// Closes stdin and stops the process group: `SIGTERM` now, `SIGKILL`
     /// once ``terminationGrace`` elapses with the child or a holder of its
     /// stdout still alive. Safe to call more than once.
@@ -228,7 +241,13 @@ final class ChiefLineProcess: @unchecked Sendable {
         let result = waitpid(pid, &status, WNOHANG)
         // 0: still running. ECHILD: someone else reaped it.
         guard result == pid || (result < 0 && errno == ECHILD) else { return }
-        withLock { exited = true }
+        let waiters = withLock {
+            exited = true
+            let waiting = exitWaiters
+            exitWaiters.removeAll()
+            return waiting
+        }
+        for waiter in waiters { waiter.resume() }
         exitSource?.cancel()
         exitSource = nil
         finishIfDone()

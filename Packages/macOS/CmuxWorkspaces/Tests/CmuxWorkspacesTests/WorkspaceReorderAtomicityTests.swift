@@ -46,6 +46,22 @@ struct WorkspaceReorderAtomicityTests {
         return (model, host, reorder)
     }
 
+    @Test func workingFirstPreservesSelectedPinnedAndStableOrder() {
+        let (model, host, reorder) = makeWorld()
+        let pinned = CoordinatorStubTab(); pinned.isPinned = true
+        let idle = CoordinatorStubTab(); let selected = CoordinatorStubTab(); let active = CoordinatorStubTab()
+        model.tabs = [pinned, idle, selected, active]; model.selectedTabId = selected.id
+        host.resetSnapshots()
+        reorder.orderWorkingFirst(workingWorkspaceIds: [active.id])
+        #expect(model.tabs.map(\.id) == [pinned.id, active.id, selected.id, idle.id])
+        #expect(model.selectedTabId == selected.id)
+        #expect(host.tabSnapshots.count == 1)
+        reorder.orderWorkingFirst(workingWorkspaceIds: [active.id])
+        #expect(host.tabSnapshots.count == 1)
+        reorder.orderWorkingFirst(workingWorkspaceIds: [idle.id])
+        #expect(model.tabs.map(\.id) == [pinned.id, idle.id, selected.id, active.id])
+    }
+
     @Test
     func notificationReorderPublishesOnlyCoherentWorkspaceSnapshots() {
         let (model, host, reorder) = makeWorld()

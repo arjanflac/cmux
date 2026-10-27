@@ -16,6 +16,13 @@ public struct TerminalSurfaceSpawnPolicy: Sendable {
     /// (`CMUX_CODEX_HOOKS_DISABLED`).
     public var codexHooksEnabled: Bool
 
+    /// Whether new cmux terminals may route eligible Codex launches to the bundled quiet TUI.
+    public var codexQuietFrontendEnabled: Bool
+
+    /// Whether new local terminal frontends may automatically enroll in agent coordination.
+    /// This feature gate does not authorize worker or schedule operations.
+    public var agentOrchestrationEnabled: Bool
+
     /// Whether Pi hooks (the `pi` wrapper and bundled extension) are enabled
     /// (`CMUX_PI_HOOKS_DISABLED`).
     public var piHooksEnabled: Bool
@@ -76,11 +83,21 @@ public struct TerminalSurfaceSpawnPolicy: Sendable {
     /// Whether supported agent sessions may attach the local computer-use MCP server.
     public var computerUseEnabled: Bool
 
-    /// Creates a spawn policy snapshot.
+    /// Returns the automatic-enrollment feature flag for a spawned terminal.
+    ///
+    /// - Parameter isRemoteTerminal: Whether this surface represents a remote frontend.
+    /// - Returns: `"1"` only for opted-in local terminals; otherwise `"0"`.
+    public func agentOrchestrationEnvironmentValue(isRemoteTerminal: Bool) -> String {
+        agentOrchestrationEnabled && !isRemoteTerminal ? "1" : "0"
+    }
+
+    /// Creates a spawn policy snapshot. Agent coordination defaults off.
     public init(
         socketAuthenticationEnvironment: [String: String] = [:],
         claudeHooksEnabled: Bool,
         codexHooksEnabled: Bool = true,
+        codexQuietFrontendEnabled: Bool = false,
+        agentOrchestrationEnabled: Bool = false,
         customClaudePath: String?,
         subagentNotificationEnvironmentKey: String,
         suppressSubagentNotifications: Bool,
@@ -98,6 +115,8 @@ public struct TerminalSurfaceSpawnPolicy: Sendable {
         self.socketAuthenticationEnvironment = socketAuthenticationEnvironment
         self.claudeHooksEnabled = claudeHooksEnabled
         self.codexHooksEnabled = codexHooksEnabled
+        self.codexQuietFrontendEnabled = codexQuietFrontendEnabled
+        self.agentOrchestrationEnabled = agentOrchestrationEnabled
         self.piHooksEnabled = piHooksEnabled
         self.customClaudePath = customClaudePath
         self.subagentNotificationEnvironmentKey = subagentNotificationEnvironmentKey

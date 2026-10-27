@@ -1,0 +1,286 @@
+--- a/codex-rs/tui/Cargo.toml
++++ b/codex-rs/tui/Cargo.toml
+@@ -12,6 +12,14 @@
+ [[bin]]
+ name = "md-events"
+ path = "src/bin/md-events.rs"
++
++[features]
++cmux-quiet = []
++
++[[bin]]
++name = "cmux-codex-quiet"
++path = "src/bin/cmux-quiet.rs"
++required-features = ["cmux-quiet"]
+ 
+ [lib]
+ name = "codex_tui"
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -115,6 +115,7 @@
+ mod app_info;
+ mod app_server_approval_conversions;
+ mod app_server_connection;
++pub mod cmux_quiet;
+ mod app_server_session;
+ mod approval_events;
+ mod async_question_reply;
+@@ -534,6 +535,7 @@
+     })
+     .await
+     .wrap_err("failed to connect to remote app server")?;
++    cmux_quiet::require_server_version(app_server.server_version())?;
+     Ok(AppServerClient::Remote(app_server))
+ }
+ 
+@@ -727,6 +729,7 @@
+     F: FnOnce(InProcessClientStartArgs) -> Fut,
+     Fut: Future<Output = std::io::Result<InProcessAppServerClient>>,
+ {
++    cmux_quiet::require_embedded_allowed()?;
+     let config_warnings = config
+         .startup_warnings
+         .iter()
+--- a/codex-rs/tui/src/startup_orchestration.rs
++++ b/codex-rs/tui/src/startup_orchestration.rs
+@@ -13,6 +13,9 @@
+     loader_overrides: LoaderOverrides,
+     mut explicit_remote_endpoint: Option<RemoteAppServerEndpoint>,
+ ) -> std::io::Result<AppExitInfo> {
++    if cfg!(feature = "cmux-quiet") && (explicit_remote_endpoint.is_none() || cli.no_daemon || cli.shared.worktree) {
++        return Err(std::io::Error::other("cmux quiet frontend requires an existing local daemon; no embedded backend or worktree startup is allowed"));
++    }
+     if cli.no_daemon && explicit_remote_endpoint.is_some() {
+         return Err(std::io::Error::other(
+             "--no-daemon cannot be used with --remote.",
+@@ -545,7 +548,8 @@
+     } else {
+         None
+     };
+-    let auto_start_daemon = config.features.enabled(Feature::DaemonAutoStart)
++    let auto_start_daemon = !cfg!(feature = "cmux-quiet")
++        && config.features.enabled(Feature::DaemonAutoStart)
+         && implicit_connection
+         && !cli.agents_overview
+         && !cli.no_daemon
+--- a/codex-rs/tui/src/daemon_recovery.rs
++++ b/codex-rs/tui/src/daemon_recovery.rs
+@@ -45,6 +45,9 @@
+         Ok(warning) => return Ok(warning),
+         Err(issue) => issue,
+     };
++    if cfg!(feature = "cmux-quiet") {
++        return Err(io::Error::other(issue));
++    }
+     if !(io::stdin().is_terminal() && io::stdout().is_terminal()) {
+         return Err(io::Error::other(issue));
+     }
+--- a/codex-rs/tui/src/app/event_dispatch.rs
++++ b/codex-rs/tui/src/app/event_dispatch.rs
+@@ -143,6 +143,13 @@
+             return Ok(AppRunControl::Continue);
+         }
+ 
++        if cfg!(feature = "cmux-quiet") && matches!(event,
++            AppEvent::OpenDaemonMenu | AppEvent::ConfirmDaemonRestart | AppEvent::RunDaemonRestart
++            | AppEvent::ConfirmDaemonUpdate(_) | AppEvent::RunDaemonUpdate(_)
++            | AppEvent::StartManagedWorktree { .. }) {
++            self.chat_widget.add_info_message("Manage the stock Codex daemon outside the cmux quiet frontend.".to_string(), None);
++            return Ok(AppRunControl::Continue);
++        }
+         if matches!(event, AppEvent::OpenDaemonMenu | AppEvent::OpenWarnings) {
+             self.verify_managed_daemon().await;
+         }
+--- a/codex-rs/tui/src/app/agents_overview.rs
++++ b/codex-rs/tui/src/app/agents_overview.rs
+@@ -1169,6 +1169,7 @@
+ 
+     #[cfg(any(unix, windows))]
+     pub(super) fn start_agents_daemon(&self) {
++        if cfg!(feature = "cmux-quiet") { return; }
+         let app_event_tx = self.app_event_tx.clone();
+         tokio::spawn(async move {
+             let result = async {
+--- a/codex-rs/tui/src/update_action.rs
++++ b/codex-rs/tui/src/update_action.rs
+@@ -81,6 +81,7 @@
+ 
+ #[cfg(not(debug_assertions))]
+ pub fn get_update_action() -> Option<UpdateAction> {
++    if cfg!(feature = "cmux-quiet") { return None; }
+     UpdateAction::from_install_context(InstallContext::current())
+ }
+ 
+--- a/codex-rs/tui/src/updates.rs
++++ b/codex-rs/tui/src/updates.rs
+@@ -76,6 +76,7 @@
+     action: Option<UpdateAction>,
+     http_client_factory: HttpClientFactory,
+ ) -> anyhow::Result<()> {
++    if cfg!(feature = "cmux-quiet") { return Ok(()); }
+     let client_pool = RouteAwareClientPool::with_chatgpt_cloudflare_cookies(
+         http_client_factory,
+         ClientRouteClass::Other,
+--- a/codex-rs/tui/src/cmux_quiet.rs
++++ b/codex-rs/tui/src/cmux_quiet.rs
+@@ -0,0 +1,58 @@
++//! Boundaries for cmux's maintained, attach-only presentation binary.
++
++/// Probe the verified private endpoint, then launch through the advertised
++/// default alias so upstream startup preserves local project/cwd semantics.
++pub fn attachment_endpoints(
++    advertised: codex_utils_absolute_path::AbsolutePathBuf,
++    protected: codex_utils_absolute_path::AbsolutePathBuf,
++) -> (codex_app_server_client::RemoteAppServerEndpoint, codex_app_server_client::RemoteAppServerEndpoint) {
++    use codex_app_server_client::RemoteAppServerEndpoint;
++    (RemoteAppServerEndpoint::UnixSocket { socket_path: protected },
++     RemoteAppServerEndpoint::UnixSocket { socket_path: advertised })
++}
++
++pub fn require_embedded_allowed() -> std::io::Result<()> {
++    if cfg!(feature = "cmux-quiet") {
++        return Err(std::io::Error::other("cmux quiet frontend cannot start an embedded app server"));
++    }
++    Ok(())
++}
++
++pub fn require_server_version(version: Option<&str>) -> std::io::Result<()> {
++    if cfg!(feature = "cmux-quiet") && version != Some(env!("CARGO_PKG_VERSION")) {
++        return Err(std::io::Error::other("cmux quiet frontend requires its exact stock daemon version"));
++    }
++    Ok(())
++}
++
++#[cfg(all(test, feature = "cmux-quiet"))]
++mod tests {
++    use super::*;
++    #[test]
++    fn cmux_attach_rejects_embedded_backend() {
++        assert!(require_embedded_allowed().is_err());
++    }
++    #[test]
++    fn cmux_attach_local_target_preserves_workspace_semantics() {
++        let protected = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(std::path::PathBuf::from("/tmp/cmux-protected.sock")).unwrap();
++        let advertised = codex_utils_absolute_path::AbsolutePathBuf::from_absolute_path(std::path::PathBuf::from("/tmp/cmux-advertised.sock")).unwrap();
++        let (probe, launch) = attachment_endpoints(advertised.clone(), protected.clone());
++        assert!(matches!(&probe, codex_app_server_client::RemoteAppServerEndpoint::UnixSocket { socket_path } if socket_path == &protected));
++        assert!(matches!(&launch, codex_app_server_client::RemoteAppServerEndpoint::UnixSocket { socket_path } if socket_path == &advertised));
++        // After launch recognizes and verifies that alias, the actual resolver
++        // must retain local semantics without an embedded fallback.
++        let target = crate::app_server_target_for_launch(
++            Some(codex_app_server_client::RemoteAppServerEndpoint::UnixSocket { socket_path: protected.clone() }),
++            Some(protected), false, false, None,
++        ).unwrap();
++        assert!(matches!(&target, crate::AppServerTarget::LocalDaemon { allow_embedded_fallback: false, .. }));
++        assert!(!target.uses_remote_workspace());
++    }
++    #[test]
++    fn cmux_attach_requires_exact_server_version() {
++        assert!(require_server_version(Some(env!("CARGO_PKG_VERSION"))).is_ok());
++        for version in [None, Some("0.163.0"), Some("0.164.1"), Some("unknown")] {
++            assert!(require_server_version(version).is_err());
++        }
++    }
++}
+--- a/codex-rs/tui/src/bin/cmux-quiet.rs
++++ b/codex-rs/tui/src/bin/cmux-quiet.rs
+@@ -0,0 +1,99 @@
++//! A deliberately narrow entrypoint. The cmux wrapper handles stock fallback
++//! before calling this binary. Errors here never replay input through stock.
++#![recursion_limit = "256"]
++use clap::Parser;
++use codex_app_server_client::{RemoteAppServerClient, RemoteAppServerConnectArgs, RemoteAppServerEndpoint};
++use codex_arg0::Arg0DispatchPaths;
++use codex_config::LoaderOverrides;
++use codex_tui::{Cli, ExitReason};
++use std::io::IsTerminal;
++use std::path::PathBuf;
++
++fn parse(arguments: &[String]) -> anyhow::Result<Cli> {
++    let mut rest = arguments;
++    let mut session = None;
++    let resume = rest.first().is_some_and(|a| a == "resume");
++    if resume {
++        rest = &rest[1..];
++        if rest.first().is_some_and(|a| !a.starts_with('-')) {
++            let value = &rest[0];
++            anyhow::ensure!(uuid::Uuid::parse_str(value).is_ok(), "only explicit resume UUIDs are supported");
++            session = Some(value.clone());
++            rest = &rest[1..];
++        }
++    }
++    let mut index = 0;
++    while index < rest.len() {
++        match rest[index].as_str() {
++            "-m" | "--model" | "-C" | "--cd" | "-s" | "--sandbox" | "-a" | "--ask-for-approval" => {
++                index += 1;
++                anyhow::ensure!(index < rest.len() && !rest[index].starts_with('-'), "missing option value");
++            }
++            "--dangerously-bypass-approvals-and-sandbox" => (),
++            _ => anyhow::bail!("unsupported invocation; use stock Codex"),
++        }
++        index += 1;
++    }
++    let mut cli = Cli::try_parse_from(std::iter::once("codex".to_string()).chain(rest.iter().cloned()))?;
++    cli.resume_picker = resume && session.is_none();
++    cli.resume_session_id = session;
++    Ok(cli)
++}
++
++async fn endpoint() -> anyhow::Result<RemoteAppServerEndpoint> {
++    let home = codex_utils_home_dir::find_codex_home()?;
++    let advertised = codex_app_server_client::app_server_control_socket_path(&home)?;
++    let socket_path = codex_app_server_client::verified_local_daemon_socket(advertised.as_path())?
++        .ok_or_else(|| anyhow::anyhow!("no verified stock daemon socket"))?;
++    let (endpoint, launch_endpoint) = codex_tui::cmux_quiet::attachment_endpoints(advertised, socket_path);
++    let client = RemoteAppServerClient::connect(RemoteAppServerConnectArgs {
++        endpoint: endpoint.clone(), client_name: "codex-tui".to_string(),
++        client_version: env!("CARGO_PKG_VERSION").to_string(), experimental_api: true,
++        mcp_server_openai_form_elicitation: false, opt_out_notification_methods: vec![], channel_capacity: 32,
++    }).await?;
++    codex_tui::cmux_quiet::require_server_version(client.server_version())?;
++    // Dropping this client closes only its transport. No daemon lifecycle RPC.
++    drop(client);
++    // Preserve the advertised default alias for upstream's local-daemon
++    // classification. Startup verifies it again and pins the protected endpoint.
++    Ok(launch_endpoint)
++}
++
++#[tokio::main]
++async fn main() -> anyhow::Result<()> {
++    codex_build_info::initialize!();
++    let mut arguments: Vec<String> = std::env::args().skip(1).collect();
++    let check = arguments.first().is_some_and(|a| a == "--cmux-check");
++    if check { arguments.remove(0); }
++    let cli = parse(&arguments)?;
++    let stock = PathBuf::from(std::env::var_os("CMUX_QUIET_STOCK_CODEX").ok_or_else(|| anyhow::anyhow!("missing stock helper path"))?);
++    anyhow::ensure!(stock.is_absolute() && stock.is_file(), "invalid stock helper path");
++    anyhow::ensure!(std::fs::canonicalize(&stock)? != std::fs::canonicalize(std::env::current_exe()?)?, "quiet frontend cannot be its own helper");
++    if !check { anyhow::ensure!(std::io::stdin().is_terminal() && std::io::stdout().is_terminal(), "interactive terminal required"); }
++    let endpoint = tokio::time::timeout(std::time::Duration::from_secs(3), endpoint()).await??;
++    if check { return Ok(()); }
++    let paths = Arg0DispatchPaths { codex_self_exe: Some(stock), ..Default::default() };
++    let exit = Box::pin(codex_tui::run_main(cli, paths, LoaderOverrides::default(), Some(endpoint))).await?;
++    for line in exit.clone().format_exit_messages(false) { println!("{line}"); }
++    if let ExitReason::Fatal(message) = exit.exit_reason { anyhow::bail!(message); }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn args(values: &[&str]) -> Vec<String> { values.iter().map(|s| s.to_string()).collect() }
++    #[test]
++    fn cmux_attach_accepts_narrow_root_and_resume_lane() {
++        assert!(parse(&[]).is_ok());
++        assert!(parse(&args(&["resume"])).unwrap().resume_picker);
++        let cli = parse(&args(&["resume", "01a176fc-d044-7e62-92bb-de6c5c50c0d1", "--model", "gpt-6-luna"])).unwrap();
++        assert_eq!(cli.resume_session_id.as_deref(), Some("01a176fc-d044-7e62-92bb-de6c5c50c0d1"));
++    }
++    #[test]
++    fn cmux_attach_rejects_commands_overrides_and_worktrees_before_connecting() {
++        for values in [&["exec"][..], &["resume", "--last"], &["--no-daemon"], &["--remote", "unix://other"], &["--worktree"], &["-c", "x=y"], &["fork"], &["update"], &["hello"], &["--model"]] {
++            assert!(parse(&args(values)).is_err(), "{values:?}");
++        }
++    }
++}

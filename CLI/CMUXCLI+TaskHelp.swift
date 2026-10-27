@@ -210,6 +210,8 @@ extension CMUXCLI {
         agent-hibernation <hibernate|wake> <surface>
         chief open
         chief dispatch [--agent codex|claude] [--name <title>] [--cwd <dir>|--worktree <repo> [--branch <name>]] [--agent-arg <arg>] [--focus|--no-focus] [--wait-working [--timeout <s>]] [--json] (-- <task>|--prompt-file <path|->)
+        task start --provider codex|claude --workspace <id|ref> --cwd <dir> [--model <id>] [--wait] -- <task>
+        task list|read|wait|cancel [<task-id>]
         chief send [--conversation <id>] [--from <name>] [--no-reply] <text|->
         chief status|conversations [--json]
         chief read [--conversation <id>] [--limit <n>] [--json]

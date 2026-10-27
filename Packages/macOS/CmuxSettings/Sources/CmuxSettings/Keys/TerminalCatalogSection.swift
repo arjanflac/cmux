@@ -145,6 +145,26 @@ public struct TerminalCatalogSection: SettingCatalogSection {
         userDefaultsKey: "terminal.showPasswordInputDots"
     )
 
+    /// Uses the bundled derived TUI only for supported interactive local launches.
+    public let codexQuietFrontend = DefaultsKey<Bool>(
+        id: "terminal.codexQuietFrontend", defaultValue: false,
+        userDefaultsKey: "terminal.codexQuietFrontend"
+    )
+
+    /// Opts new local terminal frontends into background agent coordination.
+    /// This feature preference does not grant worker or schedule authority.
+    public let agentOrchestration = DefaultsKey<Bool>(
+        id: "terminal.agentOrchestration",
+        defaultValue: false,
+        userDefaultsKey: "terminal.agentOrchestration"
+    )
+
+    /// Absolute launch folders keyed by persistent workspace UUID; explicit cwd wins.
+    public let workspaceLaunchDirectories = DefaultsKey<[String: String]>(
+        id: "terminal.workspaceLaunchDirectories", defaultValue: [:],
+        userDefaultsKey: "terminal.workspaceLaunchDirectories"
+    )
+
     public let autoResumeAgentSessions = DefaultsKey<Bool>(
         id: "terminal.autoResumeAgentSessions",
         defaultValue: true,

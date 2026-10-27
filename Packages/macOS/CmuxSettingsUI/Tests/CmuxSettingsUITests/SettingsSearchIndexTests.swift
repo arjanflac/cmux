@@ -84,6 +84,14 @@ struct SettingsSearchIndexTests {
         #expect(result.contains { $0.id == "setting:app:rename-selects-name" })
     }
 
+    @Test(arguments: ["terminal.agentOrchestration", "background", "scheduled tasks"])
+    func agentOrchestrationSearchFindsItsTerminalRow(query: String) {
+        let index = SettingsSearchIndex(catalog: SettingCatalog())
+        let expectedID = "setting:terminal:agent-orchestration"
+        #expect(index.match(query).contains { $0.id == expectedID })
+        #expect(index.anchorID(forSettingsPath: "terminal.agentOrchestration") == expectedID)
+    }
+
     @Test func emptyQueryReturnsAllSectionEntries() {
         let index = SettingsSearchIndex(catalog: SettingCatalog())
         let result = index.match("")

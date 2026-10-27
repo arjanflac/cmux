@@ -574223,115 +574223,115 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "ينقل مساحات العمل إلى الأعلى عندما تتلقى إشعارًا. مع نشاط الوكيل، ينقلها أيضًا عندما ترسل مطالبة أو ينهي وكيل دورة أو يحتاج إلى إدخال أو يفشل، لكن ليس أبدًا أثناء وجود المؤشر فوق الشريط الجانبي. الإيقاف يحافظ على ثبات مواضع الاختصارات."
+            "value": "ترفع الإشعارات ونشاط الوكيل مساحات العمل النشطة حديثاً. يضع وضع الجاري عملها أولاً المساحات العاملة فوق الخاملة مع الحفاظ على الصفوف المثبتة والمحددة. ينتظر الترتيب أثناء توجيه المؤشر إلى الشريط الجانبي."
           }
         },
         "bs": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Pomjera radne prostore na vrh kada prime obavještenje. Aktivnost agenata ih pomjera i kada pošaljete upit ili agent završi potez, treba unos ili ne uspije, ali nikad dok je pokazivač iznad bočne trake. Isključeno čuva stabilne pozicije prečica."
           }
         },
         "da": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flytter arbejdsområder til toppen, når de modtager en notifikation. Agentaktivitet flytter dem også, når du sender en prompt eller en agent afslutter en tur, har brug for input eller fejler, men aldrig mens markøren er over sidepanelet. Fra holder genvejspositionerne stabile."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Verschiebt Workspaces nach oben, wenn sie eine Benachrichtigung erhalten. Mit Agentenaktivität auch dann, wenn Sie einen Prompt senden oder ein Agent einen Durchlauf beendet, eine Eingabe braucht oder fehlschlägt, aber nie, während der Zeiger über der Seitenleiste ist. Aus hält die Positionen der Tastenkürzel stabil."
+            "value": "Benachrichtigungen und Agentenaktivität verschieben kürzlich aktive Arbeitsbereiche nach oben. Aktive zuerst ordnet arbeitende vor ruhenden Bereichen an und behält angeheftete und ausgewählte Zeilen bei. Unter dem Mauszeiger wird nicht umgeordnet."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Move workspaces to the top when they receive a notification. Agent Activity also moves them when you send a prompt or an agent finishes a turn, needs input, or fails, but never while you point at the sidebar. Off keeps shortcut positions stable."
+            "value": "Notifications and Agent Activity move recently active workspaces up. Working First keeps working workspaces above idle ones, preserving pinned and selected rows. Ordering waits while you point at the sidebar."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mueve los espacios de trabajo arriba cuando reciben una notificación. Con Actividad de agentes, también cuando envías un prompt o un agente termina un turno, necesita una respuesta o falla, pero nunca mientras el puntero está sobre la barra lateral. Desactivado mantiene estables las posiciones de los atajos."
+            "value": "Notificaciones y Actividad del agente suben los espacios activos recientemente. Activos primero coloca los que trabajan antes que los inactivos, conservando las filas fijadas y seleccionadas. El orden espera mientras apunta a la barra lateral."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Place les espaces de travail en haut lorsqu’ils reçoivent une notification. Avec Activité des agents, aussi lorsque vous envoyez un prompt ou qu’un agent termine un tour, attend une saisie ou échoue, mais jamais pendant que le pointeur survole la barre latérale. Désactivé garde les positions des raccourcis stables."
+            "value": "Notifications et Activité de l’agent remontent les espaces récemment actifs. Actifs d’abord place ceux qui travaillent avant les inactifs, en préservant les lignes épinglées et sélectionnées. Le tri attend si vous pointez la barre latérale."
           }
         },
         "it": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Sposta gli spazi di lavoro in cima quando ricevono una notifica. Attività degli agenti li sposta anche quando invii un prompt o un agente termina un turno, attende un input o fallisce, ma mai mentre il puntatore è sulla barra laterale. Disattivato mantiene stabili le posizioni delle scorciatoie."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "通知を受け取ったワークスペースを先頭に移動します。「エージェントのアクティビティ」では、プロンプトを送信したときや、エージェントがターンを終えたとき、入力を待っているとき、失敗したときにも移動しますが、ポインタがサイドバー上にある間は移動しません。「オフ」ではショートカットの位置が変わりません。"
+            "value": "通知とエージェントのアクティビティは最近の作業領域を上に移動します。「作業中を優先」は固定・選択された行を保ち、作業中の領域を待機中の領域より上に並べます。サイドバーにポインタがある間は並べ替えを待ちます。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "알림을 받으면 워크스페이스를 맨 위로 옮깁니다. 에이전트 활동을 선택하면 프롬프트를 보내거나 에이전트가 턴을 마치거나 입력이 필요하거나 실패할 때도 옮기지만, 포인터가 사이드바 위에 있을 때는 옮기지 않습니다. 끔은 단축키 위치를 고정합니다."
+            "value": "알림과 에이전트 활동은 최근 활성 작업 공간을 위로 옮깁니다. 작업 중 우선은 고정 및 선택된 행을 유지하면서 작업 중인 공간을 유휴 공간보다 위에 놓습니다. 사이드바를 가리키는 동안에는 정렬을 기다립니다."
           }
         },
         "nb": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Flytter arbeidsområder til toppen når de mottar et varsel. Agentaktivitet flytter dem også når du sender en ledetekst eller en agent fullfører en runde, trenger input eller feiler, men aldri mens pekeren er over sidefeltet. Av holder snarveisposisjonene stabile."
           }
         },
         "pl": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Przenosi obszary robocze na górę, gdy otrzymają powiadomienie. Aktywność agentów przenosi je także, gdy wyślesz prompt lub agent zakończy turę, potrzebuje danych lub zakończy się błędem, ale nigdy, gdy wskaźnik jest nad paskiem bocznym. Wyłączone zachowuje stałe pozycje skrótów."
           }
         },
         "pt-BR": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Move os espaços de trabalho para o topo quando recebem uma notificação. Atividade dos agentes também os move quando você envia um prompt ou um agente termina um turno, precisa de uma resposta ou falha, mas nunca enquanto o ponteiro está sobre a barra lateral. Desativado mantém as posições dos atalhos estáveis."
           }
         },
         "ru": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Перемещает рабочие области наверх, когда они получают уведомление. «Активность агентов» также перемещает их, когда вы отправляете запрос или агент завершает ход, ждёт ввода или завершается с ошибкой, но никогда, пока указатель находится над боковой панелью. «Выкл.» сохраняет позиции сочетаний клавиш."
           }
         },
         "th": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "ย้ายเวิร์กสเปซขึ้นด้านบนเมื่อได้รับการแจ้งเตือน กิจกรรมของเอเจนต์จะย้ายเมื่อคุณส่งพรอมต์หรือเอเจนต์จบรอบ ต้องการข้อมูล หรือล้มเหลวด้วย แต่จะไม่ย้ายขณะที่ตัวชี้อยู่เหนือแถบด้านข้าง ปิดจะคงตำแหน่งของทางลัดไว้"
           }
         },
         "tr": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Bildirim aldıklarında çalışma alanlarını en üste taşır. Ajan etkinliği, bir istem gönderdiğinizde, bir ajan turunu bitirdiğinde, girdi beklediğinde veya başarısız olduğunda da taşır, ancak işaretçi kenar çubuğunun üzerindeyken asla taşımaz. Kapalı, kısayol konumlarını sabit tutar."
           }
         },
         "uk": {
           "stringUnit": {
-            "state": "translated",
+            "state": "needs_review",
             "value": "Переміщує робочі області вгору, коли вони отримують сповіщення. «Активність агентів» також переміщує їх, коли ви надсилаєте запит або агент завершує хід, чекає на введення або завершується з помилкою, але ніколи, поки вказівник над бічною панеллю. «Вимкнено» зберігає позиції скорочень."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "工作区收到通知时移到顶部。选择“代理活动”时，你发送提示词或代理完成一轮、需要输入或失败时也会移动，但指针停在侧边栏上时绝不移动。关闭可让快捷键位置保持不变。"
+            "value": "“通知”与“代理活动”会将最近活跃的工作区上移。“工作中优先”将工作中的工作区排在闲置工作区之前，保留固定及选中的行。指针位于侧边栏时会等待再排序。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "工作區收到通知時移到頂部。選擇「代理活動」時，你送出提示詞或代理完成一輪、需要輸入或失敗時也會移動，但指標停在側邊欄上時絕不移動。關閉可讓快捷鍵位置保持不變。"
+            "value": "「通知」與「代理程式活動」會將最近活躍的工作區上移。「工作中優先」將工作中的工作區排在閒置工作區之前，保留釘選及選取的列。指標位於側邊欄時會等待再排序。"
           }
         }
       }
@@ -670868,6 +670868,1776 @@
           "stringUnit": {
             "state": "translated",
             "value": "無法匯入工作區圖示"
+          }
+        }
+      }
+    },
+    "agentTask.completed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task completed"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufgabe abgeschlossen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tâche terminée"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "اكتملت المهمة"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tarea completada"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任務已完成"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务已完成"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 완료"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスクが完了しました"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "agentTask.needsInput": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task needs attention"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufgabe erfordert Aufmerksamkeit"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une tâche nécessite votre attention"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تحتاج المهمة إلى انتباهك"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La tarea requiere atención"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任務需要處理"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务需要处理"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업에 확인이 필요합니다"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスクの確認が必要です"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "agentTask.failed": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task failed"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aufgabe fehlgeschlagen"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Échec de la tâche"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "فشلت المهمة"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La tarea ha fallado"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任務失敗"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务失败"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 실패"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスクが失敗しました"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "agentTask.disconnected": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task connection lost"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verbindung zur Aufgabe verloren"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Connexion à la tâche perdue"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "انقطع اتصال المهمة"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se perdió la conexión con la tarea"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任務連線中斷"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务连接中断"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 연결 끊김"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスクとの接続が切れました"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "cli.agentTask.help": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tasks start in the background by default (--background). Use --terminal for a visible initial Codex turn; Claude and OpenCode use background workers and can attach after becoming idle. Use attach to open a task's terminal in an existing workspace."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tasks starten standardmäßig im Hintergrund (--background). Verwende --terminal für einen sichtbaren ersten Codex-Durchlauf; Claude und OpenCode nutzen Hintergrundprozesse und lassen sich nach dem Wechsel in den Leerlauf anhängen. Mit attach öffnest du das Terminal eines Tasks in einem bestehenden Workspace."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les tâches démarrent en arrière-plan par défaut (--background). Utilisez --terminal pour un premier tour Codex visible ; Claude et OpenCode utilisent des processus en arrière-plan auxquels vous pouvez vous rattacher une fois inactifs. Utilisez attach pour ouvrir le terminal d’une tâche dans un espace de travail existant."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تبدأ المهام في الخلفية افتراضيًا (--background). استخدم --terminal لجولة Codex أولية مرئية؛ يعمل Claude وOpenCode في الخلفية ويمكن الاتصال بهما بعد دخولهما حالة الخمول. استخدم attach لفتح طرفية المهمة في مساحة عمل موجودة."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las tareas se inician en segundo plano por defecto (--background). Usa --terminal para un primer turno visible de Codex; Claude y OpenCode usan procesos en segundo plano a los que puedes conectarte cuando estén inactivos. Usa attach para abrir el terminal de una tarea en un espacio de trabajo existente."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任務預設在背景啟動（--background）。使用 --terminal 可在可見終端機中執行 Codex 的初始回合；Claude 和 OpenCode 使用背景工作程序，閒置後可連接。使用 attach 可在現有工作區開啟任務的終端機。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务默认在后台启动（--background）。使用 --terminal 可在可见终端中执行 Codex 的初始轮次；Claude 和 OpenCode 使用后台工作进程，空闲后可连接。使用 attach 可在现有工作区打开任务的终端。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업은 기본적으로 백그라운드에서 시작됩니다(--background). 첫 Codex 턴을 터미널에 표시하려면 --terminal을 사용하세요. Claude와 OpenCode는 백그라운드 작업자로 실행되며 유휴 상태가 된 후 연결할 수 있습니다. 기존 워크스페이스에서 작업의 터미널을 열려면 attach를 사용하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスクはデフォルトでバックグラウンドで起動します（--background）。Codexの初回ターンをターミナルに表示するには--terminalを使います。ClaudeとOpenCodeはバックグラウンドで動作し、アイドル状態になってから接続できます。既存のワークスペースでタスクのターミナルを開くにはattachを使います。"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "cli.agentTask.workspace": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Specify the existing target --workspace; a focused project is never guessed."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gib den vorhandenen Zielarbeitsbereich mit --workspace an; das aktive Projekt wird nicht automatisch gewählt."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indiquez l’espace de travail cible existant avec --workspace ; le projet actif n’est jamais choisi automatiquement."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حدد مساحة العمل المستهدفة الموجودة باستخدام --workspace؛ لن يُختار المشروع النشط تلقائيًا."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Especifica el espacio de trabajo de destino existente con --workspace; el proyecto activo no se elige automáticamente."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請使用 --workspace 指定現有的目標工作區；不會自動猜測目前的專案。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请使用 --workspace 指定现有的目标工作区；不会自动猜测当前项目。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--workspace로 기존 대상 작업 공간을 지정하세요. 활성 프로젝트는 자동으로 추측하지 않습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "--workspace で既存の対象ワークスペースを指定してください。アクティブなプロジェクトは自動で選択されません。"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "cli.agentTask.prompt": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Give one prompt source."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gib genau eine Quelle für die Eingabe an."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indiquez une seule source pour l’invite."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "حدد مصدرًا واحدًا للمطالبة."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Indica una sola fuente para la instrucción."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "請提供一個提示來源。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "请提供一个提示来源。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "프롬프트 소스를 하나만 지정하세요."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "プロンプトの入力元を1つ指定してください。"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "cli.agentTask.unsuccessful": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Task did not complete successfully."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die Aufgabe wurde nicht erfolgreich abgeschlossen."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La tâche ne s’est pas terminée correctement."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم تكتمل المهمة بنجاح."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La tarea no se completó correctamente."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任務未成功完成。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "任务未成功完成。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업이 성공적으로 완료되지 않았습니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "タスクは正常に完了しませんでした。"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "cli.agentTask.unknownMethod": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown task method"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unbekannte Aufgabenmethode"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Méthode de tâche inconnue"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "طريقة مهمة غير معروفة"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Método de tarea desconocido"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知的任務方法"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知的任务方法"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알 수 없는 작업 메서드"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明なタスクメソッド"
+          }
+        }
+      },
+      "extractionState": "manual"
+    },
+    "settings.terminal.codexQuiet": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Hide Codex Tool Calls"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex-Werkzeugaufrufe ausblenden"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Masquer les appels d’outils Codex"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إخفاء استدعاءات أدوات Codex"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ocultar llamadas a herramientas de Codex"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隱藏 Codex 工具呼叫"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隐藏 Codex 工具调用"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 도구 호출 숨기기"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex のツール呼び出しを非表示"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "New terminals start quiet. Ctrl+T shows or hides tool details. Errors and approvals stay visible. Incompatible launches use stock Codex."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Neue Terminals starten ruhig. Ctrl+T blendet Werkzeugdetails ein oder aus. Fehler und Genehmigungen bleiben sichtbar. Bei Inkompatibilität startet das originale Codex."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les nouveaux terminaux démarrent en mode discret. Ctrl+T affiche ou masque les détails des outils. Erreurs et approbations restent visibles. Sinon, Codex standard est utilisé."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تبدأ النوافذ الطرفية الجديدة بهدوء. يعرض Ctrl+T تفاصيل الأدوات أو يخفيها. تبقى الأخطاء والموافقات ظاهرة. عند عدم التوافق يُستخدم Codex الأصلي."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Los terminales nuevos empiezan en modo discreto. Ctrl+T muestra u oculta los detalles de herramientas. Los errores y las aprobaciones siguen visibles. Si no es compatible, se usa Codex estándar."
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新終端機以安靜模式啟動。Ctrl+T 顯示或隱藏工具詳細資訊。錯誤與核准請求仍會顯示。不相容時使用原版 Codex。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新终端以安静模式启动。Ctrl+T 显示或隐藏工具详情。错误和审批请求仍会显示。不兼容时使用原版 Codex。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "새 터미널은 조용한 모드로 시작합니다. Ctrl+T로 도구 세부 정보를 표시하거나 숨깁니다. 오류와 승인은 계속 표시됩니다. 호환되지 않으면 기본 Codex를 사용합니다."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "新しいターミナルは静かなモードで開始します。Ctrl+T でツールの詳細を表示・非表示にします。エラーと承認は表示されます。互換性がない場合は標準の Codex を使用します。"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.builds": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Build / Update…"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إنشاء / تحديث…"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Erstellen / Aktualisieren…"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compilar / Actualizar…"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compiler / Mettre à jour…"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ビルド／更新…"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "빌드 / 업데이트…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "构建／更新…"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "建置／更新…"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.check": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Check Compatibility"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "التحقق من التوافق"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kompatibilität prüfen"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Comprobar compatibilidad"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Vérifier la compatibilité"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互換性を確認"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호환성 확인"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "检查兼容性"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "檢查相容性"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.fallback": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stock Codex will be used. The quiet frontend needs a compatible build and a running stock daemon."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "سيُستخدم Codex الأصلي. تحتاج الواجهة الهادئة إلى إصدار متوافق وخدمة Codex الأصلية قيد التشغيل."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Das originale Codex wird verwendet. Die ruhige Oberfläche benötigt einen kompatiblen Build und einen laufenden originalen Daemon."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se usará Codex estándar. La interfaz discreta necesita una compilación compatible y el servicio estándar en ejecución."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex standard sera utilisé. L’interface discrète nécessite une version compatible et le service standard en cours d’exécution."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標準の Codex を使用します。静かなインターフェースには互換ビルドと実行中の標準デーモンが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "기본 Codex를 사용합니다. 조용한 인터페이스를 사용하려면 호환되는 빌드와 실행 중인 기본 데몬이 필요합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将使用原版 Codex。安静界面需要兼容版本及正在运行的原版后台服务。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將使用原版 Codex。安靜介面需要相容版本及執行中的原版背景服務。"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.maintenance": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex updates normally. A new version may need its quiet patch reviewed and rebuilt. Build / Update opens GitHub; it never replaces a running app or updates Codex."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يُحدّث Codex كالمعتاد. قد يحتاج الإصدار الجديد إلى مراجعة التعديل الهادئ وإعادة بنائه. يفتح إنشاء / تحديث GitHub دون استبدال التطبيق الجاري أو تحديث Codex."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex wird normal aktualisiert. Für neue Versionen muss der Ruhe-Patch gegebenenfalls geprüft und neu erstellt werden. Erstellen / Aktualisieren öffnet GitHub; laufende Apps werden nie ersetzt und Codex wird nicht aktualisiert."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex se actualiza normalmente. Una versión nueva puede necesitar que se revise y recompile el parche discreto. Compilar / Actualizar abre GitHub sin reemplazar la aplicación en ejecución ni actualizar Codex."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex se met à jour normalement. Une nouvelle version peut nécessiter la révision et la recompilation du correctif discret. Compiler / Mettre à jour ouvre GitHub sans remplacer l’application en cours ni mettre à jour Codex."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex は通常どおり更新されます。新バージョンでは静かなモードのパッチの確認と再ビルドが必要な場合があります。「ビルド／更新」は GitHub を開き、実行中のアプリの置換や Codex の更新は行いません。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex는 정상적으로 업데이트됩니다. 새 버전에서는 조용한 모드 패치를 검토하고 다시 빌드해야 할 수 있습니다. 빌드 / 업데이트는 GitHub를 열며 실행 중인 앱을 교체하거나 Codex를 업데이트하지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 照常更新。新版本可能需要审查并重新构建安静模式补丁。“构建／更新”会打开 GitHub，不会替换运行中的 App 或更新 Codex。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Codex 照常更新。新版本可能需要審查並重新建置安靜模式修補程式。「建置／更新」會開啟 GitHub，不會取代執行中的 App 或更新 Codex。"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.ready": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatible. New Codex terminals can use quiet mode."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "متوافق. يمكن لنوافذ Codex الطرفية الجديدة استخدام الوضع الهادئ."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Kompatibel. Neue Codex-Terminals können den ruhigen Modus verwenden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatible. Los terminales nuevos de Codex pueden usar el modo discreto."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compatible. Les nouveaux terminaux Codex peuvent utiliser le mode discret."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "互換性があります。新しい Codex ターミナルで静かなモードを使用できます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "호환됩니다. 새 Codex 터미널에서 조용한 모드를 사용할 수 있습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "兼容。新的 Codex 终端可使用安静模式。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "相容。新的 Codex 終端機可使用安靜模式。"
+          }
+        }
+      }
+    },
+    "settings.terminal.codexQuiet.versions": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bundled: %@ · Installed Codex: %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الإصدار المضمّن: %@ · Codex المثبّت: %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mitgeliefert: %@ · Installiertes Codex: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Incluido: %@ · Codex instalado: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Version intégrée : %@ · Codex installé : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "同梱版：%@ · インストール済み Codex：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "포함된 버전: %@ · 설치된 Codex: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "随附版本：%@ · 已安装 Codex：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "隨附版本：%@ · 已安裝 Codex：%@"
+          }
+        }
+      }
+    },
+    "settings.app.reorderOnNotification.mode.workingFirst": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working First"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "الجاري عملها أولاً"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Aktive zuerst"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Activos primero"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Actifs d’abord"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "作業中を優先"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "작업 중 우선"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作中优先"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作中優先"
+          }
+        }
+      }
+    },
+    "settings.search.terminal.agentOrchestration": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Background Agent Coordination"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تنسيق الوكلاء في الخلفية"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agentenkoordination im Hintergrund"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coordinación de agentes en segundo plano"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Coordination des agents en arrière-plan"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "バックグラウンドエージェントの連携"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "백그라운드 에이전트 조정"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "后台代理协调"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "背景代理程式協調"
+          }
+        }
+      }
+    },
+    "settings.search.terminal.agentOrchestration.subtitle": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Allow this cmux session to use background workers and scheduled tasks. Schedules run while cmux is open; missed work waits until resumed."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "السماح لجلسة cmux هذه باستخدام عمليات تعمل في الخلفية ومهام مجدولة. تُشغَّل المهام المجدولة ما دام cmux مفتوحًا؛ وتنتظر المهام الفائتة حتى استئنافها."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dieser cmux-Sitzung erlauben, Hintergrundprozesse und geplante Aufgaben zu nutzen. Geplante Aufgaben laufen, solange cmux geöffnet ist; verpasste Aufgaben warten, bis sie fortgesetzt werden."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Permitir que esta sesión de cmux use procesos en segundo plano y tareas programadas. Las tareas se ejecutan mientras cmux está abierto; las omitidas esperan hasta que se reanuden."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Autoriser cette session cmux à utiliser des agents en arrière-plan et des tâches planifiées. Les tâches se lancent tant que cmux est ouvert ; les tâches manquées attendent une reprise."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この cmux セッションでバックグラウンドワーカーとスケジュール済みタスクの使用を許可します。タスクは cmux が開いている間に実行され、実行できなかった作業は再開されるまで保留されます。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 cmux 세션에서 백그라운드 작업 프로세스와 예약 작업을 사용하도록 허용합니다. 예약 작업은 cmux가 열려 있는 동안 실행되며, 놓친 작업은 재개할 때까지 대기합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允许此 cmux 会话使用后台工作进程和计划任务。计划任务在 cmux 打开时运行；错过的工作会保留，直到恢复执行。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "允許此 cmux 工作階段使用背景工作程序和排程任務。排程任務會在 cmux 開啟時執行；錯過的工作會保留，直到恢復執行。"
+          }
+        }
+      }
+    },
+    "cli.agentTask.error.expectedJSONObject": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expected one bounded JSON object."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يُتوقع كائن JSON واحد ضمن حد الحجم."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ein einzelnes JSON-Objekt innerhalb der Größenbegrenzung wurde erwartet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se esperaba un único objeto JSON dentro del límite de tamaño."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Un seul objet JSON respectant la limite de taille est attendu."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "サイズ制限内の単一のJSONオブジェクトが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "크기 제한 내의 JSON 객체 하나가 필요합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应提供一个未超过大小限制的 JSON 对象。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "預期為一個未超過大小限制的 JSON 物件。"
+          }
+        }
+      }
+    },
+    "cli.agentTask.error.invalidOrExpiredScope": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid or expired cmux session scope."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "نطاق جلسة cmux غير صالح أو منتهي الصلاحية."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der cmux-Sitzungsbereich ist ungültig oder abgelaufen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El ámbito de sesión de cmux no es válido o ha caducado."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le périmètre de session cmux est invalide ou a expiré."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmuxセッションのスコープが無効か、有効期限が切れています。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 세션 범위가 유효하지 않거나 만료되었습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 会话范围无效或已过期。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 工作階段範圍無效或已過期。"
+          }
+        }
+      }
+    },
+    "cli.agentTask.error.invalidScope": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Invalid cmux session scope."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "نطاق جلسة cmux غير صالح."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der cmux-Sitzungsbereich ist ungültig."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El ámbito de sesión de cmux no es válido."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Le périmètre de session cmux est invalide."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmuxセッションのスコープが無効です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 세션 범위가 유효하지 않습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 会话范围无效。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 工作階段範圍無效。"
+          }
+        }
+      }
+    },
+    "cli.agentTask.error.expectedJSONRPC": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Expected a JSON-RPC request."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يُتوقع طلب JSON-RPC."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eine JSON-RPC-Anfrage wurde erwartet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Se esperaba una solicitud JSON-RPC."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une requête JSON-RPC est attendue."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON-RPCリクエストが必要です。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "JSON-RPC 요청이 필요합니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "应提供 JSON-RPC 请求。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "預期為 JSON-RPC 請求。"
+          }
+        }
+      }
+    },
+    "cli.agentTask.error.mcpRequestLimit": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP request exceeds the session limit."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتجاوز طلب MCP حد الجلسة."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Die MCP-Anfrage überschreitet das Sitzungslimit."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La solicitud MCP supera el límite de la sesión."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La requête MCP dépasse la limite de la session."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCPリクエストがセッションの上限を超えています。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 요청이 세션 제한을 초과했습니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 请求超过会话限制。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "MCP 請求超過工作階段限制。"
+          }
+        }
+      }
+    },
+    "cli.agentTask.error.stableRequestID": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "A mutation requires a stable UUID request_id. Reuse it only when retrying the same action."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "يتطلب التعديل UUID ثابتًا في request_id. أعد استخدامه فقط لإعادة محاولة الإجراء نفسه."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eine Änderung erfordert eine feste UUID als request_id. Verwende sie nur erneut, um dieselbe Aktion zu wiederholen."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Una modificación requiere un UUID estable en request_id. Reutilízalo solo al reintentar la misma acción."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Une modification nécessite un UUID stable dans request_id. Réutilisez-le uniquement pour réessayer la même action."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "変更操作には固定のUUID request_idが必要です。同じ操作を再試行する場合にのみ再利用してください。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "변경 작업에는 고정된 UUID request_id가 필요합니다. 같은 작업을 재시도할 때만 재사용하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "变更操作需要固定的 UUID request_id。仅在重试相同操作时重复使用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "變更操作需要固定的 UUID request_id。僅在重試相同操作時重複使用。"
+          }
+        }
+      }
+    },
+    "cli.agentTask.error.unconfirmedResult": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux operation did not return a confirmed result. Inspect its request_id before retrying: %@"
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لم تُرجع عملية cmux نتيجة مؤكدة. افحص request_id الخاص بها قبل إعادة المحاولة: %@"
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Der cmux-Vorgang hat kein bestätigtes Ergebnis geliefert. Prüfe vor einem erneuten Versuch seine request_id: %@"
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "La operación de cmux no devolvió un resultado confirmado. Inspecciona su request_id antes de reintentar: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’opération cmux n’a pas renvoyé de résultat confirmé. Examinez son request_id avant de réessayer : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux操作の結果を確認できませんでした。再試行する前にrequest_idを確認してください：%@"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 작업에서 확인된 결과를 반환하지 않았습니다. 재시도하기 전에 해당 request_id를 확인하세요: %@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 操作未返回已确认的结果。重试前请检查其 request_id：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "cmux 操作未傳回已確認的結果。重試前請檢查其 request_id：%@"
+          }
+        }
+      }
+    },
+    "cli.agentTask.error.unknownTool": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unknown cmux tool."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أداة cmux غير معروفة."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unbekanntes cmux-Werkzeug."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Herramienta de cmux desconocida."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Outil cmux inconnu."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "不明なcmuxツールです。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "알 수 없는 cmux 도구입니다."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知的 cmux 工具。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "未知的 cmux 工具。"
+          }
+        }
+      }
+    },
+    "cli.agentTask.help.schedules": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Schedules dispatch only while cmux is open, with no daemon or global hooks. Missed runs are held by default (--misfire hold). --at and --expires require ISO 8601 timestamps with an explicit offset, for example 2026-10-26T09:00:00-07:00 or 2026-10-26T16:00:00Z. --timezone supplies the schedule's IANA time zone. Omit --target and --provider to send to the owner."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا تُنفّذ الجداول إلا عندما يكون cmux مفتوحًا، دون خدمة خلفية مستقلة أو خطافات عامة. تُعلّق عمليات التشغيل الفائتة افتراضيًا (--misfire hold). يتطلب --at و--expires طوابع زمنية بصيغة ISO 8601 مع إزاحة صريحة، مثل 2026-10-26T09:00:00-07:00 أو 2026-10-26T16:00:00Z. يحدد --timezone المنطقة الزمنية بصيغة IANA للجدول. احذف --target و--provider للإرسال إلى المالك."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zeitpläne werden nur bei geöffnetem cmux ausgeführt, ohne Daemon oder globale Hooks. Verpasste Ausführungen werden standardmäßig zurückgehalten (--misfire hold). --at und --expires erfordern ISO-8601-Zeitstempel mit explizitem Offset, etwa 2026-10-26T09:00:00-07:00 oder 2026-10-26T16:00:00Z. --timezone legt die IANA-Zeitzone des Zeitplans fest. Ohne --target und --provider wird an den Besitzer gesendet."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Las programaciones solo se ejecutan mientras cmux está abierto, sin un demonio ni hooks globales. Las ejecuciones omitidas quedan retenidas por defecto (--misfire hold). --at y --expires requieren marcas de tiempo ISO 8601 con un desplazamiento explícito, por ejemplo 2026-10-26T09:00:00-07:00 o 2026-10-26T16:00:00Z. --timezone establece la zona horaria IANA de la programación. Omite --target y --provider para enviar al propietario."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Les planifications ne sont exécutées que lorsque cmux est ouvert, sans démon ni hooks globaux. Les exécutions manquées sont suspendues par défaut (--misfire hold). --at et --expires nécessitent des horodatages ISO 8601 avec un décalage explicite, par exemple 2026-10-26T09:00:00-07:00 ou 2026-10-26T16:00:00Z. --timezone définit le fuseau IANA de la planification. Omettez --target et --provider pour envoyer au propriétaire."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スケジュールはcmuxが開いている間だけ実行され、デーモンやグローバルフックは使用しません。実行時刻を過ぎた処理はデフォルトで保留されます（--misfire hold）。--atと--expiresには、2026-10-26T09:00:00-07:00や2026-10-26T16:00:00Zのように明示的なオフセットを含むISO 8601タイムスタンプが必要です。--timezoneでスケジュールのIANAタイムゾーンを指定します。所有者に送信するには--targetと--providerを省略します。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "예약은 cmux가 열려 있을 때만 실행되며 데몬이나 전역 훅을 사용하지 않습니다. 놓친 실행은 기본적으로 보류됩니다(--misfire hold). --at과 --expires에는 2026-10-26T09:00:00-07:00 또는 2026-10-26T16:00:00Z처럼 오프셋을 명시한 ISO 8601 타임스탬프가 필요합니다. --timezone은 예약의 IANA 시간대를 지정합니다. 소유자에게 보내려면 --target과 --provider를 생략하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "计划仅在 cmux 打开时执行，不使用守护进程或全局钩子。错过的执行默认会暂停（--misfire hold）。--at 和 --expires 需要含明确时差的 ISO 8601 时间戳，例如 2026-10-26T09:00:00-07:00 或 2026-10-26T16:00:00Z。--timezone 指定计划的 IANA 时区。省略 --target 和 --provider 即发送给所有者。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "排程僅在 cmux 開啟時執行，不使用常駐程式或全域掛鉤。錯過的執行預設會暫停（--misfire hold）。--at 和 --expires 需要含明確時差的 ISO 8601 時間戳記，例如 2026-10-26T09:00:00-07:00 或 2026-10-26T16:00:00Z。--timezone 指定排程的 IANA 時區。省略 --target 和 --provider 即傳送給擁有者。"
+          }
+        }
+      }
+    },
+    "cli.agentTask.help.turns": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Use send for a follow-up. Keep a stable --request-id UUID for each action; reuse it only to retry that same action. --wait also returns when input is needed (needsInput) or the provider disconnects (disconnected). Use turns, result and wait-turn to inspect turns; use inbox and ack to receive and acknowledge child-task events."
+          }
+        },
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "استخدم send لإرسال رسالة متابعة. احتفظ بمعرّف UUID ثابت في --request-id لكل إجراء؛ وأعد استخدامه فقط لإعادة محاولة الإجراء نفسه. يعود --wait أيضًا عند الحاجة إلى إدخال (needsInput) أو انقطاع اتصال المزوّد (disconnected). استخدم turns وresult وwait-turn لفحص الجولات، وinbox وack لاستلام أحداث المهام الفرعية وتأكيد استلامها."
+          }
+        },
+        "de": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Verwende send für eine Folgemeldung. Behalte für jede Aktion eine feste --request-id-UUID bei; verwende sie nur für einen erneuten Versuch derselben Aktion. --wait kehrt auch zurück, wenn eine Eingabe nötig ist (needsInput) oder die Anbieterverbindung getrennt wird (disconnected). Mit turns, result und wait-turn prüfst du Durchläufe; mit inbox und ack empfängst und bestätigst du Ereignisse untergeordneter Tasks."
+          }
+        },
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Usa send para enviar un mensaje de seguimiento. Mantén un UUID --request-id estable para cada acción; reutilízalo solo al reintentar esa misma acción. --wait también termina cuando se necesita una entrada (needsInput) o se desconecta el proveedor (disconnected). Usa turns, result y wait-turn para inspeccionar turnos; inbox y ack permiten recibir y confirmar eventos de tareas secundarias."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Utilisez send pour un message de suivi. Gardez un UUID --request-id stable pour chaque action ; réutilisez-le uniquement pour réessayer cette même action. --wait se termine aussi lorsqu’une saisie est nécessaire (needsInput) ou que le fournisseur se déconnecte (disconnected). Utilisez turns, result et wait-turn pour examiner les tours ; inbox et ack permettent de recevoir et d’acquitter les événements des tâches enfants."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "続きのメッセージにはsendを使います。操作ごとに固定の--request-id UUIDを保持し、同じ操作の再試行時にのみ再利用してください。入力が必要な場合（needsInput）やプロバイダーが切断された場合（disconnected）も--waitは終了します。turns、result、wait-turnでターンを確認し、inboxとackで子タスクのイベントを受信して確認済みにします。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "후속 메시지는 send로 보내세요. 작업마다 고정된 --request-id UUID를 유지하고 같은 작업을 재시도할 때만 재사용하세요. 입력이 필요하거나(needsInput) 공급자 연결이 끊어져도(disconnected) --wait는 반환됩니다. turns, result, wait-turn으로 턴을 확인하고 inbox와 ack로 하위 작업 이벤트를 수신하고 확인 처리하세요."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 send 发送后续消息。每个操作应保持固定的 --request-id UUID；仅在重试相同操作时重复使用。需要输入（needsInput）或提供商断开连接（disconnected）时，--wait 也会返回。使用 turns、result 和 wait-turn 检查轮次；使用 inbox 和 ack 接收并确认子任务事件。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "使用 send 傳送後續訊息。每個操作應保持固定的 --request-id UUID；僅在重試相同操作時重複使用。需要輸入（needsInput）或供應商中斷連線（disconnected）時，--wait 也會返回。使用 turns、result 和 wait-turn 檢查回合；使用 inbox 和 ack 接收並確認子任務事件。"
           }
         }
       }

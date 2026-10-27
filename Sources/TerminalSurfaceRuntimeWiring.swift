@@ -84,6 +84,8 @@ final class TerminalSurfaceSpawnPolicyBridge: TerminalSurfaceSpawnPolicyProvidin
             socketAuthenticationEnvironment: TerminalController.shared.socketClientCapabilityEnvironment(),
             claudeHooksEnabled: integrations.claudeCodeHooksEnabled,
             codexHooksEnabled: integrations.codexHooksEnabled,
+            codexQuietFrontendEnabled: UserDefaultsSettingsClient(defaults: .standard).value(for: SettingCatalog().terminal.codexQuietFrontend),
+            agentOrchestrationEnabled: UserDefaultsSettingsClient(defaults: .standard).value(for: SettingCatalog().terminal.agentOrchestration),
             customClaudePath: integrations.customClaudePath,
             subagentNotificationEnvironmentKey: AgentIntegrationSettingsStore.subagentSuppressionEnvironmentKey,
             suppressSubagentNotifications: integrations.suppressesSubagentNotifications,

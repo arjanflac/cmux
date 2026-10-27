@@ -130,6 +130,32 @@ public final class WorkspaceReorderCoordinator<Tab: WorkspaceTabRepresenting> {
         }
     }
 
+    /// Stable status ordering of top-level rows. Selected/pinned anchors and group membership stay put.
+    public func orderWorkingFirst(workingWorkspaceIds: Set<UUID>) {
+        let before = model.tabs.map(\.id)
+        let rows = model.sidebarTopLevelWorkspaceIdsIncludingEmptyGroups()
+        let workingTabs = model.tabs.filter { workingWorkspaceIds.contains($0.id) }
+        let working = Set(model.topLevelWorkspaceIds(for: workingTabs))
+        var protected = model.sidebarTopLevelPinnedWorkspaceIdsIncludingEmptyGroups()
+        if let selected = model.tabs.first(where: { $0.id == model.selectedTabId }) {
+            protected.formUnion(model.topLevelWorkspaceIds(for: [selected]))
+        }
+        let movable = rows.filter { !protected.contains($0) }
+        var ordered = (movable.filter { working.contains($0) } + movable.filter { !working.contains($0) }).makeIterator()
+        let desired = rows.map { protected.contains($0) ? $0 : ordered.next()! }
+        guard desired != rows else { return }
+        if model.workspaceGroups.isEmpty {
+            let tabsByID = Dictionary(uniqueKeysWithValues: model.tabs.map { ($0.id, $0) })
+            model.replaceTabs { _ in desired.compactMap { tabsByID[$0] } }
+        } else {
+            model.normalizeWorkspaceGroupRunsPreservingOrder(desired)
+            model.syncWorkspaceGroupsOrderToAnchorOrder(preferredTopLevelIds: desired)
+        }
+        if before != model.tabs.map(\.id) {
+            host?.workspaceOrderDidChange(movedWorkspaceIds: model.tabs.map(\.id))
+        }
+    }
+
     // MARK: - Single reorder
 
     /// Reorders one workspace to the clamped target index; drag operations

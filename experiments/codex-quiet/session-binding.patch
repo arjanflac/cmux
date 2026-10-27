@@ -1,0 +1,256 @@
+--- a/codex-rs/tui/src/lib.rs
++++ b/codex-rs/tui/src/lib.rs
+@@ -116,6 +116,7 @@
+ mod app_server_approval_conversions;
+ mod app_server_connection;
+ pub mod cmux_quiet;
++pub mod cmux_session_binding;
+ mod app_server_session;
+ mod approval_events;
+ mod async_question_reply;
+--- a/codex-rs/tui/src/bin/cmux-quiet.rs
++++ b/codex-rs/tui/src/bin/cmux-quiet.rs
+@@ -71,6 +71,7 @@
+     if !check { anyhow::ensure!(std::io::stdin().is_terminal() && std::io::stdout().is_terminal(), "interactive terminal required"); }
+     let endpoint = tokio::time::timeout(std::time::Duration::from_secs(3), endpoint()).await??;
+     if check { return Ok(()); }
++    codex_tui::cmux_session_binding::start(stock.clone(), arguments.clone());
+     let paths = Arg0DispatchPaths { codex_self_exe: Some(stock), ..Default::default() };
+     let exit = Box::pin(codex_tui::run_main(cli, paths, LoaderOverrides::default(), Some(endpoint))).await?;
+     for line in exit.clone().format_exit_messages(false) { println!("{line}"); }
+--- a/codex-rs/tui/src/chatwidget/session_flow.rs
++++ b/codex-rs/tui/src/chatwidget/session_flow.rs
+@@ -114,6 +114,12 @@
+         self.current_rollout_path = session.rollout_path.clone();
+         self.current_cwd = Some(session.cwd.to_path_buf());
+         self.config.cwd = session.cwd.clone();
++        if cfg!(feature = "cmux-quiet") {
++            crate::cmux_session_binding::publish(
++                session.thread_id.to_string(), session.cwd.to_string_lossy().into_owned(),
++                session.model.clone(), session.rollout_path.as_ref().map(|path| path.to_string_lossy().into_owned()),
++            );
++        }
+         self.config.model_provider_id = session.model_provider_id.clone();
+         self.set_daybreak_enabled(self.daybreak_enabled);
+         if connector_scope_changed {
+--- a/codex-rs/tui/src/cmux_session_binding.rs
++++ b/codex-rs/tui/src/cmux_session_binding.rs
+@@ -0,0 +1,218 @@
++//! Delivers real frontend session identity through cmux's existing verified
++//! per-surface protocol. No global hook registration, config override or model turn.
++use base64::Engine;
++use std::path::PathBuf;
++use std::sync::OnceLock;
++use tokio::io::AsyncWriteExt;
++use tokio::sync::watch;
++
++#[derive(Clone, Debug, PartialEq, Eq)]
++struct Session {
++    id: String,
++    cwd: String,
++    model: String,
++    rollout: Option<String>,
++}
++
++#[derive(Clone)]
++struct Route {
++    cli: PathBuf,
++    socket: String,
++    workspace: String,
++    surface: String,
++    stock: PathBuf,
++    original: Vec<String>,
++}
++
++static REPORTER: OnceLock<watch::Sender<Option<Session>>> = OnceLock::new();
++
++/// Starts one bounded worker owned by this terminal frontend process.
++pub fn start(stock: PathBuf, original: Vec<String>) {
++    if !cfg!(feature = "cmux-quiet") { return; }
++    if std::env::var("CMUX_CODEX_PID").ok().as_deref() != Some(std::process::id().to_string().as_str())
++        || std::env::var("CMUX_CODEX_INVOCATION_ID").ok().is_none_or(|value| value.is_empty()) { return; }
++    let read = |name| std::env::var(name).ok().filter(|value| !value.is_empty());
++    let Some(cli) = read("CMUX_CODEX_HOOK_CMUX_BIN").or_else(|| read("CMUX_BUNDLED_CLI_PATH")) else { return; };
++    let (Some(socket), Some(workspace), Some(surface)) =
++        (read("CMUX_SOCKET_PATH"), read("CMUX_WORKSPACE_ID"), read("CMUX_SURFACE_ID")) else { return; };
++    if uuid::Uuid::parse_str(&workspace).is_err() || uuid::Uuid::parse_str(&surface).is_err() { return; }
++    let route = Route { cli: PathBuf::from(cli), socket, workspace, surface, stock, original };
++    if !route.cli.is_absolute() || !route.cli.is_file() { return; }
++    let (sender, mut receiver) = watch::channel::<Option<Session>>(None);
++    if REPORTER.set(sender).is_err() { return; }
++    tokio::spawn(async move {
++        let mut delivered = None;
++        loop {
++            let latest = receiver.borrow_and_update().clone();
++            let Some(session) = latest.filter(|session| delivered.as_ref() != Some(session)) else {
++                if receiver.changed().await.is_err() { return; }
++                continue;
++            };
++            // New selection cancels an old helper before the next publication.
++            // kill_on_drop closes only that short-lived helper, never the model.
++            tokio::select! {
++                changed = receiver.changed() => { if changed.is_err() { return; } }
++                outcome = tokio::time::timeout(std::time::Duration::from_secs(12), deliver(&route, &session)) => {
++                    if matches!(outcome, Ok(Ok(()))) { delivered = Some(session); }
++                    else { tracing::warn!("cmux session binding could not be verified");
++                        if receiver.changed().await.is_err() { return; }
++                    }
++                }
++            }
++        }
++    });
++}
++
++/// Publishes only the current ChatWidget's actual configured session.
++pub fn publish(id: String, cwd: String, model: String, rollout: Option<String>) {
++    if uuid::Uuid::parse_str(&id).is_err() || !std::path::Path::new(&cwd).is_absolute() { return; }
++    if let Some(sender) = REPORTER.get() { let _ = sender.send_replace(Some(Session { id, cwd, model, rollout })); }
++}
++
++fn capture_arguments(route: &Route, session: &Session) -> Vec<String> {
++    let mut remaining = route.original.as_slice();
++    if remaining.first().is_some_and(|arg| arg == "resume") {
++        remaining = &remaining[1..];
++        if remaining.first().is_some_and(|arg| !arg.starts_with('-')) { remaining = &remaining[1..]; }
++    }
++    let mut result = vec![route.stock.to_string_lossy().into_owned(), "resume".into(), session.id.clone()];
++    let mut index = 0;
++    while index < remaining.len() {
++        if matches!(remaining[index].as_str(), "-C" | "--cd" | "-m" | "--model") { index += 2; continue; }
++        result.push(remaining[index].clone()); index += 1;
++    }
++    result.extend(["--model".into(), session.model.clone(), "--cd".into(), session.cwd.clone()]);
++    result
++}
++
++fn payload(session: &Session) -> serde_json::Value {
++    let mut result = serde_json::json!({"hook_event_name":"SessionStart", "session_id":session.id, "cwd":session.cwd});
++    if let Some(path) = &session.rollout { result["transcript_path"] = serde_json::Value::String(path.clone()); }
++    result
++}
++
++fn delivery_command(route: &Route, session: &Session) -> tokio::process::Command {
++    let arguments = capture_arguments(route, session);
++    let mut bytes = Vec::new();
++    for argument in &arguments { bytes.extend_from_slice(argument.as_bytes()); bytes.push(0); }
++    let mut command = tokio::process::Command::new(&route.cli);
++    command.args(["--socket", &route.socket, "hooks", "codex", "session-start", "--workspace", &route.workspace, "--surface", &route.surface])
++        .env("CMUX_CODEX_PID", std::process::id().to_string())
++        .env("CMUX_CODEX_HEADLESS", "0")
++        .env_remove("CMUX_CODEX_HOOK_PID")
++        .env("CMUX_AGENT_LAUNCH_KIND", "codex")
++        .env("CMUX_AGENT_LAUNCH_EXECUTABLE", &route.stock)
++        .env("CMUX_AGENT_LAUNCH_CWD", &session.cwd)
++        .env("CMUX_AGENT_LAUNCH_ARGV_B64", base64::engine::general_purpose::STANDARD.encode(bytes))
++        .stdin(std::process::Stdio::piped()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null())
++        .kill_on_drop(true);
++    command
++}
++
++async fn deliver_once(route: &Route, session: &Session) -> std::io::Result<()> {
++    let mut child = delivery_command(route, session).spawn()?;
++    if let Some(mut input) = child.stdin.take() {
++        input.write_all(payload(session).to_string().as_bytes()).await?;
++        input.shutdown().await?;
++    }
++    if !child.wait().await?.success() { return Err(std::io::Error::other("cmux binding verification failed")); }
++    // Hook callbacks intentionally exit successfully when admission is declined.
++    // Read the public saved binding before acknowledging delivery.
++    let output = tokio::process::Command::new(&route.cli)
++        .args(["--socket", &route.socket, "surface", "resume", "show", "--json",
++            "--workspace", &route.workspace, "--surface", &route.surface])
++        .stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null())
++        .kill_on_drop(true).output().await?;
++    let value: serde_json::Value = serde_json::from_slice(&output.stdout)
++        .map_err(std::io::Error::other)?;
++    if !output.status.success() || !binding_matches(&value, session) {
++        return Err(std::io::Error::other("cmux did not save the current session binding"));
++    }
++    Ok(())
++}
++
++fn binding_matches(value: &serde_json::Value, session: &Session) -> bool {
++    let binding = &value["resume_binding"];
++    binding["kind"] == "codex" && binding["checkpoint_id"] == session.id
++        && binding["cwd"] == session.cwd && binding["source"] == "agent-hook"
++}
++
++async fn deliver(route: &Route, session: &Session) -> std::io::Result<()> {
++    for attempt in 0..3 {
++        let outcome = tokio::time::timeout(std::time::Duration::from_secs(3), deliver_once(route, session)).await;
++        match outcome {
++            Ok(Ok(())) => return Ok(()),
++            _ if attempt < 2 => tokio::time::sleep(std::time::Duration::from_millis(200)).await,
++            Ok(Err(error)) => return Err(error),
++            Err(_) => return Err(std::io::Error::new(std::io::ErrorKind::TimedOut, "cmux binding verification timed out")),
++        }
++    }
++    unreachable!()
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn route() -> Route { Route { cli: "/cmux/bin/cmux".into(), socket: "/cmux.sock".into(),
++        workspace: "workspace".into(), surface: "surface".into(), stock: "/stock/codex".into(),
++        original: vec!["resume".into(), "old-session".into(), "--model".into(), "old-model".into(), "--cd".into(), "/old".into()] } }
++    fn session() -> Session { Session { id:"actual-session".into(),cwd:"/actual".into(),model:"actual-model".into(),rollout:Some("/actual/rollout".into()) } }
++    #[test] fn cmux_binding_capture_uses_configured_identity_and_cwd() {
++        let args = capture_arguments(&route(), &session());
++        assert_eq!(args, ["/stock/codex", "resume", "actual-session", "--model", "actual-model", "--cd", "/actual"]);
++        assert!(!args.contains(&"old-session".to_string()));
++    }
++    #[test] fn cmux_binding_payload_has_no_prompt_or_turn_submission() {
++        let json = payload(&session());
++        assert_eq!(json["session_id"], "actual-session"); assert_eq!(json["cwd"], "/actual");
++        assert_eq!(json["transcript_path"], "/actual/rollout"); assert!(json.get("prompt").is_none());
++    }
++    #[test] fn cmux_binding_acknowledges_only_the_current_saved_identity() {
++        let mut value = serde_json::json!({"resume_binding":{"kind":"codex","checkpoint_id":"actual-session","cwd":"/actual","source":"agent-hook"}});
++        assert!(binding_matches(&value, &session()));
++        value["resume_binding"]["checkpoint_id"] = "old-session".into();
++        assert!(!binding_matches(&value, &session()));
++        assert!(!binding_matches(&serde_json::json!({}), &session()));
++    }
++    #[test] fn cmux_binding_delivery_targets_exact_surface_without_injection() {
++        let command = delivery_command(&route(), &session());
++        let args: Vec<_> = command.as_std().get_args().map(|arg| arg.to_string_lossy().into_owned()).collect();
++        assert_eq!(args, ["--socket", "/cmux.sock", "hooks", "codex", "session-start", "--workspace", "workspace", "--surface", "surface"]);
++        assert!(!args.iter().any(|arg| arg == "start" || arg == "turn/start" || arg == "setup"));
++    }
++    #[cfg(unix)]
++    #[tokio::test]
++    async fn cmux_binding_declined_hook_is_not_delivery_and_retry_requires_readback() {
++        use std::os::unix::fs::PermissionsExt;
++        let directory = tempfile::tempdir().unwrap();
++        let counter = directory.path().join("deliveries");
++        let cli = directory.path().join("cmux-fixture");
++        let script = r#"#!/usr/bin/env python3
++import base64,json,os,pathlib,sys
++counter = pathlib.Path(COUNTER_PATH)
++args = sys.argv[1:]
++if 'session-start' in args:
++    payload = json.load(sys.stdin)
++    assert payload['session_id'] == 'actual-session' and payload['cwd'] == '/actual'
++    assert os.environ['CMUX_CODEX_PID'] == str(os.getppid())
++    capture = base64.b64decode(os.environ['CMUX_AGENT_LAUNCH_ARGV_B64']).split(b'\0')
++    assert capture[:3] == [b'/stock/codex',b'resume',b'actual-session']
++    assert capture[-3:] == [b'--cd',b'/actual',b'']
++    counter.write_text(str(int(counter.read_text())+1) if counter.exists() else '1')
++    sys.exit(0)
++assert args[2:6] == ['surface','resume','show','--json']
++saved = None
++if int(counter.read_text()) >= 2:
++    saved = dict(kind='codex',checkpoint_id='actual-session',cwd='/actual',source='agent-hook')
++print(json.dumps(dict(resume_binding=saved)))
++"#.replace("COUNTER_PATH", &serde_json::to_string(&counter.to_string_lossy()).unwrap());
++        std::fs::write(&cli, script).unwrap();
++        std::fs::set_permissions(&cli, std::fs::Permissions::from_mode(0o700)).unwrap();
++        let mut target = route(); target.cli = cli;
++        assert!(deliver_once(&target, &session()).await.is_err(), "exit zero without a saved binding must not acknowledge");
++        std::fs::remove_file(&counter).unwrap();
++        deliver(&target, &session()).await.unwrap();
++        assert_eq!(std::fs::read_to_string(counter).unwrap(), "2", "bounded retry waits for the actual current binding");
++    }
++
++}

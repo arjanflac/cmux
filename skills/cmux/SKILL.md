@@ -41,6 +41,16 @@ Output defaults to short refs (`window:N`, `workspace:N`, `pane:N`, `surface:N`)
 
 `new-workspace`, `new-split`, `new-pane`, and `new-surface` accept `--command <text>`. cmux starts the terminal's normal interactive shell and delivers the text plus one Enter at spawn time, so the command runs immediately and the shell stays alive after it exits. No follow-up `send` or `send-key enter` is needed, and the text is passed literally (quoting, `&&`, pipes, and `$VARS` are interpreted by the new shell). The flag is terminal-only: it is rejected with `--type browser|simulator|agent-session`, blank text is ignored, and `new-workspace --layout` ignores it because layout surfaces define their own commands. Details: [references/panes-surfaces.md](references/panes-surfaces.md).
 
+## Managed tasks in the personal build
+
+For fresh delegated work, use `cmux task start --provider codex|claude --workspace <existing-id> --cwd <absolute-directory> [--model <model>] --wait -- <task>`.
+It creates a terminal tab in that workspace without focus. Never create a new
+workspace for another task in the same project. Use `--background` only when the
+user explicitly requests a headless task. `--parent-task <id>` connects nested
+managed tasks. Results arrive as structured receipts through `task read`/`task
+wait`; a disconnected task must be inspected before its prompt is retried.
+See [agent messages](../../docs/agent-messages.md) for lifecycle and provider limits.
+
 ## Settings
 
 cmux-owned settings live in `~/.config/cmux/cmux.json`. `cmux docs settings` prints the docs URL, schema URL, raw GitHub resources, cmux.json paths, and reload command. `cmux settings`, `cmux settings cmux-json`, and `cmux settings shortcuts` open the UI.

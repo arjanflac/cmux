@@ -108,8 +108,13 @@ final class MainWindowHostingView<Content: View>: NSHostingView<Content> {
 
 @MainActor
 func configureCmuxMainWindowDragBehavior(_ window: NSWindow) {
+    // Keep the window movable so macOS Accessibility-based window managers
+    // (notably Swish) can identify cmux as a normal movable window and attach
+    // titlebar gestures. Content/background drags are still opt-in: cmux only
+    // starts AppKit window drags from explicit titlebar drag handles, and tab /
+    // folder drag interactions temporarily suppress movability while active.
     window.isMovableByWindowBackground = false
-    window.isMovable = false
+    window.isMovable = true
 }
 
 @MainActor
@@ -174,7 +179,8 @@ final class CmuxMainWindow: NSWindow {
     /// hosts AppKit subtrees whose subviews carry REQUIRED autoresizing-mask
     /// constraints, and if any of them is ever laid out oversized, AppKit
     /// satisfies those constraints by growing the WINDOW — and since this
-    /// window is non-movable, nothing ever constrains it back. A layout bug
+    /// window's `constrainFrameRect` returns the proposal, nothing ever
+    /// constrains it back. A layout bug
     /// then compounds through everything derived from window geometry
     /// (observed live: the window at 29,000 points wide, growing every
     /// pass). The user sizes this window; layout does not.
@@ -441,9 +447,10 @@ final class CmuxMainWindow: NSWindow {
     ///
     /// "Reachable" means a grabbable slice of the window's *titlebar* — its top
     /// strip — is on some screen's visible area, not merely that some corner of
-    /// the window overlaps a screen. The main window is non-movable
-    /// (``configureCmuxMainWindowDragBehavior`` sets `isMovable = false`) and can
-    /// only be dragged by ``WindowDragHandleView`` in the titlebar band, so a
+    /// the window overlaps a screen. The main window can only be dragged by the
+    /// user from its titlebar band (``WindowDragHandleView`` and the native
+    /// titlebar; ``configureCmuxMainWindowDragBehavior`` disables background
+    /// dragging), so a
     /// window whose titlebar is off-screen cannot be recovered by the user even
     /// when its body still overlaps a display. Requiring the top strip to remain
     /// reachable lets AppKit re-clamp a window stranded above the screen (e.g.
@@ -469,9 +476,9 @@ final class CmuxMainWindow: NSWindow {
     /// (``shouldPreserveFrameDuringConstrain``) and AppDelegate's reactive
     /// titlebar-stranding safety net.
     ///
-    /// The window is non-movable (``configureCmuxMainWindowDragBehavior`` sets
-    /// `isMovable = false`) and can only be dragged by ``WindowDragHandleView``
-    /// in the titlebar band, so a window whose titlebar is off-screen cannot be
+    /// The window can only be dragged by the user from its titlebar band
+    /// (``configureCmuxMainWindowDragBehavior`` disables background dragging),
+    /// so a window whose titlebar is off-screen cannot be
     /// recovered even when its body still overlaps a display. Requiring the top
     /// strip to remain reachable lets a stranded window be re-clamped while a
     /// genuinely on-screen frame is left untouched (which is what stops the

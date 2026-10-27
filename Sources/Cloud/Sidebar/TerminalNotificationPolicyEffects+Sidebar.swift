@@ -22,7 +22,7 @@ extension TerminalNotificationPolicyEffects {
         case .notifications:
             moveLocalWorkspace()
             raiseCloudRow()
-        case .agentActivity:
+        case .agentActivity, .workingFirst:
             raiseCloudRow()
             (controller ?? .shared).notificationRequestsReorder(workspaceId: workspaceId)
         }

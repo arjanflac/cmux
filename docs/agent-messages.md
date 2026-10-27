@@ -1,5 +1,80 @@
 # Agent messages
 
+## Personal native task coordinator
+
+The personal build adds persistent local background conversations through
+`cmux task`. Start uses an explicit existing workspace and directory, creates no
+workspace, and opens no terminal by default:
+
+```bash
+cmux task start --provider claude --workspace workspace:2 --cwd ~/Projects/example --model haiku --background --wait -- 'Review the proposed design.'
+cmux task send <task-id> --request-id <uuid> --wait -- 'Check the alternative too.'
+cmux task turns <task-id>
+cmux task result <operation-id>
+cmux task inbox <parent-task-id>
+cmux task ack <parent-task-id> <event-id>
+cmux task attach <task-id> [--workspace <existing-id-or-ref>]
+```
+
+Providers are `codex`, `claude`, and `opencode`. Follow-ups retain the same
+provider session and return independent per-turn receipts. Keep a stable
+`--request-id` UUID when retrying the identical mutation. Unknown acceptance is
+never replayed automatically. `read`, `wait`, `list`, and `cancel` remain available;
+wait returns on completion, attention or disconnection. Prompts can come from
+`--prompt-file -` instead of argv. Results are bounded, with truncation disclosed.
+
+Use `--parent-task` for explicit delegation. `--terminal` requests a visible
+initial Codex view; `attach` opens a view later. Claude and OpenCode need an idle
+exclusive handoff before interactive attachment. An attachment failure retains
+accepted work and an attention receipt; `live_surface_status` reports actual
+surface presence independently of provider execution. Stable workspace identities
+survive reopening; missing legacy destinations require explicit routing.
+
+Codex uses the existing stock managed daemon, retaining the same thread on iOS.
+Claude uses its native streaming JSON control protocol, including exact-session
+resume; OpenCode uses its native JSON run interface. Provider permission defaults
+are preserved. Explicit local operator `--permission-mode unrestricted` is the
+only coordinator opt-in to broader permissions. Scoped coordination tools do not
+approve their own or their children's tools. `interactions` exposes pending native requests and the
+local operator can `respond`; OpenCode's run interface has no answer channel, so
+attention settles that submission with an explicit manual-attachment diagnostic.
+
+Enable **Background Agent Coordination** (`terminal.agentOrchestration`) for new
+cmux-owned quiet Codex sessions to discover `cmux_tasks.task`. A private broker
+verifies the selected thread, frontend PID/birth, invocation and local surface;
+inherited environment alone grants no authority. New threads can advertise the
+tool; existing resumed threads cannot gain dynamic tools retroactively. The quiet
+composer shows aggregate worker activity and unread results without starting a
+parent turn. Read/ack the passive inbox explicitly. No automatic paid parent wake
+is installed. A scoped stdio MCP transport exists for future provider adapters;
+automatic Claude-parent enrollment is not wired in this version. Claude workers
+are supported without a Claude CLI fork.
+
+One in-app scheduler supports a single future wake or finite intervals of at
+least 60 seconds (1–100 runs). It targets an exact owned conversation or an
+explicit new worker:
+
+```bash
+cmux task schedule create --owner <task-id> --target <task-id> --at 2026-11-01T09:00:00-08:00 -- 'Check the build.'
+cmux task schedule list --owner <task-id>
+cmux task schedule pause <schedule-id> --owner <task-id>
+cmux task schedule resume <schedule-id> --owner <task-id>
+cmux task schedule cancel <schedule-id> --owner <task-id>
+```
+
+Dispatch runs **while cmux is open**. Missed wakes are held by default; explicit
+`--misfire skip|coalesceOne` changes that policy. Pausing or cancelling future work
+does not imply a running provider turn was interrupted. A private SQLite journal
+commits dispatch intent before provider I/O. Uncertain acceptance reserves the
+occurrence and is never automatically retried. Scopes permit up to eight direct
+children, depth four and 64 descendants; reuse an existing worker for follow-ups.
+Completed inbox events and per-turn receipts survive recent-cache pruning.
+
+These controls are local-only. No global skills, hooks, aliases, launcher
+replacement, Claude configuration or standalone scheduling service is installed.
+
+## Hook-delivered messages
+
 `cmux agent message` sends a message to the agent running in another workspace or surface. cmux delivers it through that agent's own hooks, never by typing into its terminal. A message can't land in a prompt someone is halfway through typing, and it can't press Enter for them.
 
 ```bash

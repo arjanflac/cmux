@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import pty
 import shutil
 import socket
 import subprocess
@@ -387,8 +388,44 @@ def test_headless_marker_follows_the_subcommand(failures: list[str]) -> None:
         )
 
 
+def run_quiet_wrapper_case(*,check=0,quiet_exit=0,version='0.164.0',in_cmux=True,tty=True,enabled=True):
+ with tempfile.TemporaryDirectory() as temp:
+  root=Path(temp); wrapper=root/'cmux-codex-wrapper'; shutil.copy2(SOURCE_WRAPPER,wrapper); wrapper.chmod(0o755)
+  stock=root/'codex'; quiet=root/'cmux-codex-quiet'; log=root/'events'
+  stock.write_text('#!/bin/sh\nif [ "$1" = --version ]; then echo "codex-cli '+version+'"; exit 0; fi\necho stock >> "$EVENTS"\n'); stock.chmod(0o755)
+  quiet.write_text('#!/bin/sh\nif [ "$1" = --cmux-check ]; then echo check >> "$EVENTS"; exit '+str(check)+'; fi\necho quiet >> "$EVENTS"\nexit '+str(quiet_exit)+'\n'); quiet.chmod(0o755)
+  env=os.environ.copy()
+  # Use explicit fake binary paths; no inherited shared-daemon context.
+  for key in list(env):
+   if key.startswith('CMUX_'): del env[key]
+  isolated_home = root / 'home'; isolated_home.mkdir()
+  env.update(HOME=str(isolated_home),CFFIXED_USER_HOME=str(isolated_home),EVENTS=str(log),CMUX_CUSTOM_CODEX_PATH=str(stock),CMUX_CODEX_HOOKS_DISABLED='1',CMUX_CODEX_QUIET_FRONTEND='1' if enabled else '0')
+  if in_cmux: env['CMUX_SURFACE_ID']='11111111-1111-1111-1111-111111111111'
+  if tty:
+   master,slave=pty.openpty()
+   try: result=subprocess.run([str(wrapper),'resume','01a176fc-d044-7e62-92bb-de6c5c50c0d1'],env=env,stdin=slave,stdout=slave,stderr=subprocess.PIPE,timeout=10)
+   finally: os.close(master); os.close(slave)
+  else: result=subprocess.run([str(wrapper)],env=env,capture_output=True,timeout=10)
+  return result.returncode,log.read_text().splitlines() if log.exists() else []
+
+def test_quiet_frontend_routes_before_submission_and_never_replays(failures: list[str]) -> None:
+    cases = [
+        ({}, (0, ["check", "quiet"])),
+        ({"check": 1}, (0, ["check", "stock"])),
+        ({"quiet_exit": 42}, (42, ["check", "quiet"])),
+        ({"version": "0.165.0"}, (0, ["stock"])),
+        ({"in_cmux": False}, (0, ["stock"])),
+        ({"tty": False}, (0, ["stock"])),
+        ({"enabled": False}, (0, ["stock"])),
+    ]
+    for options, expected in cases:
+        observed = run_quiet_wrapper_case(**options)
+        expect(observed == expected, f"quiet frontend {options}: expected {expected}, got {observed}", failures)
+
+
 def main() -> int:
     failures: list[str] = []
+    test_quiet_frontend_routes_before_submission_and_never_replays(failures)
     test_every_resume_route_is_instrumented(failures)
     test_direct_fork_is_instrumented(failures)
     test_explicit_disable_still_bypasses_hooks(failures)

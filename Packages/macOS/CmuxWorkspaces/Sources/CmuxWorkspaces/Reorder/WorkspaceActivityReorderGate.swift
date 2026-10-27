@@ -103,7 +103,7 @@ public struct WorkspaceActivityReorderGate: Sendable {
         now: Date
     ) -> Decision {
         switch mode {
-        case .off:
+        case .off, .workingFirst:
             pendingSince.removeValue(forKey: workspaceId)
             return .ignore
         case .notifications:

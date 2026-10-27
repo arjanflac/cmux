@@ -1064,7 +1064,7 @@ jobs:
     # and static checks, so macOS admission can depend on its real result
     # without a second runner polling another workflow.
     runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'blacksmith-4vcpu-ubuntu-2404' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
-    timeout-minutes: 5
+    timeout-minutes: ${{ github.repository_owner != 'manaflow-ai' && 15 || 5 }}
     permissions:
       contents: read
     steps:

@@ -39,6 +39,29 @@ struct UserDefaultsSettingsClientTests {
         #expect(client.value(for: catalog.terminal.titleUpdateDiagnostics) == false)
     }
 
+    @Test func agentOrchestrationDefaultsOffAndRoundTripsIndependently() throws {
+        let suiteName = "cmux-agent-orchestration-settings-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let client = UserDefaultsSettingsClient(defaults: defaults)
+        let terminal = SettingCatalog().terminal
+
+        #expect(client.value(for: terminal.agentOrchestration) == false)
+        #expect(client.valueIfPresent(for: terminal.agentOrchestration) == nil)
+        // Quiet mode never implies permission to enroll the frontend.
+        client.set(true, for: terminal.codexQuietFrontend)
+        #expect(client.value(for: terminal.agentOrchestration) == false)
+        for enabled in [true, false] {
+            client.set(enabled, for: terminal.agentOrchestration)
+            #expect(client.value(for: terminal.agentOrchestration) == enabled)
+            #expect(defaults.object(forKey: "terminal.agentOrchestration") as? Bool == enabled)
+            #expect(client.value(for: terminal.codexQuietFrontend) == true)
+        }
+        client.reset(terminal.agentOrchestration)
+        #expect(client.valueIfPresent(for: terminal.agentOrchestration) == nil)
+        #expect(client.value(for: terminal.agentOrchestration) == false)
+    }
+
     @Test func roundTripsEachConvergedKey() throws {
         let defaults = try makeDefaults()
         let client = UserDefaultsSettingsClient(defaults: defaults)

@@ -20,13 +20,11 @@ enum SessionSnapshotSchema {
 
 enum SessionPersistencePolicy {
     static let sidebarMinimumWidthKey = "sidebarMinimumWidth"
-    // Keep the default equal to the minimum so a fresh sidebar starts at the minimum width.
-    // The titlebar title tracks the sidebar's actual width only when it is wider than the
-    // minimum, so a default above the minimum would make the folder/title shift when toggling the sidebar at the default width.
+    // Keep the normal starting width independent of how far the divider can shrink.
     static let defaultSidebarWidth: Double = 240
-    static let defaultMinimumSidebarWidth: Double = 240
-    static let minimumSidebarWidth: Double = 240
-    static let sidebarMinimumWidthRange: ClosedRange<Double> = 120...260
+    static let minimumSidebarWidth: Double = 100
+    static let defaultMinimumSidebarWidth: Double = minimumSidebarWidth
+    static let sidebarMinimumWidthRange: ClosedRange<Double> = minimumSidebarWidth...260
     static let maximumSidebarWidth: Double = 600
     static let minimumWindowWidth: Double = 300
     // Below ~400pt the chrome cannot lay out without overlap: the sidebar
@@ -43,10 +41,28 @@ enum SessionPersistencePolicy {
 
     static func sanitizedSidebarWidth(_ candidate: Double?, defaults: UserDefaults = .standard) -> Double {
         let resolvedMinimum = resolvedMinimumSidebarWidth(defaults: defaults)
-        guard let candidate, candidate.isFinite else {
-            return min(resolvedMinimum, maximumSidebarWidth)
-        }
-        return min(max(candidate, resolvedMinimum), maximumSidebarWidth)
+        // Preserve the existing new-window behavior for an explicitly configured minimum.
+        let fallbackWidth = storedSidebarMinimumWidth(defaults: defaults)?.isFinite == true
+            ? resolvedMinimum : defaultSidebarWidth
+        return clampedSidebarWidth(
+            candidate,
+            minimumWidth: resolvedMinimum,
+            maximumWidth: maximumSidebarWidth,
+            fallbackWidth: fallbackWidth
+        )
+    }
+
+    /// Shared bounds for divider drags, window resizing and persisted widths.
+    static func clampedSidebarWidth(
+        _ candidate: Double?,
+        minimumWidth: Double,
+        maximumWidth: Double,
+        fallbackWidth: Double = defaultSidebarWidth
+    ) -> Double {
+        let minimum = sanitizedMinimumSidebarWidth(minimumWidth)
+        let maximum = max(minimum, maximumWidth.isFinite ? maximumWidth : minimum)
+        let width = candidate.flatMap { $0.isFinite ? $0 : nil } ?? fallbackWidth
+        return min(max(width, minimum), maximum)
     }
 
     static func resolvedMinimumSidebarWidth(defaults: UserDefaults = .standard) -> Double {

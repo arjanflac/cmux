@@ -1,0 +1,26 @@
+{
+  "repository": "https://github.com/openai/codex",
+  "commit": "6aaac694803004a63c6f393d153c96d22521a6b9",
+  "release": "rust-v0.164.0",
+  "testCount": 7,
+  "testFilter": "cmux_quiet_",
+  "patches": [
+    "regression-tests.patch",
+    "quiet-fullscreen.patch",
+    "attach-only.patch",
+    "session-binding.patch",
+    "focus-tests.patch",
+    "focus-mode.patch",
+    "working-tip-tests.patch",
+    "working-tip.patch",
+    "orchestration-tests.patch",
+    "orchestration.patch",
+    "resume-compat-tests.patch",
+    "resume-compat.patch"
+  ],
+  "focusTestCount": 4,
+  "bindingTestCount": 5,
+  "workingTipTestCount": 2,
+  "orchestrationTestCount": 23,
+  "resumeCompatTestCount": 9
+}
