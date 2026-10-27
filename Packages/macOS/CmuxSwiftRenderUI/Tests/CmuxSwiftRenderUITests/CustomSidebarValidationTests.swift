@@ -101,8 +101,8 @@ struct CustomSidebarValidationTests {
         // manifest.json is the built-in template catalog's index, not a sidebar.
         let sidebars = report.entries.filter { $0.name != "manifest" }
 
-        #expect(sidebars.map(\.name).sorted() == ["activity", "agents-board", "agents-cards", "agents-dense", "agents-focus", "agents-timeline", "btop-agents", "clock", "compact", "finder", "focus", "kitchen-sink", "panel-info", "panel-sessions", "panel-subagents", "panel-todo", "ports", "status-board", "workspaces"])
-        #expect(sidebars.filter(\.isValid).count == 19)
+        #expect(sidebars.map(\.name).sorted() == ["activity", "agents-board", "agents-cards", "agents-dense", "agents-focus", "agents-timeline", "btop-agents", "clock", "compact", "finder", "focus", "kitchen-sink", "panel-info", "panel-sessions", "panel-subagents", "panel-todo", "ports", "project-sessions", "status-board", "workspaces"])
+        #expect(sidebars.filter(\.isValid).count == 20)
         #expect(sidebars.filter { !$0.isValid }.map(\.name) == [])
     }
 
