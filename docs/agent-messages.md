@@ -276,6 +276,15 @@ addressable through native provider interfaces; ordinary follow-ups target the
 same worker after its prior submission settles. Busy steering and a general
 peer-to-peer wake bus are not implemented.
 
+Custom coordination definitions persist with their Codex thread. Resuming that
+same conversation on a phone can retain its tool definitions, even though fresh
+outside sessions receive none. The current broker handles a live verified cmux
+frontend or its own managed turn; it does not yet host arbitrary phone-started
+tool calls after the frontend disappears. Plain-text phone continuation is not
+proof of this tool handoff. Keep the coordination opt-in off for phone-dependent
+chats until an owned trial explicitly invokes a coordination tool from the phone.
+Quiet rendering and local operator task commands remain separate.
+
 Legacy terminal-hook `agent.task.report` submissions are unsupported. Only the
 managed provider drivers publish task completion receipts. The local operator
 CLI uses the workstation user's socket authority; scoped model tools are a

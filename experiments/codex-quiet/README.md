@@ -2,7 +2,8 @@
 
 This is a maintained, cmux-bundled derivative of the pinned Codex TUI. It attaches
 to the existing stock managed daemon. The ordinary `codex` executable, official
-apps, global configuration and phone access are unchanged.
+apps and global configuration are unchanged. Background coordination is a
+separate opt-in with the phone-handoff limits documented below.
 
 `terminal.codexQuietFrontend` defaults off. Enable **Hide Codex Tool Calls** in
 Terminal settings, open a new cmux terminal, and run normal `codex`. Positively
@@ -64,6 +65,14 @@ original tools. [Coordination controls and limits](../../docs/agent-messages.md)
 include headless workers, exact-session follow-ups, passive receipts and finite
 schedules; they do not install global hooks or a scheduling daemon.
 
+Coordination tools persist with a Codex thread once advertised. Ordinary phone
+continuation has been tested, but invoking those custom tools from a phone after
+the cmux frontend closes has not. The current broker serves a verified frontend
+or its own managed turn, not a durable phone-turn tool host. Keep coordination
+off for phone-dependent chats until that specific handoff is verified; quiet
+rendering is independent of this setting. Fresh outside sessions receive neither
+the tools nor cmux instructions.
+
 The appended `workers-schema-tests.patch` / `workers-schema.patch` cohort makes
 `workers` discovery and `lifecycle: persistent|oneShot` visible to newly created
 cmux-owned chats. Discovery reads this conversation's scoped worker directory;
@@ -112,6 +121,15 @@ not the 8 GB workstation. No account/model turns are used by this lane.
 Manual builds on the same branch queue behind the active run so it can finish
 and save its cache. GitHub retains one pending run; another manual dispatch can
 replace that pending run. Automatic push builds still supersede older push work.
+The full regression and optimized frontend lane has a three-hour build budget.
+
+For independent parallel builds, dispatch **Personal cmux updates** on the exact
+feature source with `native_only=true`, leaving both artifact inputs empty.
+It retains the compiled native archive and skips frontend waiting, packaging and
+promotion. After both producers succeed, dispatch again with their explicit
+`native_artifact_run` and `quiet_frontend_run` values. The usual source/provenance
+checks still apply; a waiting frontend cannot make the successful native-only
+run red.
 
 Select that run in **Personal cmux updates**, input `quiet_frontend_run`, on the
 same source branch. Native and Rust builds can run concurrently. Candidate
