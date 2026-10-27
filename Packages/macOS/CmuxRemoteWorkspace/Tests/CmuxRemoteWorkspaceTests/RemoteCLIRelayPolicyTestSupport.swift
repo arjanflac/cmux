@@ -46,7 +46,8 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
         return _requests
     }
 
-    init(responseBody: Data = Data("{\"ok\":true,\"result\":{}}\n".utf8)) throws {
+    init(responseBody: Data = Data("{\"ok\":true,\"result\":{}}\n".utf8),
+         acceptClient: @escaping @Sendable (Int32) -> Int32 = { Darwin.accept($0, nil, nil) }) throws {
         self.responseBody = responseBody
         path = NSTemporaryDirectory() + "cmux-relay-policy-test-\(UUID().uuidString.prefix(8)).sock"
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -80,7 +81,7 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
         listenFD = fd
         Thread.detachNewThread { [weak self] in
             while true {
-                let client = accept(fd, nil, nil)
+                let client = acceptClient(fd)
                 if client < 0 { return }
                 guard let self else {
                     Darwin.close(client)
