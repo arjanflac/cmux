@@ -114,7 +114,8 @@ def main():
         if patch_name in ("regression-tests.patch", "quiet-fullscreen.patch", "working-tip.patch", "orchestration.patch",
                           "resume-compat-tests.patch", "resume-compat.patch",
                           "tool-coverage-tests.patch", "tool-coverage.patch",
-                          "aggregate-tests.patch", "aggregate.patch"):
+                          "aggregate-tests.patch", "aggregate.patch",
+                          "workers-schema-tests.patch", "workers-schema.patch"):
             continue
         run(["git", "apply", "--check", str(HERE / patch_name)], source)
         run(["git", "apply", str(HERE / patch_name)], source)
@@ -123,6 +124,7 @@ def main():
     resume_compat_proof(source, logs, manifest)
     tool_coverage_proof(source, logs, manifest)
     aggregate_proof(source, logs, manifest)
+    workers_schema_proof(source, logs, manifest)
 
 
 def working_tip_proof(source, logs, manifest):
@@ -216,6 +218,23 @@ def aggregate_proof(source, logs, manifest):
              selector="cmux_tool_coverage_", expected_count=manifest["toolCoverageTestCount"],
              feature=feature, should_fail=False)
     print("PASS: stable quiet activity batches; prose/attention boundaries, live coalescing, details and stock controls retained")
+
+
+def workers_schema_proof(source, logs, manifest):
+    """Require real serialized tool-contract regressions after all sixteen prior patches."""
+    run(["git", "apply", "--check", str(HERE / "workers-schema-tests.patch")], source)
+    run(["git", "apply", str(HERE / "workers-schema-tests.patch")], source)
+    run(["git", "diff", "--check"], source)
+    arguments = dict(selector="cmux_workers_schema_", expected_count=manifest["workersSchemaTestCount"])
+    test(source, logs / "workers-schema-before.log", feature=True, should_fail=True, **arguments)
+    run(["git", "apply", "--check", str(HERE / "workers-schema.patch")], source)
+    run(["git", "apply", str(HERE / "workers-schema.patch")], source)
+    run(["git", "diff", "--check"], source)
+    test(source, logs / "workers-schema-after.log", feature=True, should_fail=False, **arguments)
+    test(source, logs / "workers-schema-stock.log", feature=False, should_fail=False, **arguments)
+    test(source, logs / "workers-schema-orchestration.log", selector="cmux_orchestration_",
+         expected_count=manifest["orchestrationTestCount"], feature=True, should_fail=False)
+    print("PASS: scoped workers discovery/lifecycle schema; prior actions, bridge and stock controls retained")
 
 
 if __name__ == "__main__":

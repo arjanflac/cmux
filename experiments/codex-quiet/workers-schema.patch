@@ -1,0 +1,27 @@
+diff --git a/codex-rs/tui/src/cmux_orchestration.rs b/codex-rs/tui/src/cmux_orchestration.rs
+index e2dc2a3..0a3e75d 100644
+--- a/codex-rs/tui/src/cmux_orchestration.rs
++++ b/codex-rs/tui/src/cmux_orchestration.rs
+@@ -63,9 +63,9 @@ pub(crate) fn augment(params:&mut ThreadStartParams,route:Option<Route>) {
+     tools.push(DynamicToolSpec::Namespace(DynamicToolNamespaceSpec {
+         name:NAMESPACE.into(), description:"Manage cmux coordinator workers and their results.".into(),
+         tools:vec![DynamicToolNamespaceTool::Function(DynamicToolFunctionSpec {
+-            name:"task".into(),description:"Start coordinator workers; send prompts; read tasks, turns or results; wait on operation_id; inspect/respond to interactions; inbox/ack events. schedule.create sets due_at and optional repeat_seconds/max_runs; list/read/pause/resume/cancel manage schedules. Legacy schedule uses body.schedule_action.".into(),
++            name:"task".into(),description:"Discover this conversation's workers with workers (cursor/limit/include_retired); start coordinator workers; send prompts; read tasks, turns or results; wait on operation_id; inspect/respond to interactions; inbox/ack events. schedule.create sets due_at and optional repeat_seconds/max_runs; list/read/pause/resume/cancel manage schedules. Legacy schedule uses body.schedule_action.".into(),
+             input_schema:json!({"type":"object","properties":{
+-                "action":{"type":"string","enum":["start","send","read","turns","result","wait","cancel","interactions","respond","inbox","ack","schedule.create","schedule.list","schedule.read","schedule.pause","schedule.resume","schedule.cancel","schedule"]},
++                "action":{"type":"string","enum":["workers","start","send","read","turns","result","wait","cancel","interactions","respond","inbox","ack","schedule.create","schedule.list","schedule.read","schedule.pause","schedule.resume","schedule.cancel","schedule"]},
+                 "body":{"type":"object","description":"Action parameters. Mutation request_id defaults to the provider call ID; set a stable UUID to reconcile the same operation across calls.","properties":{
+                     "task_id":{"type":"string","format":"uuid","description":"Task to inspect, send to, cancel or respond to."},
+                     "operation_id":{"type":"string","format":"uuid","description":"Turn receipt for result/wait."},
+@@ -73,6 +73,10 @@ pub(crate) fn augment(params:&mut ThreadStartParams,route:Option<Route>) {
+                     "provider":{"type":"string","enum":["codex","claude","opencode"]},
+                     "cwd":{"type":"string","description":"Absolute working directory; inherits from owner when omitted."},
+                     "model":{"type":"string"},"effort":{"type":"string"},
++                    "lifecycle":{"type":"string","enum":["persistent","oneShot"],"description":"Worker lifetime for start or a schedule that creates a worker. persistent keeps the conversation reusable; oneShot retires locally after its successful result is acknowledged."},
++                    "cursor":{"type":"string","format":"uuid","description":"workers page cursor returned as next_cursor; omit on the first page."},
++                    "limit":{"type":"integer","minimum":1,"maximum":50,"default":20},
++                    "include_retired":{"type":"boolean","default":false},
+                     "request_id":{"type":"string","format":"uuid","description":"Explicit stable mutation ID; reuse only for the same operation."},
+                     "due_at":{"type":"string","format":"date-time","description":"Schedule instant with UTC or explicit offset."},
+                     "time_zone":{"type":"string","description":"IANA time zone."},

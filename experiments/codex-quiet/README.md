@@ -64,6 +64,18 @@ original tools. [Coordination controls and limits](../../docs/agent-messages.md)
 include headless workers, exact-session follow-ups, passive receipts and finite
 schedules; they do not install global hooks or a scheduling daemon.
 
+The appended `workers-schema-tests.patch` / `workers-schema.patch` cohort makes
+`workers` discovery and `lifecycle: persistent|oneShot` visible to newly created
+cmux-owned chats. Discovery reads this conversation's scoped worker directory;
+`limit` defaults to 20 (maximum 50), `cursor` uses the returned `next_cursor`, and
+`include_retired` defaults to false. It does not submit input or select another
+owner. Use `send` with a discovered `task_id` to continue a reusable worker.
+The app provides bounded metadata, not provider session IDs, prompts or results.
+Three serialized-tool fixtures require executed pre-fix failure, patched and
+feature-off passes, followed by the existing bridge regressions. All sixteen
+earlier patches remain byte-identical. Existing resumed chats keep their
+original tool schema; this update does not replay or replace those conversations.
+
 ## Launch boundaries
 
 Plain interactive launch, `resume` and an explicit resume UUID are supported,

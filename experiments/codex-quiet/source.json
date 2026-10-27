@@ -20,7 +20,9 @@
     "tool-coverage-tests.patch",
     "tool-coverage.patch",
     "aggregate-tests.patch",
-    "aggregate.patch"
+    "aggregate.patch",
+    "workers-schema-tests.patch",
+    "workers-schema.patch"
   ],
   "focusTestCount": 4,
   "bindingTestCount": 5,
@@ -28,5 +30,6 @@
   "orchestrationTestCount": 23,
   "resumeCompatTestCount": 9,
   "toolCoverageTestCount": 21,
-  "aggregateTestCount": 13
+  "aggregateTestCount": 13,
+  "workersSchemaTestCount": 3
 }
