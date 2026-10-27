@@ -253,7 +253,7 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$QUIET_RUN" =~ ^[0-9]+$ ]]
-          for attempt in $(seq 1 360); do
+          for ((attempt=1; attempt<=360; attempt++)); do
             outcome=$(gh run view "$QUIET_RUN" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + ":" + .conclusion')
             if [[ "$outcome" == completed:success ]]; then exit 0; fi
             if [[ "$outcome" == completed:* ]]; then
