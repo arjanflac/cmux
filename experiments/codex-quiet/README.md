@@ -109,6 +109,10 @@ restore-compatibility regressions with feature-off controls. Regression failures
 failures, never compilation errors. Release compilation belongs on GitHub,
 not the 8 GB workstation. No account/model turns are used by this lane.
 
+Manual builds on the same branch queue behind the active run so it can finish
+and save its cache. GitHub retains one pending run; another manual dispatch can
+replace that pending run. Automatic push builds still supersede older push work.
+
 Select that run in **Personal cmux updates**, input `quiet_frontend_run`, on the
 same source branch. Native and Rust builds can run concurrently. Candidate
 packaging verifies the upstream pin, ordered patch hashes, binary checksum,
