@@ -17,6 +17,7 @@ public final class AgentTaskCoordinator {
     private var capacityReservations: [UUID: AgentTaskRequest.Provider] = [:]
     private var retiring: Set<UUID> = []
     private var finishingRetirements: Set<UUID> = []
+    private var scheduleAdmissions: [UUID: Set<UUID>] = [:]
     private var retirementPermit: (@MainActor @Sendable (UUID) async throws -> Bool)?
     private let present: Present
     private let reconnect: Present?
@@ -424,9 +425,18 @@ public final class AgentTaskCoordinator {
     /// - Throws: Retired/unavailable task, admission, authorization or storage errors.
     public func withScheduleAdmission<Result>(taskIDs: Set<UUID>,
         operation: @MainActor () async throws -> Result) async throws -> Result {
-        // Structural seam for the deterministic schedule/retirement race proof.
-        // The following repair activates its admission reservation.
-        try await operation()
+        guard !restoring, !taskIDs.isEmpty, taskIDs.count <= 2, scheduleAdmissions.count < 64,
+              !taskIDs.contains(where: isRetiredOrRetiring) else { throw TaskError.providerUnreconciled }
+        let admission = UUID()
+        // Each overlapping admission owns a separate reservation. Releasing one
+        // cannot release another pending schedule's references to the same task.
+        scheduleAdmissions[admission] = taskIDs
+        defer { scheduleAdmissions.removeValue(forKey: admission) }
+        for id in taskIDs {
+            guard let record = try await record(id), record.retirement == nil,
+                  !isRetiredOrRetiring(id) else { throw TaskError.providerUnreconciled }
+        }
+        return try await operation()
     }
 
     /// Retires an explicit one-shot worker after its exact successful result was consumed.
@@ -443,6 +453,7 @@ public final class AgentTaskCoordinator {
         guard event.phase == .completed, let acknowledgedAt = event.acknowledgedAt,
               let retirementPermit, !restoring, !starting.contains(event.taskID),
               !cancelling.contains(event.taskID), !presenting.contains(event.taskID),
+              !hasScheduleAdmission(event.taskID),
               retiring.insert(event.taskID).inserted else { return false }
         defer { retiring.remove(event.taskID) }
         guard var record = try await record(event.taskID), record.lifecycle == .oneShot,
@@ -452,7 +463,7 @@ public final class AgentTaskCoordinator {
         guard try await !hasUnretiredDescendants(record.id),
               try await retirementPermit(record.id) else { return false }
         guard records[record.id]?.latestOperationID == event.operationID,
-              records[record.id]?.phase == .completed else { return false }
+              records[record.id]?.phase == .completed, !hasScheduleAdmission(record.id) else { return false }
         if record.retirement == nil {
             record.retirement = AgentTaskRetirement(operationID: event.operationID, acknowledgedAt: acknowledgedAt)
             try await save(record)
@@ -478,9 +489,9 @@ public final class AgentTaskCoordinator {
         guard snapshot.phase == .completed, snapshot.latestOperationID == retirement.operationID,
               snapshot.presentation == .background, snapshot.surfaceID == nil,
               transitioning[id] == nil, !starting.contains(id), !cancelling.contains(id), !presenting.contains(id),
-              consumerOperations[id] == nil, let retirementPermit else { return false }
+              consumerOperations[id] == nil, !hasScheduleAdmission(id), let retirementPermit else { return false }
         guard try await !hasUnretiredDescendants(id),
-              try await retirementPermit(id) else { return false }
+              try await retirementPermit(id), !hasScheduleAdmission(id) else { return false }
         try await backend.releaseIdleResources(id: id)
         guard var record = records[id], record.retirement == snapshot.retirement,
               record.phase == .completed, record.latestOperationID == retirement.operationID else { return false }
@@ -506,6 +517,10 @@ public final class AgentTaskCoordinator {
             }
         }
         return false
+    }
+
+    private func hasScheduleAdmission(_ id: UUID) -> Bool {
+        scheduleAdmissions.values.contains { $0.contains(id) }
     }
 
     private func reserveCapacity(id: UUID, provider: AgentTaskRequest.Provider) throws {
@@ -688,7 +703,8 @@ public final class AgentTaskCoordinator {
             .sorted { $0.updatedAt > $1.updatedAt }
         for old in history.dropFirst(100) {
             if starting.contains(old.id) || presenting.contains(old.id) || transitioning[old.id] != nil
-                || retiring.contains(old.id) || finishingRetirements.contains(old.id) { continue }
+                || retiring.contains(old.id) || finishingRetirements.contains(old.id)
+                || hasScheduleAdmission(old.id) { continue }
             if old.retirement != nil && old.retirement?.retiredAt == nil { continue }
             if ancestors.contains(old.id) { records[old.id]?.result = nil }
             else { records.removeValue(forKey: old.id) }
