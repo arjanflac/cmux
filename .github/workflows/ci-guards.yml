@@ -379,6 +379,8 @@ jobs:
       - name: Test Computer Use drag regression harness
         if: ${{ matrix.group == 'preflight' }}
         run: python3 tests/test_cmux_cua_drag_cursor_harness.py
+      - name: Validate isolated workspace churn fixture cleanup
+        run: python3 tests/test_workspace_churn_fixture_cleanup.py
 
       - name: Validate Python test execution registry
         if: ${{ matrix.group == 'preflight' }}
