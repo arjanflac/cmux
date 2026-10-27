@@ -1,8 +1,10 @@
 """Verify native/frontend artifact pairings without compiling or running either app."""
 import importlib.util
+import os
 from pathlib import Path
 import subprocess
 import tempfile
+import textwrap
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,6 +117,75 @@ class FreshNativeFrontendTests(unittest.TestCase):
         native = self.commit()
         with self.assertRaisesRegex(ValueError, 'Invalid frontend build input'):
             bundle.validate_fresh_native_frontend(native, native, self.source)
+
+
+class NativeOnlyWorkflowTests(unittest.TestCase):
+    """Execute the real prepare script with network and Git mutations blocked."""
+
+    def prepare(self, *, native_only='true', event='workflow_dispatch',
+                source='feature/candidate', native_run='', quiet_run=''):
+        workflow = (ROOT / '.github/workflows/personal-update.yml').read_text()
+        prepare = workflow.split('\n  prepare:', 1)[1].split('\n  build:', 1)[0]
+        script = textwrap.dedent(prepare.split('        run: |\n', 1)[1])
+        with tempfile.TemporaryDirectory(prefix='cmux-native-only-') as temporary:
+            fixture = Path(temporary)
+            executables = fixture / 'bin'
+            executables.mkdir()
+            identity = '1' * 40
+            git = executables / 'git'
+            git.write_text('#!/bin/sh\nif [ "$*" = "rev-parse HEAD" ]; then\n'
+                           '  printf "%s\\n" "$GITHUB_SHA"; exit 0\nfi\n'
+                           'printf "git %s\\n" "$*" >> "$FIXTURE_CALLS"\nexit 99\n')
+            gh = executables / 'gh'
+            gh.write_text('#!/bin/sh\nprintf "gh %s\\n" "$*" >> "$FIXTURE_CALLS"\nexit 99\n')
+            git.chmod(0o700)
+            gh.chmod(0o700)
+            output, calls = fixture / 'output', fixture / 'calls'
+            environment = {
+                'PATH': str(executables) + os.pathsep + '/usr/bin:/bin',
+                'EVENT_NAME': event, 'SOURCE_REF': source,
+                'NATIVE_ONLY': native_only, 'NATIVE_ARTIFACT_RUN': native_run,
+                'QUIET_FRONTEND_RUN': quiet_run, 'GITHUB_SHA': identity,
+                'GITHUB_REPOSITORY': 'fixture/cmux', 'GITHUB_OUTPUT': str(output),
+                'FIXTURE_CALLS': str(calls),
+            }
+            result = subprocess.run(['/bin/bash', '-c', script], cwd=fixture,
+                                    env=environment, capture_output=True, text=True, timeout=3)
+            values = dict(line.split('=', 1) for line in output.read_text().splitlines()) if output.exists() else {}
+            return result, values, calls.read_text() if calls.exists() else ''
+
+    def test_native_only_retains_the_exact_feature_build_without_external_actions(self):
+        result, values, calls = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values, {'build': 'true', 'candidate': 'feature/candidate',
+                                  'sha': '1' * 40, 'release': 'custom-source'})
+        self.assertEqual(calls, '')
+
+    def test_native_only_cannot_enter_personal_or_a_nonmanual_trigger(self):
+        for event, source in [('workflow_dispatch', 'personal'),
+                              ('push', 'feature/candidate'), ('schedule', 'feature/candidate')]:
+            with self.subTest(event=event, source=source):
+                result, values, calls = self.prepare(event=event, source=source)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(values, {})
+                self.assertEqual(calls, '', 'Invalid native-only requests must stop before API or Git mutations')
+
+    def test_native_only_rejects_artifact_inputs_before_inspecting_or_mutating_anything(self):
+        for inputs in [dict(native_run='123'), dict(quiet_run='456'),
+                       dict(native_run='123', quiet_run='456')]:
+            with self.subTest(inputs=inputs):
+                result, values, calls = self.prepare(**inputs)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(values, {})
+                self.assertEqual(calls, '')
+
+    def test_normal_feature_build_preparation_is_unchanged(self):
+        result, values, calls = self.prepare(native_only='false')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(values['build'], 'true')
+        self.assertEqual(values['candidate'], 'feature/candidate')
+        self.assertEqual(values['sha'], '1' * 40)
+        self.assertEqual(calls, '')
 
 
 if __name__ == '__main__': unittest.main()
