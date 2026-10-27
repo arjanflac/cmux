@@ -648,6 +648,92 @@ public final class AgentTaskCoordinator {
         return result
     }
 
+    /// Discovers reusable worker identities through a bounded authorized metadata read.
+    /// - Parameters:
+    ///   - query: UUID pagination and retirement visibility.
+    ///   - authorize: Trusted composition's current grant, revalidated across repository awaits.
+    /// - Returns: Sanitized descendant metadata without provider requests or parent wake-ups.
+    /// - Throws: Invalid owner, changed authority or repository errors.
+    public func workers(_ query: AgentTaskWorkerDirectoryQuery,
+                        authorize: @MainActor () async throws -> AgentTaskWorkerDirectoryAccess) async throws -> AgentTaskWorkerDirectoryPage {
+        guard !restoring else { throw TaskError.busy }
+        let initial = try await authorize()
+        let candidates = descendantTaskIDs(of: initial.ownerTaskID)
+            .intersection(initial.allowedTaskIDs).subtracting([initial.ownerTaskID])
+        var metadata: [UUID: AgentTaskRecord] = [:]
+        if let owner = try await directoryRecord(initial.ownerTaskID) { metadata[owner.id] = owner }
+        for id in candidates.sorted(by: { $0.uuidString < $1.uuidString }) {
+            try Task.checkCancellation()
+            var current: UUID? = id
+            var visited: Set<UUID> = []
+            for _ in 0...4 {
+                guard let next = current, visited.insert(next).inserted else { break }
+                if metadata[next] == nil, let record = try await directoryRecord(next) { metadata[next] = record }
+                guard next != initial.ownerTaskID, let record = metadata[next] else { break }
+                current = record.parentTaskID
+            }
+        }
+        // No provider or repository await follows this current-authority check.
+        // Current canonical metadata wins over earlier disk reads; phases remain
+        // snapshots, so a reusable row still requires normal dispatch preflight.
+        let final = try await authorize()
+        guard !restoring, final.ownerTaskID == initial.ownerTaskID,
+              final.workspaceStableID == initial.workspaceStableID else {
+            throw AgentTaskWorkerDirectoryQuery.Failure.authorizationChanged
+        }
+        for id in Array(metadata.keys) {
+            if var current = records[id] { current.result = nil; metadata[id] = current }
+        }
+        guard let owner = metadata[final.ownerTaskID], owner.workspaceStableID == final.workspaceStableID else {
+            throw AgentTaskWorkerDirectoryQuery.Failure.ownerUnavailable
+        }
+        let eligible = candidates.intersection(final.allowedTaskIDs)
+            .intersection(descendantTaskIDs(of: final.ownerTaskID))
+            .filter { id in query.cursor.map { id.uuidString > $0.uuidString } ?? true }
+            .sorted { $0.uuidString < $1.uuidString }
+        var summaries: [AgentTaskWorkerSummary] = []
+        for id in eligible {
+            guard let record = metadata[id],
+                  let usableAncestry = directoryAncestry(id, owner: final.ownerTaskID,
+                    workspace: final.workspaceStableID, metadata: metadata) else { continue }
+            let retiring = isRetiredOrRetiring(id)
+            if !query.includeRetired && (record.retirement != nil || retiring) { continue }
+            let busy = starting.contains(id) || cancelling.contains(id) || presenting.contains(id) || transitioning[id] != nil
+            summaries.append(AgentTaskWorkerSummary(record, locallyBusy: busy, retiring: retiring, usableAncestry: usableAncestry))
+            if summaries.count > query.limit { break }
+        }
+        let hasMore = summaries.count > query.limit
+        let page = Array(summaries.prefix(query.limit))
+        return AgentTaskWorkerDirectoryPage(workers: page, nextCursor: hasMore ? page.last?.taskID : nil, hasMore: hasMore)
+    }
+
+    /// Reads metadata without hydrating result bodies into the recent coordinator cache.
+    private func directoryRecord(_ id: UUID) async throws -> AgentTaskRecord? {
+        if var current = records[id] { current.result = nil; return current }
+        guard var saved = try await repository.read(id), saved.id == id else { return nil }
+        if var current = records[id] { current.result = nil; return current }
+        saved.result = nil
+        if !saved.phase.isFinished { saved.phase = .disconnected }
+        return saved
+    }
+
+    /// Nil means invalid ancestry/workspace; false means a valid but unusable ancestor.
+    private func directoryAncestry(_ id: UUID, owner: UUID, workspace: UUID,
+                                   metadata: [UUID: AgentTaskRecord]) -> Bool? {
+        var next: UUID? = id
+        var visited: Set<UUID> = []
+        var usable = true
+        for _ in 0...4 {
+            guard let current = next, visited.insert(current).inserted,
+                  let record = metadata[current], record.workspaceStableID == workspace else { return nil }
+            if current != id && (record.retirement != nil || record.phase == .cancelled
+                || retiring.contains(current) || cancelling.contains(current)) { usable = false }
+            if current == owner { return usable }
+            next = record.parentTaskID
+        }
+        return nil
+    }
+
     /// Reads a recent or archived receipt without reconnecting to a provider.
     public func record(_ id: UUID) async throws -> AgentTaskRecord? {
         if let record = records[id], record.phase != .completed || record.result != nil { return record }
