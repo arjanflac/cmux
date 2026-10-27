@@ -223,9 +223,35 @@ jobs:
           path: /tmp/cmux-reload-workspace-icons.log
           retention-days: 7
 
+  frontend_ready:
+    needs: prepare
+    if: inputs.quiet_frontend_run != ''
+    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: 190
+    env:
+      GH_TOKEN: ${{ github.token }}
+      QUIET_RUN: ${{ inputs.quiet_frontend_run }}
+    steps:
+      - name: Wait for the explicitly selected frontend without occupying a Mac runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$QUIET_RUN" =~ ^[0-9]+$ ]]
+          for attempt in $(seq 1 360); do
+            outcome=$(gh run view "$QUIET_RUN" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + ":" + .conclusion')
+            if [[ "$outcome" == completed:success ]]; then exit 0; fi
+            if [[ "$outcome" == completed:* ]]; then
+              echo "::error::Quiet frontend run $QUIET_RUN finished: $outcome"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "::error::Selected frontend did not finish within the queue/build budget"
+          exit 1
+
   package:
-    needs: [prepare, build]
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.build.result == 'success' || needs.prepare.outputs.reuse_native == 'true') }}
+    needs: [prepare, build, frontend_ready]
+    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.build.result == 'success' || needs.prepare.outputs.reuse_native == 'true') && (needs.frontend_ready.result == 'success' || needs.frontend_ready.result == 'skipped') }}
     runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'macos-15' || vars.MACOS_RUNNER_26 || 'blacksmith-6vcpu-macos-26' }}
     timeout-minutes: 90
     env:
@@ -266,18 +292,9 @@ jobs:
             git fetch --no-tags --depth=1 origin "$QUIET_SOURCE_SHA"
             git restore --source="$QUIET_SOURCE_SHA" --worktree -- experiments/codex-quiet
           fi
-          # Native and Rust builds may run concurrently. Wait only for this
-          # explicit frontend run, without dispatching or replaying anything.
-          for attempt in $(seq 1 120); do
-            status=$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json status --jq .status)
-            if [[ "$status" == completed ]]; then
-              conclusion=$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json conclusion --jq .conclusion)
-              [[ "$conclusion" == success ]] || { echo "::error::Quiet frontend run $QUIET_RUN finished: $conclusion"; exit 1; }
-              break
-            fi
-            [[ "$attempt" != 120 ]] || { echo "::error::Quiet frontend did not finish within 60 minutes"; exit 1; }
-            sleep 30
-          done
+          # The Linux readiness job already observed success. Recheck before
+          # fetching immutable artifacts; never dispatch or retry a build here.
+          test "$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json conclusion --jq .conclusion)" = success
           gh run download "$QUIET_RUN" --repo "$QUIET_REPOSITORY" \
             --name "quiet-codex-ARM64-$QUIET_RUN" --dir "$RUNNER_TEMP/cmux-quiet-frontend"
       - name: Package candidate without official auto-updates
