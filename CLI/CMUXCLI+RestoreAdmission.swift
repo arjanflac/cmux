@@ -8,6 +8,7 @@ extension CMUXCLI {
         let kind: String
         let sessionID: String
         let claimID: String
+        var managedCodexFrontend = false
     }
 
     /// Claims the current managed session at the app's fresh process-scan boundary.
@@ -16,7 +17,8 @@ extension CMUXCLI {
         recordSessionID: String?,
         restorePayload: [String: Any],
         client: SocketClient,
-        effectiveCodexHome: String? = nil
+        effectiveCodexHome: String? = nil,
+        managedFrontend: CodexManagedDaemonAttachPlan? = nil
     ) throws -> RestoreLaunchAdmissionClaim? {
         guard record.mode == AgentRestoreRequestMode.resumeAgent.rawValue ||
             record.mode == AgentRestoreRequestMode.relaunchAgent.rawValue else {
@@ -63,6 +65,7 @@ extension CMUXCLI {
             "record_session_id": recordSessionID ?? sessionID
         ]
         if let effectiveCodexHome { params["codex_home"] = effectiveCodexHome }
+        if managedFrontend != nil { params["managed_codex_frontend"] = true }
         var response: [String: Any]
         repeat {
             response = try RestoreAdmissionRetryPolicy.response {
@@ -91,13 +94,19 @@ extension CMUXCLI {
                 )
             )
         }
-        return RestoreLaunchAdmissionClaim(
+        let claim = RestoreLaunchAdmissionClaim(
             workspaceID: (params["workspace_id"] as? String) ?? workspaceID,
             surfaceID: surfaceID,
             kind: record.kind,
             sessionID: sessionID,
-            claimID: claimID
+            claimID: claimID,
+            managedCodexFrontend: managedFrontend != nil
         )
+        guard managedFrontend == nil || response["managed_codex_frontend"] as? Bool == true else {
+            releaseRestoreLaunchAdmission(claim, client: client)
+            throw managedCodexAttachUnavailable()
+        }
+        return claim
     }
 
     /// Bounded retry for a retryable `busy` admission answer.

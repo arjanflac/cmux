@@ -1,3 +1,5 @@
+import Darwin
+import Foundation
 import Testing
 @testable import CMUXAgentLaunch
 
@@ -35,5 +37,79 @@ import Testing
             #expect(plan(["/stock/codex"] + tail) == nil)
         }
         #expect(plan(["/stock/codex", "--model", "gpt-6.1-sol", "resume", session, "-c", "model_reasoning_effort=\"high\""]) != nil)
+    }
+
+    @Test("Attach keeps saved permissions and never grants stock-writer availability")
+    func preservesExplicitPermissions() throws {
+        let arguments = ["/stock/codex", "--sandbox", "read-only", "resume", session, "--ask-for-approval", "on-request"]
+        let frontend = try #require(plan(arguments))
+        #expect(Array(frontend.arguments.dropFirst()) == Array(arguments.dropFirst()))
+        #expect(!frontend.arguments.contains("--yolo"))
+        #expect(AgentRestoreEvidencePolicy().decision(hasLiveOwner: false, indexComplete: false,
+            writerLock: .unavailable) == .refreshEvidence)
+    }
+
+    @Test("A different stored checkpoint cannot acquire frontend proof")
+    func checkpointMismatchDoesNotProbe() {
+        var probes = 0
+        let result = CodexManagedDaemonAttachPlan.verified(invocation: AgentRestoreInvocation(
+            arguments: ["/stock/codex", "resume", session], workingDirectory: "/project",
+            environment: [:], codexResumeSessionID: "01a176fc-d044-7e62-92bb-de6c5c50c0d2"),
+            sessionID: session, frontendExecutable: "/cmux/bin/cmux-codex-quiet",
+            stockExecutable: "/stock/codex", workingDirectory: "/project", fallbackHome: "/home",
+            verify: { _ in probes += 1; return true })
+        #expect(result == nil)
+        #expect(probes == 0)
+    }
+
+    @Test("Stock resolution skips executable scripts and nonregular paths without executing them")
+    func resolverRejectsWrappersAndPipes() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-stock-resolver-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let script = root.appendingPathComponent("wrapper")
+        try Data("#!/bin/sh\nexit 99\n".utf8).write(to: script)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        let fifo = root.appendingPathComponent("pipe")
+        try #require(mkfifo(fifo.path, 0o700) == 0)
+        let stock = root.appendingPathComponent("codex")
+        try Data([0xcf, 0xfa, 0xed, 0xfe]).write(to: stock)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stock.path)
+        for custom in [fifo.path, script.path] {
+            let invocation = AgentRestoreInvocation(arguments: [script.path, "resume", session],
+                workingDirectory: root.path, environment: ["CMUX_CUSTOM_CODEX_PATH": custom, "PATH": root.path],
+                codexResumeSessionID: session)
+            #expect(CodexManagedDaemonAttachProbe().stockExecutable(for: invocation, home: root.path) == stock.path)
+        }
+    }
+
+    @Test("An owned native probe that ignores TERM is killed and returns within the bound")
+    func uncooperativeProbeIsBounded() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-probe-timeout-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let pidFile = root.appendingPathComponent("child.pid")
+        let termFile = root.appendingPathComponent("term.receipt")
+        let script = """
+        $SIG{TERM}=sub { open(my $f,'>',$ARGV[1]) or die; print $f 'TERM'; close($f); };
+        open(my $p,'>',$ARGV[0]) or die; print $p $$; close($p);
+        while (1) { select(undef,undef,undef,0.05); }
+        """
+        let start = ContinuousClock.now
+        #expect(!CodexManagedDaemonAttachProbe().run("/usr/bin/perl",
+            arguments: ["-e", script, pidFile.path, termFile.path], environment: [:], cwd: root.path,
+            timeout: 0.3, terminationGrace: 0.1))
+        #expect(start.duration(to: .now) < .seconds(2))
+        #expect(try String(contentsOf: termFile, encoding: .utf8) == "TERM")
+        let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
+        #expect(kill(pid, 0) != 0 && errno == ESRCH, "Only the spawned probe must have exited and been reaped")
+    }
+
+    @Test("A normally exiting native probe completes before either termination deadline")
+    func normalProbeExitsWithoutWaitingForDeadline() {
+        let start = ContinuousClock.now
+        #expect(CodexManagedDaemonAttachProbe().run("/usr/bin/perl", arguments: ["-e", "print 'probe-ok'"],
+            environment: [:], cwd: "/", expectedOutput: "probe-ok", timeout: 3, terminationGrace: 0.1))
+        #expect(start.duration(to: .now) < .seconds(2))
     }
 }

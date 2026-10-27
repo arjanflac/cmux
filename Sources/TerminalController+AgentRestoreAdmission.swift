@@ -1,6 +1,7 @@
 import CMUXAgentLaunch
 import CmuxFoundation
 import CmuxControlSocket
+import CmuxSettings
 import Foundation
 
 /// Outcome of the single pre-exec admission boundary for managed agent restores.
@@ -60,6 +61,25 @@ extension TerminalController {
                 startedAt: admissionStart
             )
         }
+
+        let managedFrontend: CodexManagedDaemonAttachPlan?
+        if inputs.managedCodexFrontend {
+            let enabled = try await v2MainAsync {
+                UserDefaultsSettingsClient(defaults: .standard).value(for: SettingCatalog().terminal.codexQuietFrontend)
+            }
+            managedFrontend = Bundle.main.resourceURL.flatMap { resources in
+                AgentRestoreCodexEvidence().managedFrontend(record: record, sessionID: inputs.sessionID,
+                    effectiveHome: inputs.codexHome,
+                    frontendExecutable: resources.appendingPathComponent("bin/cmux-codex-quiet").path,
+                    enabled: enabled)
+            }
+            guard managedFrontend != nil else {
+                return Self.v2Encoder.error(id: request.id, code: "unavailable", message: String(
+                    localized: "cli.restore.error.admissionIdentityMissing",
+                    defaultValue: "restore: this session's live ownership could not be verified. Run 'cmux restore --surface' again."
+                ))
+            }
+        } else { managedFrontend = nil }
 
         var writer = AgentRestoreCodexEvidence().inspect(
             record: record, sessionID: inputs.sessionID, effectiveHome: inputs.codexHome
@@ -124,7 +144,8 @@ extension TerminalController {
         let evidenceDecision = AgentRestoreEvidencePolicy().decision(
             hasLiveOwner: liveOwner != nil,
             indexComplete: indexComplete,
-            writerLock: writer?.state
+            writerLock: writer?.state,
+            managedFrontend: managedFrontend
         )
         let decision = try await v2MainAsync { () -> AgentRestoreAdmissionDecision in
             guard self.controlRemoteRelayDispatchError(method: request.method, params: request.params) == nil,
@@ -271,7 +292,8 @@ extension TerminalController {
             recordSessionID: string("record_session_id") ?? sessionID,
             codexHome: params["codex_home"].flatMap { if case .string(let home) = $0 { return home }; return nil },
             waitForChange: boolean("wait_for_change", in: params),
-            launchLeasePending: boolean("launch_lease_pending", in: params)
+            launchLeasePending: boolean("launch_lease_pending", in: params),
+            managedCodexFrontend: boolean("managed_codex_frontend", in: params)
         )
     }
 
@@ -343,6 +365,7 @@ extension TerminalController {
                 .ok(.object([
                     "admitted": .bool(true),
                     "claim_id": .string(claim.id.uuidString.lowercased()),
+                    "managed_codex_frontend": .bool(inputs.managedCodexFrontend),
                 ]))
             )
         case .liveOwner(let owner):

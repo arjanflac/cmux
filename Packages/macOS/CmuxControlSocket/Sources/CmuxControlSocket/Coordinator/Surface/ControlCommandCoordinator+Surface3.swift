@@ -206,6 +206,7 @@ extension ControlCommandCoordinator {
                 "surface_ref": ref(.surface, snapshot.surfaceID),
                 "cleared": .bool(snapshot.cleared),
                 "agent_restore_admission_supported": .bool(true),
+                "managed_codex_attach_supported": .bool(true),
                 "resume_binding": surfaceResumeBindingPayload(snapshot.binding),
                 "restore_record": surfaceRestoreRecordPayload(snapshot.restoreRecord),
             ]

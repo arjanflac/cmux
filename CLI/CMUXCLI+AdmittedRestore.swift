@@ -92,6 +92,21 @@ extension CMUXCLI {
     ) throws {
         let invocation = execution.invocation
         let workingDirectory = effectiveWorkingDirectory ?? FileManager.default.currentDirectoryPath
+        let managedFrontend: CodexManagedDaemonAttachPlan?
+        if let invocation, record.kind == "codex", record.mode == AgentRestoreRequestMode.resumeAgent.rawValue,
+           invocation.environment["CMUX_CODEX_QUIET_FRONTEND"] == "1" {
+            guard payload["managed_codex_attach_supported"] as? Bool == true else {
+                throw managedCodexAttachUnavailable()
+            }
+            let probe = CodexManagedDaemonAttachProbe()
+            guard let cli = resolvedExecutableURL(), let session = record.checkpointID,
+                  let stock = probe.stockExecutable(for: invocation, home: NSHomeDirectory()),
+                  let plan = CodexManagedDaemonAttachPlan.verified(invocation: invocation, sessionID: session,
+                    frontendExecutable: cli.deletingLastPathComponent().appendingPathComponent("cmux-codex-quiet").path,
+                    stockExecutable: stock, workingDirectory: workingDirectory, fallbackHome: NSHomeDirectory(),
+                    verify: probe.verify) else { throw managedCodexAttachUnavailable() }
+            managedFrontend = plan
+        } else { managedFrontend = nil }
         let launchLease = try invocation.flatMap {
             try acquireRestoreLaunchLease(
                 record: record, invocation: $0, restorePayload: payload, client: client,
@@ -108,7 +123,7 @@ extension CMUXCLI {
         }
         let claim = try requireRestoreLaunchAdmission(
             record: record, recordSessionID: recordSessionID, restorePayload: payload,
-            client: client, effectiveCodexHome: codexHome
+            client: client, effectiveCodexHome: codexHome, managedFrontend: managedFrontend
         )
         do {
             for preflight in invocation?.preflightInvocations ?? [] {
@@ -133,7 +148,8 @@ extension CMUXCLI {
             case .invocation(let invocation):
                 client.close()
                 reportRestoreNotices(invocation.notices)
-                try execRestoreInvocation(invocation, appliedWorkingDirectory: effectiveWorkingDirectory, admittedScope: claim)
+                try execRestoreInvocation(invocation, appliedWorkingDirectory: effectiveWorkingDirectory,
+                    admittedScope: claim, managedFrontend: managedFrontend)
             case .legacy(let command, let environment):
                 try execLegacyRestoreRecord(command, record: record, environment: environment, client: client)
             }
@@ -141,5 +157,12 @@ extension CMUXCLI {
             releaseRestoreLaunchAdmission(claim, client: client)
             throw error
         }
+    }
+
+    func managedCodexAttachUnavailable() -> CLIError {
+        loggedRestoreError(stage: "managed-frontend.unavailable", message: String(
+            localized: "cli.restore.error.admissionIdentityMissing",
+            defaultValue: "restore: this session's live ownership could not be verified. Run 'cmux restore --surface' again."
+        ))
     }
 }
