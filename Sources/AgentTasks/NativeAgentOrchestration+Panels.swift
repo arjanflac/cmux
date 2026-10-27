@@ -5,6 +5,7 @@ import Foundation
 extension NativeAgentOrchestration {
     /// The broker checks live process generation, executable and current selected chat.
     func verifyPanel(_ panel: NativeAgentTaskPanel) -> Bool {
+        guard runtime.coordinator.records[panel.ownerTaskID]?.retirement == nil else { return false }
         guard let workspace = AppDelegate.shared?.workspaceFor(tabId: panel.workspaceID), !workspace.isRemoteWorkspace,
               let terminal = workspace.terminalPanel(for: panel.surfaceID),
               terminal.surface.foregroundProcessID() == Int(panel.process.pid),
@@ -37,10 +38,11 @@ extension NativeAgentOrchestration {
         }
         let ownerID = existing?.id ?? identity("cmux-enrolled:codex:" + workspace.stableId.uuidString + ":" + session)
         let generation = "task:" + ownerID.uuidString + ":" + authority.epoch.uuidString
-        var registration = NativeAgentTaskPanel(id: identity(surfaceID.uuidString + ":" + invocation),
+        var registration = NativeAgentTaskPanel(id: identity(surfaceID.uuidString + ":" + invocation + ":" + session),
             workspaceID: workspaceID, surfaceID: surfaceID, ownerTaskID: ownerID, sessionID: session,
             process: process, invocationID: invocation, generation: generation, paths: nil, renewedAt: .distantPast)
         guard verifyPanel(registration) else { throw CocoaError(.fileReadNoPermission) }
+        if let response = try existingPanelResponse(for: registration) { return response }
         if existing == nil {
             let binding = workspace.surfaceResumeBindingsByPanelId[surfaceID]
             let cwd = binding?.cwd ?? workspace.currentDirectory
@@ -55,17 +57,35 @@ extension NativeAgentOrchestration {
             "owner_task_id": ownerID.uuidString, "session_id": session, "binding_generation": generation,
             "token": capability.token])
         let snapshot = try await snapshotData(registration)
-        let paths = try await panelsStore.put(registration.id, scope: scopeData, snapshot: snapshot)
+        let paths = try await panelsStore.put(registration.storageID, scope: scopeData, snapshot: snapshot)
+        guard verifyPanel(registration) else {
+            try? await panelsStore.remove(registration.storageID)
+            throw CocoaError(.fileReadNoPermission)
+        }
+        if let response = try existingPanelResponse(for: registration) {
+            try? await panelsStore.remove(registration.storageID)
+            return response
+        }
         registration.paths = (paths.snapshot, paths.scope)
         registration.renewedAt = Date()
-        panels[registration.id] = registration
+        let previous = panels.updateValue(registration, forKey: registration.id)
+        if let previous { try? await panelsStore.remove(previous.storageID) }
         await armTimer()
+        return try data(["snapshot_path": paths.snapshot.path, "scope_file": paths.scope.path])
+    }
+
+    /// A retry reuses the first verified registration rather than retiring files
+    /// already returned to another client of the same selected conversation.
+    private func existingPanelResponse(for candidate: NativeAgentTaskPanel) throws -> Data? {
+        guard let existing = panels[candidate.id], existing.process == candidate.process,
+              existing.sessionID == candidate.sessionID, existing.invocationID == candidate.invocationID,
+              verifyPanel(existing), let paths = existing.paths else { return nil }
         return try data(["snapshot_path": paths.snapshot.path, "scope_file": paths.scope.path])
     }
 
     func issueScope(ownerID: UUID, generation: String, depth: Int = 0) async throws -> AgentTaskScopeGrant {
         guard depth <= 4 else { throw CocoaError(.fileReadNoPermission) }
-        guard let owner = try await runtime.coordinator.record(ownerID), let session = owner.sessionID,
+        guard let owner = try await runtime.coordinator.record(ownerID), owner.retirement == nil, let session = owner.sessionID,
               let workspace = owner.workspaceStableID else { throw CocoaError(.fileReadNoPermission) }
         // Legacy completed fixtures are not silently adopted into a new control lineage.
         let targets = runtime.coordinator.childTaskIDs(of: ownerID)
@@ -83,7 +103,8 @@ extension NativeAgentOrchestration {
     }
 
     func snapshotData(_ panel: NativeAgentTaskPanel) async throws -> Data {
-        let children = runtime.coordinator.records.values.filter { $0.parentTaskID == panel.ownerTaskID }
+        let descendants = runtime.coordinator.descendantTaskIDs(of: panel.ownerTaskID)
+        let children = runtime.coordinator.records.values.filter { descendants.contains($0.id) && !$0.isRetired }
         let unread = try await journal.unreadInboxCount(ownerTaskID: panel.ownerTaskID)
         let now = Date().timeIntervalSince1970
         return try data(["version": 1, "session_id": panel.sessionID, "frontend_pid": Int(panel.process.pid),
@@ -95,25 +116,47 @@ extension NativeAgentOrchestration {
     }
 
     func refreshPanels() async throws {
-        for id in Array(panels.keys) {
-            guard var panel = panels[id] else { continue }
-            guard verifyPanel(panel) else {
-                panels.removeValue(forKey: id)
-                try await panelsStore.remove(id)
-                continue
+        for panel in Array(panels.values) {
+            do {
+                try await refreshPanel(panel)
+            } catch let error as AgentTaskJournalError {
+                // Durable inbox failure still closes admission. A disposable frontend
+                // credential or status-file failure must not stop other conversations.
+                throw error
+            } catch {
+                if currentRegistration(panel) { panels.removeValue(forKey: panel.id) }
+                try? await panelsStore.remove(panel.storageID)
             }
-            if panel.renewedAt.timeIntervalSinceNow < -20 * 60 {
-                let capability = try await issueScope(ownerID: panel.ownerTaskID, generation: panel.generation)
-                let scope = try data(["version": 1, "registration_id": panel.id.uuidString,
-                    "owner_task_id": panel.ownerTaskID.uuidString, "session_id": panel.sessionID,
-                    "binding_generation": panel.generation, "token": capability.token])
-                let snapshot = try await snapshotData(panel)
-                _ = try await panelsStore.put(id, scope: scope, snapshot: snapshot)
-                panel.renewedAt = Date(); panels[id] = panel
-            } else {
-                let snapshot = try await snapshotData(panel)
-                try await panelsStore.update(id, snapshot: snapshot)
-            }
+        }
+    }
+
+    private func currentRegistration(_ panel: NativeAgentTaskPanel) -> Bool {
+        panels[panel.id]?.storageID == panel.storageID
+    }
+
+    private func refreshPanel(_ original: NativeAgentTaskPanel) async throws {
+        var panel = original
+        guard currentRegistration(panel) else { return }
+        guard verifyPanel(panel) else {
+            panels.removeValue(forKey: panel.id)
+            try await panelsStore.remove(panel.storageID)
+            return
+        }
+        if panel.renewedAt.timeIntervalSinceNow < -20 * 60 {
+            let capability = try await issueScope(ownerID: panel.ownerTaskID, generation: panel.generation)
+            guard currentRegistration(panel), verifyPanel(panel) else { return }
+            let scope = try data(["version": 1, "registration_id": panel.id.uuidString,
+                "owner_task_id": panel.ownerTaskID.uuidString, "session_id": panel.sessionID,
+                "binding_generation": panel.generation, "token": capability.token])
+            let snapshot = try await snapshotData(panel)
+            guard currentRegistration(panel), verifyPanel(panel) else { return }
+            _ = try await panelsStore.put(panel.storageID, scope: scope, snapshot: snapshot)
+            guard currentRegistration(panel), verifyPanel(panel) else { return }
+            panel.renewedAt = Date(); panels[panel.id] = panel
+        } else {
+            let snapshot = try await snapshotData(panel)
+            guard currentRegistration(panel), verifyPanel(panel) else { return }
+            try await panelsStore.update(panel.storageID, snapshot: snapshot)
         }
     }
 
