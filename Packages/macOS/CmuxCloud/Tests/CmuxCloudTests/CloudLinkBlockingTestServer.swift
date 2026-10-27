@@ -13,7 +13,7 @@ final class CloudLinkBlockingTestServer: @unchecked Sendable {
     private let finished = DispatchGroup()
     private let completion = CloudLinkFirstValue<Bool>()
 
-    init(operation: @escaping @Sendable (CloudLinkBlockingTestServer) -> Void) {
+    init(ownedListener: Int32? = nil, operation: @escaping @Sendable (CloudLinkBlockingTestServer) -> Void) {
         finished.enter()
         let thread = Thread { [self] in
             operation(self)
@@ -30,11 +30,11 @@ final class CloudLinkBlockingTestServer: @unchecked Sendable {
         return cancelled
     }
 
-    func cancel() {
+    func cancel(joinTimeout: DispatchTimeInterval = .seconds(1)) {
         lock.lock()
         cancelled = true
         lock.unlock()
-        if finished.wait(timeout: .now() + 1) != .success {
+        if finished.wait(timeout: .now() + joinTimeout) != .success {
             Issue.record("The owned socket fixture did not stop before descriptor cleanup")
         }
     }
