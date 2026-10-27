@@ -81,7 +81,9 @@ cmux task schedule resume <schedule-id> --owner <task-id>
 cmux task schedule cancel <schedule-id> --owner <task-id>
 ```
 
-Dispatch runs **while cmux is open**. Missed wakes are held by default; explicit
+Dispatch requires **Background Agent Coordination** to remain enabled and runs
+**while cmux is open**. This also applies to schedules created through the local
+operator CLI. Missed wakes are held by default; explicit
 `--misfire skip|coalesceOne` changes that policy. Pausing or cancelling future work
 does not imply a running provider turn was interrupted. A private SQLite journal
 commits dispatch intent before provider I/O. Uncertain acceptance reserves the
