@@ -114,4 +114,11 @@ import Testing
             environment: [:], cwd: "/", expectedOutput: "probe-ok", timeout: 3, terminationGrace: 0.1))
         #expect(start.duration(to: .now) < .seconds(2))
     }
+
+    @Test("A timed-out probe cannot succeed by exiting zero in its TERM handler")
+    func timedOutProbeFailsEvenWhenTerminationExitsZero() {
+        #expect(!CodexManagedDaemonAttachProbe().run("/usr/bin/perl",
+            arguments: ["-e", "$SIG{TERM}=sub { exit 0 }; while (1) { select(undef,undef,undef,0.05); }"],
+            environment: [:], cwd: "/", timeout: 0.3, terminationGrace: 0.1))
+    }
 }
