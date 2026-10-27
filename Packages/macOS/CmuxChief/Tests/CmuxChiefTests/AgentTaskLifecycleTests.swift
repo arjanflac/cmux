@@ -254,5 +254,110 @@ struct AgentTaskLifecycleTests {
         #expect(await backend.released.isEmpty)
     }
 
+    @Test func scheduleAdmissionWinsAndPreventsRetirementBeforeItsJournalCommit() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-retirement-schedule-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = try AgentTaskJournal(databaseURL: directory.appendingPathComponent("tasks.sqlite"))
+        let backend = TurnFixtureBackend(), tasks = TurnFixtureTaskRepository(), turns = AgentTaskMemoryTurnRepository(), gate = TurnFixtureGate()
+        let worker = try await savedWorker(tasks: tasks, turns: turns)
+        let parentID = try #require(worker.parentTaskID)
+        var parent = AgentTaskRecord(id: parentID, request: request(), now: Date())
+        parent.phase = .completed; parent.turnCount = 0
+        await tasks.save(parent)
+        let owner = coordinator(backend, tasks: tasks, turns: turns)
+        owner.setRetirementPermit { try await !journal.preventsRetirement(of: $0) }
+        try await owner.restore()
+        let scheduler = try AgentTaskScheduler(journal: journal, authorize: { _ in await gate.hold() },
+            dispatch: { _, _, _ in throw CocoaError(.featureUnsupported) })
+        let request = AgentTaskScheduleRequest(ownerTaskID: parentID, target: .existingTask(worker.id), prompt: "Future work", dueAt: Date().addingTimeInterval(60))
+        let create = Task { try await owner.withScheduleAdmission(taskIDs: [parentID, worker.id]) {
+            try await scheduler.create(request, callerID: UUID())
+        } }
+        await gate.waitUntilEntered()
+        // Authorization is in flight and the journal is still empty. A journal-only
+        // retirement check used to miss this admitted future reference entirely.
+        #expect(try await journal.schedules(ownerTaskID: parentID).isEmpty)
+        #expect(try await !owner.retireAcknowledgedWorker(acknowledgement(worker)))
+        #expect(try await owner.record(worker.id)?.retirement == nil)
+        await gate.open()
+        let schedule = try await create.value
+        #expect(try await journal.schedules(ownerTaskID: parentID).map(\.id) == [schedule.id])
+        #expect(try await !owner.retireAcknowledgedWorker(acknowledgement(worker)))
+        #expect(await backend.released.isEmpty)
+        await journal.close()
+    }
+
+    @Test func retirementWinsAndRejectsConcurrentScheduleBeforeAnyJournalCommit() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-retirement-schedule-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = try AgentTaskJournal(databaseURL: directory.appendingPathComponent("tasks.sqlite"))
+        let backend = TurnFixtureBackend(), tasks = TurnFixtureTaskRepository(), turns = AgentTaskMemoryTurnRepository(), gate = TurnFixtureGate()
+        let worker = try await savedWorker(tasks: tasks, turns: turns)
+        let parentID = try #require(worker.parentTaskID)
+        var parent = AgentTaskRecord(id: parentID, request: request(), now: Date())
+        parent.phase = .completed; parent.turnCount = 0
+        await tasks.save(parent)
+        let owner = coordinator(backend, tasks: tasks, turns: turns)
+        owner.setRetirementPermit { try await !journal.preventsRetirement(of: $0) }
+        try await owner.restore()
+        let scheduler = try AgentTaskScheduler(journal: journal, authorize: { _ in },
+            dispatch: { _, _, _ in throw CocoaError(.featureUnsupported) })
+        let request = AgentTaskScheduleRequest(ownerTaskID: parentID, target: .existingTask(worker.id), prompt: "Future work", dueAt: Date().addingTimeInterval(60))
+        await backend.holdRelease(gate)
+        let retirement = Task { try await owner.retireAcknowledgedWorker(acknowledgement(worker)) }
+        await gate.waitUntilEntered()
+        await #expect(throws: (any Error).self) { try await owner.withScheduleAdmission(taskIDs: [parentID, worker.id]) {
+            try await scheduler.create(request, callerID: UUID())
+        } }
+        #expect(try await journal.schedules(ownerTaskID: parentID).isEmpty)
+        await gate.open()
+        #expect(try await retirement.value)
+        #expect(try await owner.record(worker.id)?.isRetired == true)
+        #expect(try await journal.schedules(ownerTaskID: parentID).isEmpty)
+        await journal.close()
+    }
+
+    @Test func overlappingFailedScheduleAdmissionsReleaseOnlyTheirOwnReservations() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-retirement-schedule-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let journal = try AgentTaskJournal(databaseURL: directory.appendingPathComponent("tasks.sqlite"))
+        let backend = TurnFixtureBackend(), tasks = TurnFixtureTaskRepository(), turns = AgentTaskMemoryTurnRepository()
+        let firstGate = TurnFixtureGate(), secondGate = TurnFixtureGate()
+        let worker = try await savedWorker(tasks: tasks, turns: turns)
+        let parentID = try #require(worker.parentTaskID)
+        var parent = AgentTaskRecord(id: parentID, request: request(), now: Date())
+        parent.phase = .completed; parent.turnCount = 0
+        await tasks.save(parent)
+        let owner = coordinator(backend, tasks: tasks, turns: turns)
+        owner.setRetirementPermit { try await !journal.preventsRetirement(of: $0) }
+        try await owner.restore()
+        let firstScheduler = try AgentTaskScheduler(journal: journal,
+            authorize: { _ in await firstGate.hold(); throw CocoaError(.fileReadNoPermission) },
+            dispatch: { _, _, _ in throw CocoaError(.featureUnsupported) })
+        let secondScheduler = try AgentTaskScheduler(journal: journal,
+            authorize: { _ in await secondGate.hold(); throw CocoaError(.fileReadNoPermission) },
+            dispatch: { _, _, _ in throw CocoaError(.featureUnsupported) })
+        let request = AgentTaskScheduleRequest(ownerTaskID: parentID, target: .existingTask(worker.id), prompt: "Future work", dueAt: Date().addingTimeInterval(60))
+        let first = Task { try await owner.withScheduleAdmission(taskIDs: [parentID, worker.id]) {
+            try await firstScheduler.create(request, callerID: UUID())
+        } }
+        await firstGate.waitUntilEntered()
+        let second = Task { try await owner.withScheduleAdmission(taskIDs: [parentID, worker.id]) {
+            try await secondScheduler.create(request, callerID: UUID())
+        } }
+        await secondGate.waitUntilEntered()
+        await firstGate.open()
+        await #expect(throws: (any Error).self) { try await first.value }
+        // The other authorization still owns both references after the first
+        // failed admission releases its distinct reservation.
+        #expect(try await !owner.retireAcknowledgedWorker(acknowledgement(worker)))
+        #expect(try await owner.record(worker.id)?.retirement == nil)
+        await secondGate.open()
+        await #expect(throws: (any Error).self) { try await second.value }
+        #expect(try await journal.schedules(ownerTaskID: parentID).isEmpty)
+        #expect(try await owner.retireAcknowledgedWorker(acknowledgement(worker)))
+        #expect(await backend.released == [worker.id])
+        await journal.close()
+    }
 
 }
