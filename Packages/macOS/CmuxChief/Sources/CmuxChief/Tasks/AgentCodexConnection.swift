@@ -185,7 +185,10 @@ actor AgentCodexConnection: AgentCodexTransport {
             if writer == nil {
                 let token = generation
                 let source = DispatchSource.makeWriteSource(fileDescriptor: fd, queue: .global(qos: .utility))
-                source.setEventHandler { [weak self] in Task { await self?.flushReady(generation: token) } }
+                source.setEventHandler { [weak self] in
+                    guard let connection = self else { return }
+                    Task { await connection.flushReady(generation: token) }
+                }
                 writer = source; source.resume()
             }
             return
