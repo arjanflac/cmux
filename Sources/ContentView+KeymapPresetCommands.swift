@@ -17,7 +17,7 @@ extension ContentView {
                     commandId: Self.keymapPresetCommandID(preset),
                     title: { _ in String.localizedStringWithFormat(format, preset.displayName) },
                     subtitle: { _ in subtitle },
-                    keywords: ["keymap", "base", "keybindings", "shortcuts", "preset", "iterm", "iterm2", "terminal", "tmux", "default"]
+                    keywords: ["keymap", "base", "keybindings", "shortcuts", "preset", "session", "sessions", "conversation", "iterm", "iterm2", "terminal", "tmux", "default"]
                 )
             )
         }

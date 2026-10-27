@@ -50,20 +50,33 @@ enum CmuxExtensionSidebarSelection {
     /// suffix after the prefix is the sidebar's file base name.
     static let customSidebarProviderPrefix = "cmux.sidebar.custom."
 
-    /// Synchronous read of the Conversations sidebar gate: the local beta
-    /// opt-in and the remote release flag must both be on.
+    /// Synchronous read of the Conversations sidebar gate. Personal builds
+    /// use the explicit local opt-in; upstream builds also require rollout.
     static var conversationSidebarEnabled: Bool {
         let key = BetaFeaturesCatalogSection().conversationSidebar
         let localOptIn = Bool.decodeFromUserDefaults(
             UserDefaults.standard.object(forKey: key.userDefaultsKey)
         ) ?? key.defaultValue
-        // The beta toggle is intentionally subordinate to the remote release
-        // gate. This keeps the picker and persisted selection recoverable while
-        // allowing PostHog to roll the feature out or kill it without shipping.
+        // The signed personal artifact opts into maintaining this native view.
+        // Its local switch stays authoritative without changing upstream flag
+        // resolution or enabling the feature by default.
         let releaseEnabled = CmuxFeatureFlags.offMainEffectiveValue(
             for: CmuxFeatureFlags.conversationSidebarFlag
         )
-        return localOptIn && releaseEnabled
+        return conversationSidebarIsEnabled(
+            localOptIn: localOptIn,
+            releaseEnabled: releaseEnabled,
+            personalBuild: Bundle.main.object(forInfoDictionaryKey: "CMUXPersonalBuild") as? Bool == true
+        )
+    }
+
+    /// Resolves one sidebar's availability without changing unrelated rollout gates.
+    static func conversationSidebarIsEnabled(
+        localOptIn: Bool,
+        releaseEnabled: Bool,
+        personalBuild: Bool
+    ) -> Bool {
+        localOptIn && (personalBuild || releaseEnabled)
     }
 
     /// Synchronous read of the experimental custom-sidebars flag, mirroring

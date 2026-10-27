@@ -12,6 +12,9 @@ import Foundation
 public enum ShortcutKeymapPreset: String, CaseIterable, Sendable {
     /// cmux's built-in shortcuts.
     case cmux
+    /// One conversation per sidebar workspace: Cmd-T creates a workspace,
+    /// Cmd-N adds an optional surface, and Ctrl-Tab moves between workspaces.
+    case sessions
     /// iTerm2's defaults: Cmd-1…9 selects tabs, Cmd-Opt-1…9 selects windows,
     /// Cmd-Shift-C enters copy mode, and Cmd-Ctrl-arrows move pane dividers.
     case iTerm2 = "iterm2"
@@ -30,6 +33,13 @@ public enum ShortcutKeymapPreset: String, CaseIterable, Sendable {
         switch self {
         case .cmux:
             return [:]
+        case .sessions:
+            return [
+                .newTab: .stroke("cmd+t"),
+                .newSurface: .stroke("cmd+n"),
+                .nextSidebarTab: .stroke("ctrl+tab"),
+                .prevSidebarTab: .stroke("ctrl+shift+tab"),
+            ]
         case .iTerm2:
             return [
                 .selectSurfaceByNumber: .stroke("cmd+1"),

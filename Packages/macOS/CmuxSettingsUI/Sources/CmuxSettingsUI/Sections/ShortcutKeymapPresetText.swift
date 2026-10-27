@@ -7,6 +7,8 @@ extension ShortcutKeymapPreset {
         switch self {
         case .cmux:
             return String(localized: "shortcut.keymap.preset.cmux", defaultValue: "cmux (Default)")
+        case .sessions:
+            return String(localized: "shortcut.keymap.preset.sessions", defaultValue: "Session-first")
         case .iTerm2:
             return String(localized: "shortcut.keymap.preset.iterm2", defaultValue: "iTerm2")
         case .terminal:

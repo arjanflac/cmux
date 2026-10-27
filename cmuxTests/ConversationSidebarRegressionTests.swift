@@ -15,6 +15,26 @@ import Testing
 struct ConversationSidebarRegressionTests {
     private let projection = ConversationSidebarProjection()
 
+    @Test(arguments: [false, true])
+    func personalConversationSidebarUsesExplicitLocalOptIn(releaseEnabled: Bool) {
+        #expect(CmuxExtensionSidebarSelection.conversationSidebarIsEnabled(
+            localOptIn: true, releaseEnabled: releaseEnabled, personalBuild: true
+        ))
+        #expect(!CmuxExtensionSidebarSelection.conversationSidebarIsEnabled(
+            localOptIn: false, releaseEnabled: releaseEnabled, personalBuild: true
+        ))
+    }
+
+    @Test(arguments: [false, true])
+    func upstreamConversationSidebarStillRequiresRollout(localOptIn: Bool) {
+        #expect(!CmuxExtensionSidebarSelection.conversationSidebarIsEnabled(
+            localOptIn: localOptIn, releaseEnabled: false, personalBuild: false
+        ))
+        #expect(CmuxExtensionSidebarSelection.conversationSidebarIsEnabled(
+            localOptIn: localOptIn, releaseEnabled: true, personalBuild: false
+        ) == localOptIn)
+    }
+
     @Test
     func dockHostedLiveSessionResolvesAsLiveSurface() {
         let panelID = UUID()
