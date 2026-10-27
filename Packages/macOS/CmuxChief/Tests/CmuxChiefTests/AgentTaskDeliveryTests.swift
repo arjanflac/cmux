@@ -81,4 +81,37 @@ struct AgentTaskDeliveryTests {
         _ = try await coordinator.send(task.id, prompt: "After durable delivery")
         #expect(try await coordinator.record(task.id)?.turnCount == 2)
     }
+    @Test func lateStorageGenerationCannotOverwriteOrRemoveReplacementPanelFiles() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-panel-generations-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = AgentTaskPanelRepository(directory: directory)
+        let storageA = UUID(), storageB = UUID()
+        let scopeA = Data(#"{"session":"same-thread","generation":"A","token":"fixture-A"}"#.utf8)
+        let scopeB = Data(#"{"session":"same-thread","generation":"B","token":"fixture-B"}"#.utf8)
+        let statusA = Data(#"{"working":1,"generation":"A"}"#.utf8)
+        let statusB = Data(#"{"working":2,"generation":"B"}"#.utf8)
+        let a = try await store.put(storageA, scope: scopeA, snapshot: statusA)
+        let b = try await store.put(storageB, scope: scopeB, snapshot: statusB)
+        // An old async refresh can land after replacement issuance; its storage
+        // generation must have no filesystem reach into the replacement lease.
+        try await store.update(storageA, snapshot: Data(#"{"working":0,"generation":"late-A"}"#.utf8))
+        try await store.remove(storageA)
+        #expect(!FileManager.default.fileExists(atPath: a.scope.path))
+        #expect(try Data(contentsOf: b.scope) == scopeB)
+        #expect(try Data(contentsOf: b.snapshot) == statusB)
+        for path in [b.scope, b.snapshot] {
+            let attributes = try FileManager.default.attributesOfItem(atPath: path.path)
+            #expect((attributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+        }
+        let folder = try FileManager.default.attributesOfItem(atPath: b.scope.deletingLastPathComponent().path)
+        #expect((folder[.posixPermissions] as? NSNumber)?.intValue == 0o700)
+        await #expect(throws: (any Error).self) { try await store.update(storageA, snapshot: statusA) }
+        #expect(try Data(contentsOf: b.scope) == scopeB)
+        #expect(try Data(contentsOf: b.snapshot) == statusB)
+        try await store.remove(storageB)
+        await #expect(throws: (any Error).self) { try await store.update(storageA, snapshot: statusA) }
+        #expect(!FileManager.default.fileExists(atPath: b.snapshot.path))
+        #expect(!FileManager.default.fileExists(atPath: b.scope.path))
+    }
+
 }

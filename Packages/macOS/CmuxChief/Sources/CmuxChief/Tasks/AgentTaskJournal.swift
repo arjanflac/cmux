@@ -15,6 +15,7 @@ public actor AgentTaskJournal {
     private var database: AgentTaskJournalDatabase?
     private let scheduleCapacity: Int
     let inboxCapacity: Int
+    let acknowledgedInboxPerOwner: Int
     private let outstandingCapacity: Int
     let now: @Sendable () -> Date
 
@@ -23,18 +24,20 @@ public actor AgentTaskJournal {
     /// - Parameters:
     ///   - databaseURL: File in an app-owned dedicated directory; parent mode becomes 0700, file 0600.
     ///   - scheduleCapacity: Total retained schedules, default 256; finished records keep deduplication keys.
-    ///   - inboxCapacity: Total retained inbox events, default 10,000; unacknowledged events are never pruned.
+    ///   - inboxCapacity: Full inbox payload cap, default 10,000; unread events are never pruned.
+    ///   - acknowledgedInboxPerOwner: Recent acknowledged payloads kept per owner, default 100; older entries retain compact deduplication evidence.
     ///   - outstandingCapacity: Concurrent outstanding occurrences, default one; unknown acceptance reserves capacity.
     ///   - maximumDatabasePages: SQLite page quota, default 65,536, also useful for deterministic full-disk tests.
     ///   - now: Injected UTC clock for inbox receipts and evidence updates.
     /// - Throws: ``AgentTaskJournalError`` or filesystem errors; failure admits no provider work.
     public init(databaseURL: URL, scheduleCapacity: Int = 256, inboxCapacity: Int = 10_000,
-                outstandingCapacity: Int = 1, maximumDatabasePages: Int = 65_536,
+                outstandingCapacity: Int = 1, maximumDatabasePages: Int = 65_536, acknowledgedInboxPerOwner: Int = 100,
                 now: @escaping @Sendable () -> Date = { Date() }) throws {
         guard (1...1_024).contains(scheduleCapacity), (1...100_000).contains(inboxCapacity),
-              (1...100).contains(outstandingCapacity) else { throw AgentTaskJournalError.invalidRequest }
+              (1...100).contains(outstandingCapacity), (0...10_000).contains(acknowledgedInboxPerOwner) else { throw AgentTaskJournalError.invalidRequest }
         self.scheduleCapacity = scheduleCapacity
         self.inboxCapacity = inboxCapacity
+        self.acknowledgedInboxPerOwner = acknowledgedInboxPerOwner
         self.outstandingCapacity = outstandingCapacity
         self.now = now
         database = try AgentTaskJournalDatabase(url: databaseURL, maximumPages: maximumDatabasePages)
@@ -52,6 +55,24 @@ public actor AgentTaskJournal {
         try allSchedules().filter { $0.request.ownerTaskID == ownerTaskID }.sorted {
             ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString)
         }
+    }
+
+    /// Whether retained future or uncertain scheduled work still needs this exact task.
+    /// - Parameter taskID: Managed owner or existing target to inspect.
+    /// - Returns: True for resumable schedules or outstanding occurrences, including paused/held work.
+    /// - Throws: Storage or decoding errors; callers must keep the worker when this fails.
+    public func preventsRetirement(of taskID: UUID) throws -> Bool {
+        for schedule in try allSchedules() {
+            let references: Bool
+            switch schedule.request.target {
+            case .existingTask(let target): references = target == taskID || schedule.request.ownerTaskID == taskID
+            case .newTask(let request): references = request.parentTaskID == taskID || schedule.request.ownerTaskID == taskID
+            }
+            guard references else { continue }
+            if schedule.state != .cancelled && schedule.state != .exhausted { return true }
+            if try occurrences(scheduleID: schedule.id, ownerTaskID: schedule.request.ownerTaskID).contains(where: \.reservesTarget) { return true }
+        }
+        return false
     }
 
     /// Reads an owner-scoped schedule.

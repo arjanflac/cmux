@@ -5,34 +5,20 @@ extension NativeAgentOrchestration {
     func scheduleCommand(_ args: [String: Any], scope: AgentTaskScope?, operationID: UUID?) async throws -> Data {
         guard let action = args["action"] as? String, let scheduler = schedulerStorage else { throw CocoaError(.featureUnsupported) }
         let ownerID = try owner(args, scope: scope)
+        if action == "schedule.create" {
+            var protectedTasks: Set<UUID> = [ownerID]
+            if args["provider"] == nil {
+                protectedTasks.insert((args["target_task_id"] as? String).flatMap(UUID.init(uuidString:)) ?? ownerID)
+            }
+            return try await runtime.coordinator.withScheduleAdmission(taskIDs: protectedTasks) {
+                try await self.authorizeTarget(scope, id: ownerID, operation: .send)
+                return try await self.createSchedule(args, scope: scope, operationID: operationID, ownerID: ownerID, scheduler: scheduler)
+            }
+        }
         try await authorizeTarget(scope, id: ownerID, operation: action == "schedule.list" || action == "schedule.read" ? .read : .send)
         if action == "schedule.list" {
             return try data(["schedules": try await scheduler.list(ownerTaskID: ownerID).map { try scheduleObject($0) },
                              "dispatch_lifetime": "while_cmux_is_open"])
-        }
-        if action == "schedule.create" {
-            guard let operationID, let prompt = args["prompt"] as? String,
-                  let due = date(args["due_at"] as? String) else { throw CocoaError(.validationMissingMandatoryProperty) }
-            let destination: AgentTaskScheduleTarget
-            if args["provider"] != nil {
-                let request = try await newRequest(args, scope: scope, parentOverride: ownerID)
-                destination = .newTask(request)
-            } else {
-                let target = (args["target_task_id"] as? String).flatMap(UUID.init(uuidString:)) ?? ownerID
-                try await authorizeTarget(scope, id: target, operation: .send)
-                destination = .existingTask(target)
-            }
-            let recurrence: AgentTaskScheduleRequest.Recurrence
-            if let seconds = args["repeat_seconds"] as? Double { recurrence = .interval(seconds: seconds) }
-            else { recurrence = .once }
-            let request = AgentTaskScheduleRequest(ownerTaskID: ownerID, target: destination, prompt: prompt,
-                dueAt: due, timeZoneID: args["time_zone"] as? String ?? TimeZone.current.identifier,
-                recurrence: recurrence,
-                misfire: (args["misfire"] as? String).flatMap(AgentTaskScheduleRequest.MisfirePolicy.init(rawValue:)) ?? .hold,
-                expiresAt: date(args["expires_at"] as? String), maxRuns: args["max_runs"] as? Int ?? 1)
-            let receipt = try await scheduler.create(request, callerID: operationID)
-            await armTimer()
-            return try data(scheduleObject(receipt))
         }
         guard let id = (args["schedule_id"] as? String).flatMap(UUID.init(uuidString:)) else { throw CocoaError(.validationMissingMandatoryProperty) }
         let receipt: AgentTaskSchedule?
@@ -44,6 +30,49 @@ extension NativeAgentOrchestration {
         default: throw CocoaError(.featureUnsupported)
         }
         guard let receipt else { throw CocoaError(.fileNoSuchFile) }
+        await armTimer()
+        return try data(scheduleObject(receipt))
+    }
+
+    /// The caller holds both referenced tasks until this journal commit finishes.
+    private func createSchedule(_ args: [String: Any], scope: AgentTaskScope?, operationID: UUID?,
+                                ownerID: UUID, scheduler: AgentTaskScheduler) async throws -> Data {
+        guard let operationID, let prompt = args["prompt"] as? String,
+              let due = date(args["due_at"] as? String) else { throw CocoaError(.validationMissingMandatoryProperty) }
+        let destination: AgentTaskScheduleTarget
+        if args["provider"] != nil {
+            let request = try await newRequest(args, scope: scope, parentOverride: ownerID)
+            destination = .newTask(request)
+        } else {
+            let target = (args["target_task_id"] as? String).flatMap(UUID.init(uuidString:)) ?? ownerID
+            try await authorizeTarget(scope, id: target, operation: .send)
+            guard let targetRecord = try await runtime.coordinator.record(target), targetRecord.retirement == nil,
+                  !runtime.coordinator.isRetiredOrRetiring(target) else { throw CocoaError(.userCancelled) }
+            destination = .existingTask(target)
+        }
+        if case .newTask = destination {
+            let ownerScope: AgentTaskScope
+            if let scope { ownerScope = scope }
+            else {
+                let generation = "task:" + ownerID.uuidString + ":" + authority.epoch.uuidString
+                ownerScope = try await issueScope(ownerID: ownerID, generation: generation).scope
+            }
+            // Long recurrences should reuse one conversation. Fresh workers consume
+            // immutable lifetime lineage slots; completion never silently refills them.
+            let remaining = try await authority.remainingChildCapacity(owner: ownerScope)
+            guard (1...max(1, remaining)).contains(args["max_runs"] as? Int ?? 1), remaining > 0 else {
+                throw AgentTaskScopeError.childLimitExceeded
+            }
+        }
+        let recurrence: AgentTaskScheduleRequest.Recurrence
+        if let seconds = args["repeat_seconds"] as? Double { recurrence = .interval(seconds: seconds) }
+        else { recurrence = .once }
+        let request = AgentTaskScheduleRequest(ownerTaskID: ownerID, target: destination, prompt: prompt,
+            dueAt: due, timeZoneID: args["time_zone"] as? String ?? TimeZone.current.identifier,
+            recurrence: recurrence,
+            misfire: (args["misfire"] as? String).flatMap(AgentTaskScheduleRequest.MisfirePolicy.init(rawValue:)) ?? .hold,
+            expiresAt: date(args["expires_at"] as? String), maxRuns: args["max_runs"] as? Int ?? 1)
+        let receipt = try await scheduler.create(request, callerID: operationID)
         await armTimer()
         return try data(scheduleObject(receipt))
     }
@@ -64,12 +93,14 @@ extension NativeAgentOrchestration {
 
     /// Persistent schedule grants refer to exact app-owned records, never ephemeral bearer tokens.
     func authorizeSchedule(_ schedule: AgentTaskSchedule) async throws {
-        guard enabled, let owner = try await runtime.coordinator.record(schedule.request.ownerTaskID),
+        guard enabled, !runtime.coordinator.isRetiredOrRetiring(schedule.request.ownerTaskID),
+              let owner = try await runtime.coordinator.record(schedule.request.ownerTaskID), owner.retirement == nil,
               runtime.workspaceID(for: owner) != nil, owner.sessionID != nil else { throw CocoaError(.fileReadNoPermission) }
         switch schedule.request.target {
         case .existingTask(let id):
             guard try await isDescendantOrSelf(id, of: owner.id),
-                  let target = try await runtime.coordinator.record(id), target.sessionID != nil,
+                  !runtime.coordinator.isRetiredOrRetiring(id),
+                  let target = try await runtime.coordinator.record(id), target.retirement == nil, target.sessionID != nil,
                   runtime.workspaceID(for: target) != nil else { throw CocoaError(.fileReadNoPermission) }
         case .newTask(let request):
             guard request.parentTaskID == owner.id, request.workspaceStableID != nil,
@@ -84,6 +115,12 @@ extension NativeAgentOrchestration {
 
     /// Readiness is checked when due, so a working parent can schedule its own future turn.
     func preflightSchedule(_ schedule: AgentTaskSchedule) async throws {
+        if case .newTask(let request) = schedule.request.target {
+            guard let ownerID = request.parentTaskID else { throw CocoaError(.fileReadNoPermission) }
+            let generation = "task:" + ownerID.uuidString + ":" + authority.epoch.uuidString
+            let owner = try await issueScope(ownerID: ownerID, generation: generation)
+            guard try await authority.remainingChildCapacity(owner: owner.scope) > 0 else { throw AgentTaskScopeError.childLimitExceeded }
+        }
         if case .existingTask(let id) = schedule.request.target {
             guard let target = try await runtime.coordinator.record(id), target.phase.isFinished else { throw CocoaError(.userCancelled) }
             try requireExclusiveWorker(id)

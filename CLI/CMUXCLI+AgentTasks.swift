@@ -6,7 +6,7 @@ extension CMUXCLI {
         cmux task start --provider codex|claude|opencode --workspace <id|ref> --cwd <dir>
                         [--model <id>] [--effort <level>] [--parent-task <id>]
                         [--background|--terminal] [--request-id <uuid>]
-                        [--permission-mode <mode>] [--prompt-file <path|->] [--wait] -- <task>
+                        [--permission-mode <mode>] [--lifecycle persistent|oneShot] [--prompt-file <path|->] [--wait] -- <task>
         cmux task read|wait|cancel <task-id>
         cmux task attach <task-id> [--workspace <id|ref>]
         cmux task list
@@ -18,7 +18,7 @@ extension CMUXCLI {
         cmux task schedule create --owner <task-id> --at <ISO8601> [--request-id <uuid>]
                                  [--target <task-id> | --provider codex|claude|opencode
                                   --workspace <id|ref> --cwd <dir> [--model <id>] [--effort <level>]
-                                  [--permission-mode <mode>]]
+                                  [--permission-mode <mode>] [--lifecycle persistent|oneShot]]
                                  [--timezone <IANA-zone>] [--expires <ISO8601>]
                                  [--misfire hold|skip|coalesceOne] [--repeat-seconds <seconds>]
                                  [--max-runs <limit>] [--prompt-file <path|->] -- <message>
@@ -64,6 +64,7 @@ extension CMUXCLI {
                 case "--parent-task": params["parent_task_id"] = value
                 case "--request-id": params["request_id"] = value
                 case "--permission-mode": params["permission_mode"] = value
+                case "--lifecycle": params["lifecycle"] = value
                 case "--prompt-file": promptFile = value
                 default: throw CLIError(message: usage)
                 }

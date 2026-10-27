@@ -58,6 +58,12 @@ final class AgentTaskJournalDatabase {
                     owner TEXT NOT NULL, task TEXT NOT NULL, operation TEXT NOT NULL,
                     kind TEXT NOT NULL, payload TEXT NOT NULL, UNIQUE(owner, task, operation, kind))
                 """)
+            try execute("""
+                CREATE TABLE IF NOT EXISTS task_inbox_acks (
+                    id TEXT PRIMARY KEY, owner TEXT NOT NULL, task TEXT NOT NULL,
+                    operation TEXT NOT NULL, kind TEXT NOT NULL, payload TEXT NOT NULL,
+                    UNIQUE(owner, task, operation, kind))
+                """)
             try execute("CREATE INDEX IF NOT EXISTS task_occurrences_state ON task_occurrences(state)")
             try execute("CREATE INDEX IF NOT EXISTS task_inbox_owner_sequence ON task_inbox(owner, sequence)")
         } catch {

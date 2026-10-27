@@ -16,6 +16,8 @@ public struct AgentTaskInboxEvent: Codable, Equatable, Sendable {
     public let phase: AgentTaskRecord.Phase
     /// Optional bounded private result.
     public let result: AgentTaskInboxResult?
+    /// True when an old acknowledged inbox payload was compacted; read its independent turn receipt for the result.
+    public let resultCompacted: Bool?
     /// First append time, unchanged by duplicate appends.
     public let createdAt: Date
     /// Owner acknowledgement time, without provider effects.
@@ -30,6 +32,15 @@ public struct AgentTaskInboxEvent: Codable, Equatable, Sendable {
         self.operationID = operationID
         self.phase = phase
         self.result = result
+        resultCompacted = nil
         createdAt = now
     }
+    init(metadata: Self, result: AgentTaskInboxResult?, resultCompacted: Bool?) {
+        id = metadata.id; sequence = metadata.sequence
+        ownerTaskID = metadata.ownerTaskID; taskID = metadata.taskID
+        operationID = metadata.operationID; phase = metadata.phase
+        self.result = result; self.resultCompacted = resultCompacted
+        createdAt = metadata.createdAt; acknowledgedAt = metadata.acknowledgedAt
+    }
+
 }

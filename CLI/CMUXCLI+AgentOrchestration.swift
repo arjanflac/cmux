@@ -60,6 +60,7 @@ extension CMUXCLI {
             case "--model": params["model"] = value
             case "--effort": params["effort"] = value
             case "--permission-mode": params["permission_mode"] = value
+            case "--lifecycle": params["lifecycle"] = value
             case "--at": params["due_at"] = value
             case "--expires": params["expires_at"] = value
             case "--timezone": params["time_zone"] = value

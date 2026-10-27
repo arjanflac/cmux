@@ -4,13 +4,14 @@ import Foundation
 extension NativeAgentOrchestration {
     /// All model-affecting entrypoints share one durable admission path.
     func execute(_ envelope: [String: Any], scope: AgentTaskScope?) async throws -> Data {
-        try ensureHealthy()
         if scope != nil, !enabled { throw CocoaError(.featureUnsupported) }
         guard let rawArguments = envelope["arguments"] as? [String: Any] else {
             throw CocoaError(.validationMissingMandatoryProperty)
         }
         var arguments = normalize(rawArguments)
         guard let action = arguments["action"] as? String else { throw CocoaError(.validationMissingMandatoryProperty) }
+        // Storage admission failures cannot hide existing results or prevent a cancellation.
+        if ["start", "send", "respond", "schedule.create", "schedule.resume"].contains(action) { try ensureHealthy() }
         if let scope {
             if let claimed = arguments["owner_task_id"] as? String, UUID(uuidString: claimed) != scope.ownerTaskID {
                 throw CocoaError(.fileReadNoPermission)
@@ -104,6 +105,7 @@ extension NativeAgentOrchestration {
             try await authorizeTarget(scope, id: owner, operation: .read)
             guard let event = (args["event_id"] as? String).flatMap(UUID.init(uuidString:)) else { throw CocoaError(.validationMissingMandatoryProperty) }
             let receipt = try await journal.acknowledge(ownerTaskID: owner, eventID: event)
+            _ = try await runtime.coordinator.retireAcknowledgedWorker(receipt)
             try await refreshPanels()
             return try data(object(receipt))
         case "respond": return try await respondData(args, scope: scope)
@@ -158,10 +160,16 @@ extension NativeAgentOrchestration {
         if let scope, workspace.stableId != scope.workspaceStableID { throw CocoaError(.fileReadNoPermission) }
         let mode = (args["permission_mode"] as? String).flatMap(AgentTaskRequest.PermissionMode.init(rawValue:)) ?? .providerDefault
         if scope != nil, mode == .unrestricted { throw CocoaError(.fileReadNoPermission) }
+        let lifecycle: AgentTaskRequest.Lifecycle
+        if let raw = args["lifecycle"] as? String {
+            guard let parsed = AgentTaskRequest.Lifecycle(rawValue: raw) else { throw CocoaError(.validationMissingMandatoryProperty) }
+            lifecycle = parsed
+        } else { lifecycle = parent != nil && (args["background"] as? Bool) != false ? .oneShot : .persistent }
+        if lifecycle == .oneShot, parent == nil { throw CocoaError(.validationMissingMandatoryProperty) }
         return AgentTaskRequest(provider: provider, prompt: prompt, workspaceID: workspaceID,
             workingDirectory: URL(fileURLWithPath: cwd), model: args["model"] as? String, effort: args["effort"] as? String,
             presentation: (args["background"] as? Bool) == false ? .terminal : .background,
-            parentTaskID: parent, workspaceStableID: workspace.stableId, permissionMode: mode)
+            parentTaskID: parent, workspaceStableID: workspace.stableId, permissionMode: mode, lifecycle: lifecycle)
     }
 
     /// An interactive Claude/OpenCode view is an exclusive-writer handoff, not a second process to steer.

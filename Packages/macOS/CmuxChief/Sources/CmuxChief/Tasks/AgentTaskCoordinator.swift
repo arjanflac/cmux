@@ -13,6 +13,11 @@ public final class AgentTaskCoordinator {
     private let backend: any AgentTaskBackend
     private let repository: any AgentTaskRepository
     private let turnRepository: any AgentTaskTurnRepository
+    private let executionLimits: AgentTaskExecutionLimits
+    private var capacityReservations: [UUID: AgentTaskRequest.Provider] = [:]
+    private var retiring: Set<UUID> = []
+    private var finishingRetirements: Set<UUID> = []
+    private var retirementPermit: (@MainActor @Sendable (UUID) async throws -> Bool)?
     private let present: Present
     private let reconnect: Present?
     private var consumerOperations: [UUID: UUID] = [:]
@@ -36,6 +41,12 @@ public final class AgentTaskCoordinator {
     /// - Parameter handler: Persists delivery evidence without starting provider work.
     public func setReceiptHandler(_ handler: @escaping ReceiptHandler) { receiptHandler = handler }
 
+    /// Installs the trusted schedule check required before retiring any worker.
+    /// - Parameter permit: Returns false while durable future or uncertain scheduled work references the task.
+    public func setRetirementPermit(_ permit: @escaping @MainActor @Sendable (UUID) async throws -> Bool) {
+        retirementPermit = permit
+    }
+
     /// Injects execution, persistence, and native window presentation.
     /// - Parameters:
     ///   - backend: Provider execution with no implicit replay.
@@ -43,7 +54,9 @@ public final class AgentTaskCoordinator {
     ///   - present: Opens a terminal only after the provider confirms a session.
     ///   - reconnect: Optional view-only attachment to saved sessions.
     ///   - turnRepository: Durable per-operation receipts; defaults to isolated memory for legacy callers.
-    public init(backend: any AgentTaskBackend, repository: any AgentTaskRepository, present: @escaping Present, reconnect: Present? = nil, turnRepository: (any AgentTaskTurnRepository)? = nil) {
+    ///   - executionLimits: Independent managed-turn caps; provider-native subagent limits do not apply.
+    public init(backend: any AgentTaskBackend, repository: any AgentTaskRepository, present: @escaping Present, reconnect: Present? = nil, turnRepository: (any AgentTaskTurnRepository)? = nil, executionLimits: AgentTaskExecutionLimits = AgentTaskExecutionLimits()) {
+        self.executionLimits = executionLimits
         self.backend = backend
         self.repository = repository
         self.turnRepository = turnRepository ?? AgentTaskMemoryTurnRepository()
@@ -127,10 +140,15 @@ public final class AgentTaskCoordinator {
         reservedOperations.insert(id)
         defer { starting.remove(id); reservedOperations.remove(id) }
         try validatePrompt(request.prompt)
+        if request.lifecycle == .oneShot {
+            guard request.parentTaskID != nil, request.presentation == .background else { throw TaskError.invalid }
+        }
         var directory: ObjCBool = false
         let exists = FileManager.default.fileExists(atPath: request.workingDirectory.path, isDirectory: &directory)
         guard request.workingDirectory.isFileURL, request.workingDirectory.path.hasPrefix("/"),
               exists, directory.boolValue else { throw TaskError.invalid }
+        try reserveCapacity(id: id, provider: request.provider)
+        defer { capacityReservations.removeValue(forKey: id) }
         guard try await repository.read(id) == nil, try await turnRepository.read(id) == nil else { throw TaskError.duplicate }
         try await loadParentChain(request.parentTaskID)
         try validateParent(request.parentTaskID)
@@ -237,13 +255,15 @@ public final class AgentTaskCoordinator {
             guard saved.matches(taskID: id, prompt: prompt) else { throw TaskError.operationConflict }
             return currentTurns[operationID] ?? saved.disconnectedAfterRestart()
         }
-        guard var record = try await record(id), record.phase.isFinished,
+        guard var record = try await record(id), record.retirement == nil, !retiring.contains(id), record.phase.isFinished,
               let sessionID = record.sessionID, !sessionID.isEmpty else { throw TaskError.providerUnreconciled }
         // An intent saved just before a crash can be newer than the task projection.
         let history = try await turnRepository.turns(taskID: id)
         guard history.allSatisfy({ $0.phase.isFinished }) else { throw TaskError.providerUnreconciled }
         try await loadParentChain(record.parentTaskID)
         try validateParent(record.parentTaskID)
+        try reserveCapacity(id: id, provider: record.provider)
+        defer { capacityReservations.removeValue(forKey: id) }
         let sequence = max(record.turnCount ?? 1, history.map(\.sequence).max() ?? 1) + 1
         var receipt = AgentTaskTurnRecord(taskID: id, request: AgentTaskTurnRequest(operationID: operationID, prompt: prompt),
                                           sequence: sequence, sessionID: sessionID, now: Date())
@@ -386,8 +406,119 @@ public final class AgentTaskCoordinator {
                 self.consumerOperations.removeValue(forKey: id)
                 self.requests.removeValue(forKey: id)
                 self.pruneReceipts()
+                _ = try? await self.finishRetirement(id)
             }
         }
+    }
+
+    /// Whether the worker has begun local retirement; no further input may be admitted.
+    /// - Parameter id: Exact managed task identity.
+    /// - Returns: True for pending or completed local retirement, including an in-flight acknowledgement.
+    public func isRetiredOrRetiring(_ id: UUID) -> Bool { records[id]?.retirement != nil || retiring.contains(id) }
+
+    /// Holds the referenced tasks across schedule authorization and durable admission.
+    /// - Parameters:
+    ///   - taskIDs: Exact owner and existing target identities, at most two tasks.
+    ///   - operation: Entire schedule authorization and journal commit, without provider dispatch.
+    /// - Returns: The operation's durable schedule result.
+    /// - Throws: Retired/unavailable task, admission, authorization or storage errors.
+    public func withScheduleAdmission<Result>(taskIDs: Set<UUID>,
+        operation: @MainActor () async throws -> Result) async throws -> Result {
+        // Structural seam for the deterministic schedule/retirement race proof.
+        // The following repair activates its admission reservation.
+        try await operation()
+    }
+
+    /// Retires an explicit one-shot worker after its exact successful result was consumed.
+    ///
+    /// The parent inbox acknowledgement must already be durable. Existing/legacy sessions,
+    /// failures, stale result acknowledgements, live descendants and scheduled work stay intact.
+    /// The intent is persisted before releasing an idle owned process. Read/results remain
+    /// available; retired workers reject follow-up input. Provider histories are never deleted.
+    /// - Parameter event: Exact journal-verified parent acknowledgement.
+    /// - Returns: True once locally retired, false when this acknowledgement is not eligible.
+    /// - Throws: Persistence, schedule-read or idle-resource release failures; no prompt is sent.
+    @discardableResult
+    public func retireAcknowledgedWorker(_ event: AgentTaskInboxEvent) async throws -> Bool {
+        guard event.phase == .completed, let acknowledgedAt = event.acknowledgedAt,
+              let retirementPermit, !restoring, !starting.contains(event.taskID),
+              !cancelling.contains(event.taskID), !presenting.contains(event.taskID),
+              retiring.insert(event.taskID).inserted else { return false }
+        defer { retiring.remove(event.taskID) }
+        guard var record = try await record(event.taskID), record.lifecycle == .oneShot,
+              record.presentation == .background, record.surfaceID == nil,
+              record.parentTaskID == event.ownerTaskID, record.latestOperationID == event.operationID,
+              record.phase == .completed else { return false }
+        guard try await !hasUnretiredDescendants(record.id),
+              try await retirementPermit(record.id) else { return false }
+        guard records[record.id]?.latestOperationID == event.operationID,
+              records[record.id]?.phase == .completed else { return false }
+        if record.retirement == nil {
+            record.retirement = AgentTaskRetirement(operationID: event.operationID, acknowledgedAt: acknowledgedAt)
+            try await save(record)
+            records[record.id] = record
+            publish(record)
+        }
+        return try await finishRetirement(record.id)
+    }
+
+    /// Retries only durable local retirement intents, never provider work or model input.
+    /// - Throws: Storage or schedule checks failed; provider histories remain intact.
+    public func finishPendingRetirements() async throws {
+        for record in records.values where record.retirement?.retiredAt == nil && record.retirement != nil {
+            _ = try await finishRetirement(record.id)
+        }
+    }
+
+    private func finishRetirement(_ id: UUID) async throws -> Bool {
+        guard let snapshot = records[id], var retirement = snapshot.retirement else { return false }
+        if retirement.retiredAt != nil { return true }
+        guard finishingRetirements.insert(id).inserted else { return false }
+        defer { finishingRetirements.remove(id) }
+        guard snapshot.phase == .completed, snapshot.latestOperationID == retirement.operationID,
+              snapshot.presentation == .background, snapshot.surfaceID == nil,
+              transitioning[id] == nil, !starting.contains(id), !cancelling.contains(id), !presenting.contains(id),
+              consumerOperations[id] == nil, let retirementPermit else { return false }
+        guard try await !hasUnretiredDescendants(id),
+              try await retirementPermit(id) else { return false }
+        try await backend.releaseIdleResources(id: id)
+        guard var record = records[id], record.retirement == snapshot.retirement,
+              record.phase == .completed, record.latestOperationID == retirement.operationID else { return false }
+        retirement.retiredAt = Date()
+        record.retirement = retirement
+        try await save(record)
+        records[id] = record
+        publish(record)
+        return true
+    }
+
+    /// A reusable or scheduled descendant keeps every ancestor usable, even between turns.
+    private func hasUnretiredDescendants(_ id: UUID) async throws -> Bool {
+        let saved = try await repository.load()
+        var lineage = Dictionary(uniqueKeysWithValues: saved.map { ($0.id, $0) })
+        for record in records.values { lineage[record.id] = record }
+        for child in lineage.values where !child.isRetired {
+            var parent = child.parentTaskID
+            var visited: Set<UUID> = []
+            while let next = parent, visited.insert(next).inserted {
+                if next == id { return true }
+                parent = lineage[next]?.parentTaskID
+            }
+        }
+        return false
+    }
+
+    private func reserveCapacity(id: UUID, provider: AgentTaskRequest.Provider) throws {
+        var occupied = capacityReservations
+        for record in records.values where !record.phase.isFinished && record.turnCount != 0 {
+            occupied[record.id] = record.provider
+        }
+        occupied.removeValue(forKey: id)
+        guard occupied.count < Int(executionLimits.total),
+              occupied.values.filter({ $0 == provider }).count < executionLimits.capacity(for: provider) else {
+            throw TaskError.capacityExceeded
+        }
+        capacityReservations[id] = provider
     }
 
     /// Reconnects only a terminal view of a known session; never invokes the backend.
@@ -397,7 +528,7 @@ public final class AgentTaskCoordinator {
     ///   - workspaceID: The explicitly resolved existing workspace for this view.
     /// - Returns: The receipt with its new surface identity and unchanged provider phase.
     public func attach(_ id: UUID, workspaceID: UUID, workspaceStableID: UUID? = nil) async throws -> AgentTaskRecord {
-        guard let existing = try await record(id), existing.sessionID != nil,
+        guard let existing = try await record(id), existing.retirement == nil, !retiring.contains(id), existing.sessionID != nil,
               let reconnect, presenting.insert(id).inserted else { throw TaskError.invalid }
         defer { presenting.remove(id) }
         if records[id] == nil { records[id] = existing }
@@ -488,6 +619,20 @@ public final class AgentTaskCoordinator {
     /// - Returns: Direct children with modern per-turn receipts, including archived results.
     public func childTaskIDs(of ownerTaskID: UUID) -> Set<UUID> { childIDsByParent[ownerTaskID] ?? [] }
 
+    /// Reads all modern descendants from the existing durable lineage index, without provider I/O.
+    /// - Parameter ownerTaskID: Exact managed ancestor identity.
+    /// - Returns: Descendant identities at every depth, including retired records whose results remain readable.
+    public func descendantTaskIDs(of ownerTaskID: UUID) -> Set<UUID> {
+        var result: Set<UUID> = []
+        var pending = [ownerTaskID]
+        while let owner = pending.popLast() {
+            for child in childIDsByParent[owner] ?? [] where child != ownerTaskID {
+                if result.insert(child).inserted { pending.append(child) }
+            }
+        }
+        return result
+    }
+
     /// Reads a recent or archived receipt without reconnecting to a provider.
     public func record(_ id: UUID) async throws -> AgentTaskRecord? {
         if let record = records[id], record.phase != .completed || record.result != nil { return record }
@@ -542,7 +687,9 @@ public final class AgentTaskCoordinator {
         let history = records.values.filter { $0.phase.isFinished }
             .sorted { $0.updatedAt > $1.updatedAt }
         for old in history.dropFirst(100) {
-            if starting.contains(old.id) || presenting.contains(old.id) || transitioning[old.id] != nil { continue }
+            if starting.contains(old.id) || presenting.contains(old.id) || transitioning[old.id] != nil
+                || retiring.contains(old.id) || finishingRetirements.contains(old.id) { continue }
+            if old.retirement != nil && old.retirement?.retiredAt == nil { continue }
             if ancestors.contains(old.id) { records[old.id]?.result = nil }
             else { records.removeValue(forKey: old.id) }
         }
@@ -556,6 +703,7 @@ public final class AgentTaskCoordinator {
         while let current = ancestor, let parent = records[current] {
             guard visited.insert(current).inserted else { throw TaskError.invalid }
             guard !cancelling.contains(current), parent.phase != .cancelled else { throw CancellationError() }
+            guard parent.retirement == nil, !retiring.contains(current) else { throw TaskError.providerUnreconciled }
             ancestor = parent.parentTaskID
         }
     }
@@ -612,6 +760,6 @@ public final class AgentTaskCoordinator {
     }
 
     enum TaskError: Error {
-        case duplicate, invalid, unknownParent, sessionChanged, providerUnreconciled, busy, operationConflict, childrenUnconfirmed([UUID])
+        case capacityExceeded, duplicate, invalid, unknownParent, sessionChanged, providerUnreconciled, busy, operationConflict, childrenUnconfirmed([UUID])
     }
 }

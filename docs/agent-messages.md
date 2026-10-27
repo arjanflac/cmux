@@ -174,3 +174,52 @@ completion notifications remain responsible for Done alerts to avoid duplicates.
 Remote workspaces (`cmux ssh`) can send and receive messages through the SSH
 relay, but only for workspaces and surfaces owned by that remote session. A
 remote agent cannot message a local agent yet.
+
+
+## Worker retention and resource limits
+
+New background children with a parent default to `oneShot`. Use
+`cmux task start ... --lifecycle persistent` for a worker you intend to message
+repeatedly; legacy tasks and top-level sessions remain persistent. A one-shot
+retires from cmux's active task list only after successful completion and the
+parent's durable acknowledgement of that exact turn. Every non-retired descendant
+protects its ancestors, including a completed persistent worker between turns.
+This creates no ancestor retirement intent that could strand future follow-ups.
+A parent can acknowledge the same result again after its children are retired;
+use the CLI's default fresh request ID for that new cleanup attempt. One-shot
+retirement does not collect an entire delegation graph automatically. Outstanding descendants,
+schedules, attention and uncertain provider outcomes are retained. A worker
+explicitly attached to an interactive terminal stays under the user’s control. Results and
+turn receipts remain readable. A retired worker cannot receive more input or
+attach as a new controller; create a persistent worker for ongoing work.
+
+Retirement is **localOnly**. It does not delete Claude/OpenCode files or archive
+Codex app history. In pinned Codex 0.164.0, `thread/archive` shuts down loaded
+threads and their spawned subtree; it has no atomic “only if this exact turn is
+still idle” condition. Automatic provider archive would race another phone/app
+client, so this coordinator does not call it. Idle owned Claude resources can be
+released; uncertain processes are quarantined, never treated as idle or killed
+just because completion could not be established.
+
+The coordinator separately caps managed active/admitting/uncertain turns at six
+overall, four Codex, two Claude and two OpenCode. These are injected app limits,
+not Codex's native subagent settings. Known-idle conversations consume no active
+slot. Only one known-idle Claude process is retained; a later follow-up resumes
+its exact saved session if necessary. No throughput or memory benchmark is
+implied by these conservative defaults.
+
+Lineage reservations remain nonreplenishing: at most eight direct children,
+depth four, and 64 descendants under the default root budget. Retiring a worker
+does not refund those safety budgets. A new-worker schedule is rejected when
+its run count exceeds current remaining child reservations (never more than
+eight). For up to 100 interval wakes, target an existing persistent worker.
+Other work can still consume lineage capacity before a future wake. The scheduler
+rechecks before claiming due work and refuses excess launches. A race after the
+claim can still leave an uncertain dispatch receipt, which is never replayed.
+
+Inbox retention keeps every unread event and up to 100 recent acknowledged
+payloads per owner. Under global payload pressure it compacts acknowledged rows
+first. Small durable acknowledgement tombstones preserve exact replay/conflict
+checks, so restarting cannot make old consumed results appear unread. Original
+result bodies remain in the independent turn repository. Tombstones share the
+existing private SQLite page quota; storage exhaustion still fails closed.
