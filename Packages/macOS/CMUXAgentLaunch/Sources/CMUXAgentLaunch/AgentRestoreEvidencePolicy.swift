@@ -23,7 +23,8 @@ public struct AgentRestoreEvidencePolicy: Sendable {
     public func decision(
         hasLiveOwner: Bool,
         indexComplete: Bool,
-        writerLock: CodexWriterLockInspection.State?
+        writerLock: CodexWriterLockInspection.State?,
+        managedFrontend: CodexManagedDaemonAttachPlan? = nil
     ) -> Decision {
         if hasLiveOwner { return .observeOwner }
         switch writerLock {
