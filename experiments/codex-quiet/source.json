@@ -18,12 +18,15 @@
     "resume-compat-tests.patch",
     "resume-compat.patch",
     "tool-coverage-tests.patch",
-    "tool-coverage.patch"
+    "tool-coverage.patch",
+    "aggregate-tests.patch",
+    "aggregate.patch"
   ],
   "focusTestCount": 4,
   "bindingTestCount": 5,
   "workingTipTestCount": 2,
   "orchestrationTestCount": 23,
   "resumeCompatTestCount": 9,
-  "toolCoverageTestCount": 21
+  "toolCoverageTestCount": 21,
+  "aggregateTestCount": 13
 }

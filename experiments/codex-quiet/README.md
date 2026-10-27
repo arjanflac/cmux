@@ -8,7 +8,8 @@ apps, global configuration and phone access are unchanged.
 Terminal settings, open a new cmux terminal, and run normal `codex`. Positively
 identified routine agent commands, successful file edits, web search/open/find,
 image-view bookkeeping, text MCP/dynamic calls and native computer activity
-(including returned screenshots) occupy no transcript rows. **Ctrl+T** switches
+(including returned screenshots) and native collaborator activity share one fixed
+**Activity** row per contiguous batch between prose updates. **Ctrl+T** switches
 between true quiet and the original compact view. Assistant messages, user shell
 commands, failures, approvals, questions, unknown tool/media content and meaningful
 status stay visible. User images and generated assistant image artifacts remain
@@ -29,6 +30,7 @@ inspect rendered wording, strip terminal output, or hide arbitrary media.
 | `CompositeHistoryCell`, `ActivityDetails`/`ActivityGroup` | Recurse through known routine members. Preserve protected descendants; show retained group details when they contain assistant content or errors. Transcript-only reasoning and terminal bookkeeping remain in backing content. |
 | `PlanUpdateCell` | Hide routine plan-tool checklists; preserve authored proposed plans and streamed plan text. |
 | `ImageGenerationHistoryCell`, user/assistant message and authored plan cells | Preserve generated artifacts, image attachments, spoken artifact links, chat, final results and proposed plans. |
+| `CollabHistoryCell` | Collapse typed start/interact/completion and successful collaborator calls into the same activity batch; preserve interrupted/failed outcomes and agent diagnostics. Canonical report previews remain available in compact/details. |
 | Plain/wrapped/link cells, requests/approval results, hooks, warnings, safety, session, recap, update and separator cells | Preserve upstream behavior. Explicit `/ps` process summaries stay visible; `UnifiedExecInteractionCell` remains transcript-only. |
 
 `tool-coverage-tests.patch` appends dedicated retained/live rendering fixtures
@@ -42,6 +44,17 @@ detailed/raw backing content. Hooks already discard routine context-only success
 upstream; warning/error/stop/feedback output remains visible even on a Completed
 status. Rust execution belongs to CI;
 Python gate tests and patch/syntax checks alone do not establish those results.
+
+`aggregate-tests.patch` and `aggregate.patch` append the batch presentation after
+those fourteen unchanged patches. Thirteen rendered fixtures cover retained and
+live coalescing, nested groups, prose/error boundaries, typed native collaborator
+rows, web actions, transcript-only reasoning, repeated toggles and full backing
+content. A batch keeps the fixed **Activity** label as calls complete; it never
+rewrites a title from “Interacted” to “Interacted with”. Ordinary contextual notices
+and authored assistant/agent replies stay visible. The lane requires executed
+red/green and feature-off results, then reruns the earlier focus and coverage
+suites with their final one-row batch expectations. The private source transcript,
+provider work and passive worker indicator are unchanged.
 
 The derived frontend also suppresses the recurring **Working** tip. Startup and
 completion guidance stays available. With **Background Agent Coordination**
