@@ -9,7 +9,8 @@ permissions:
   contents: read
 concurrency:
   group: quiet-codex-frontend-${{ github.ref }}
-  cancel-in-progress: true
+  # Let manual builds finish and save their cache before the next one starts.
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 jobs:
   frontend:
     if: github.repository == 'arjanflac/cmux'
