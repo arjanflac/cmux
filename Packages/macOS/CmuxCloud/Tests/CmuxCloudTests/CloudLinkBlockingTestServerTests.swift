@@ -1,3 +1,4 @@
+@testable import CmuxCloud
 import Darwin
 import Foundation
 import Testing
@@ -10,16 +11,21 @@ struct CloudLinkBlockingTestServerTests {
         try #require(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
         let listener = pair[0]
         let peer = pair[1]
-        defer { Darwin.close(peer) }
+        var listenerTransferred = false
+        defer {
+            if !listenerTransferred { Darwin.close(listener) }
+            Darwin.close(peer)
+        }
         try #require(fcntl(peer, F_SETFL, O_NONBLOCK) == 0)
-        let entered = DispatchSemaphore(value: 0)
+        let entered = CloudLinkFirstValue<Bool>()
         let release = DispatchSemaphore(value: 0)
         let server = CloudLinkBlockingTestServer(ownedListener: listener) { _ in
-            entered.signal()
+            entered.resolve(true)
             _ = release.wait(timeout: .now() + 5)
         }
+        listenerTransferred = true
         defer { release.signal() }
-        try #require(entered.wait(timeout: .now() + 1) == .success)
+        _ = await entered.result
         withKnownIssue("The deliberately blocked worker exceeds the short join deadline") {
             server.cancel(joinTimeout: .milliseconds(1))
         }

@@ -14,7 +14,11 @@ struct CloudMachineLinkTimeoutRecoveryTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let socketPath = "/tmp/cmux-link-request-timeout-\(UUID().uuidString.lowercased()).sock"
         let listener = try Self.makeListener(at: socketPath)
-        defer { Darwin.close(listener); unlink(socketPath) }
+        var listenerTransferred = false
+        defer {
+            if !listenerTransferred { Darwin.close(listener) }
+            unlink(socketPath)
+        }
         let client = root.appendingPathComponent("fake-cmux-tui")
         try """
         #!/bin/sh
@@ -23,10 +27,11 @@ struct CloudMachineLinkTimeoutRecoveryTests {
         """.write(to: client, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: client.path)
         let requestReceived = CloudLinkFirstValue<Bool>()
-        let server = CloudLinkBlockingTestServer { server in
+        let server = CloudLinkBlockingTestServer(ownedListener: listener) { server in
             Self.serve(listener: listener, respondsToPing: true, requestReceived: requestReceived,
                        cancelled: { server.isCancelled })
         }
+        listenerTransferred = true
         defer { server.cancel() }
         let clock = CloudLinkTestClock()
         let link = CloudMachineLink(machineID: "healthy-timeout-machine", clientURL: client, paths: CloudTuiClientPaths(home: root), deadlineClock: clock)
@@ -58,8 +63,9 @@ struct CloudMachineLinkTimeoutRecoveryTests {
 
         let socketPath = "/tmp/cmux-link-timeout-\(UUID().uuidString.lowercased()).sock"
         let listener = try Self.makeListener(at: socketPath)
+        var listenerTransferred = false
         defer {
-            Darwin.close(listener)
+            if !listenerTransferred { Darwin.close(listener) }
             unlink(socketPath)
         }
 
@@ -73,10 +79,11 @@ struct CloudMachineLinkTimeoutRecoveryTests {
 
         let requestReceived = CloudLinkFirstValue<Bool>()
         let probeReceived = CloudLinkFirstValue<Bool>()
-        let server = CloudLinkBlockingTestServer { server in
+        let server = CloudLinkBlockingTestServer(ownedListener: listener) { server in
             Self.serve(listener: listener, respondsToPing: false, requestReceived: requestReceived,
                        probeReceived: probeReceived, cancelled: { server.isCancelled })
         }
+        listenerTransferred = true
         defer { server.cancel() }
         let clock = CloudLinkTestClock()
         let link = CloudMachineLink(
@@ -120,7 +127,11 @@ struct CloudMachineLinkTimeoutRecoveryTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let socketPath = "/tmp/cmux-link-shutdown-\(UUID()).sock"
         let listener = try Self.makeListener(at: socketPath)
-        defer { Darwin.close(listener); unlink(socketPath) }
+        var listenerTransferred = false
+        defer {
+            if !listenerTransferred { Darwin.close(listener) }
+            unlink(socketPath)
+        }
         let client = root.appendingPathComponent("fake-cmux-tui")
         let pidFile = root.appendingPathComponent("pid")
         try """
@@ -131,9 +142,10 @@ struct CloudMachineLinkTimeoutRecoveryTests {
         exec tail -f /dev/null
         """.write(to: client, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: client.path)
-        let server = CloudLinkBlockingTestServer { server in
+        let server = CloudLinkBlockingTestServer(ownedListener: listener) { server in
             Self.serve(listener: listener, respondsToPing: true, cancelled: { server.isCancelled })
         }
+        listenerTransferred = true
         defer { server.cancel() }
         let clock = CloudLinkTestClock()
         let link = CloudMachineLink(machineID: "wedged-child", clientURL: client,
