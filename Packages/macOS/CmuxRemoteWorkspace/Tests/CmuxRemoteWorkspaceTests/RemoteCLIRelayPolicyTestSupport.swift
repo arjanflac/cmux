@@ -32,6 +32,8 @@ struct PolicyPassthroughRewriter: RemoteRelayCommandRewriting {
 /// number of connections, records every request, answers each with a fixed
 /// `{"ok":true,"result":{}}` line. The relay must forward authorized commands
 /// here and must never connect for denied ones.
+/// Unchecked Sendable: the lock protects requests, stop state and live descriptor
+/// identities. The dedicated worker owns descriptor closure; close joins it.
 final class PolicyFakeUnixSocketServer: @unchecked Sendable {
     let path: String
     private let responseBody: Data
@@ -39,6 +41,10 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
     private var _requests: [Data] = []
     private let listenFD: Int32
     private var shouldStop = false
+    private var listenerOpen = true
+    private var activeClient: Int32?
+    private var replying = false
+    private let workerFinished = DispatchGroup()
 
     var requests: [Data] {
         lock.lock()
@@ -46,7 +52,8 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
         return _requests
     }
 
-    init(responseBody: Data = Data("{\"ok\":true,\"result\":{}}\n".utf8)) throws {
+    init(responseBody: Data = Data("{\"ok\":true,\"result\":{}}\n".utf8),
+         acceptClient: @escaping @Sendable (Int32) -> Int32 = { Darwin.accept($0, nil, nil) }) throws {
         self.responseBody = responseBody
         path = NSTemporaryDirectory() + "cmux-relay-policy-test-\(UUID().uuidString.prefix(8)).sock"
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -77,23 +84,53 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
             Darwin.close(fd)
             throw NSError(domain: "PolicyFakeUnixSocketServer", code: Int(listenErrno), userInfo: [NSLocalizedDescriptionKey: "listen() failed errno=\(listenErrno)"])
         }
+        guard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0 else {
+            let failure = errno
+            Darwin.close(fd)
+            throw POSIXError(POSIXErrorCode(rawValue: failure) ?? .EIO)
+        }
         listenFD = fd
+        workerFinished.enter()
+        let workerFinished = self.workerFinished
         Thread.detachNewThread { [weak self] in
+            defer {
+                if let self {
+                    self.lock.lock()
+                    self.listenerOpen = false
+                    Darwin.close(fd)
+                    self.lock.unlock()
+                } else { Darwin.close(fd) }
+                workerFinished.leave()
+            }
             while true {
-                let client = accept(fd, nil, nil)
+                guard let self else { return }
+                self.lock.lock()
+                let stopping = self.shouldStop
+                self.lock.unlock()
+                if stopping { return }
+                var readiness = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+                let ready = Darwin.poll(&readiness, 1, 20)
+                if ready < 0 && errno == EINTR { continue }
+                if ready < 0 || readiness.revents & Int16(POLLNVAL) != 0 { return }
+                if ready == 0 { continue }
+                let client = acceptClient(fd)
+                if client < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) { continue }
                 if client < 0 { return }
-                guard let self else {
-                    Darwin.close(client)
-                    return
-                }
+                _ = fcntl(client, F_SETFL, fcntl(client, F_GETFL) & ~O_NONBLOCK)
                 self.lock.lock()
                 let stopped = self.shouldStop
+                if !stopped { self.activeClient = client }
                 self.lock.unlock()
                 if stopped {
                     Darwin.close(client)
                     return
                 }
                 self.serve(client: client)
+                self.lock.lock()
+                self.activeClient = nil
+                self.replying = false
+                Darwin.close(client)
+                self.lock.unlock()
             }
         }
     }
@@ -103,6 +140,7 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
         var scratch = [UInt8](repeating: 0, count: 4096)
         while true {
             let count = Darwin.read(client, &scratch, scratch.count)
+            if count < 0 && errno == EINTR { continue }
             if count > 0 {
                 request.append(scratch, count: count)
                 continue
@@ -110,19 +148,46 @@ final class PolicyFakeUnixSocketServer: @unchecked Sendable {
             break
         }
         lock.lock()
+        guard !shouldStop else { lock.unlock(); return }
         _requests.append(request)
+        replying = true
         lock.unlock()
-        responseBody.withUnsafeBytes { raw in
-            _ = Darwin.write(client, raw.baseAddress, raw.count)
+        // A fixture stop must not shut down its own write or wait for a peer
+        // that stopped reading. The worker closes the descriptor after this
+        // cancellable nonblocking reply; no socket syscall holds the state lock.
+        guard fcntl(client, F_SETFL, fcntl(client, F_GETFL) | O_NONBLOCK) == 0 else { return }
+        var sent = 0
+        while sent < responseBody.count {
+            lock.lock()
+            let stopped = shouldStop
+            lock.unlock()
+            if stopped { return }
+            let count = responseBody.withUnsafeBytes { raw in
+                Darwin.write(client, raw.baseAddress!.advanced(by: sent), raw.count - sent)
+            }
+            if count > 0 { sent += count; continue }
+            if count < 0 && errno == EINTR { continue }
+            if count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) {
+                var ready = pollfd(fd: client, events: Int16(POLLOUT), revents: 0)
+                _ = Darwin.poll(&ready, 1, 20)
+                continue
+            }
+            return
         }
-        Darwin.close(client)
     }
 
     func close() {
         lock.lock()
+        guard !shouldStop else { lock.unlock(); return }
         shouldStop = true
+        if let activeClient, !replying { _ = shutdown(activeClient, SHUT_RDWR) }
+        // Closing a listener alone need not wake another thread's accept.
+        // Stop and join the worker before its descriptor can be reused.
+        if listenerOpen { _ = shutdown(listenFD, SHUT_RDWR) }
         lock.unlock()
-        Darwin.close(listenFD)
+        if workerFinished.wait(timeout: .now() + 1) != .success {
+            Issue.record("The owned Unix socket fixture did not stop before descriptor cleanup")
+        }
         unlink(path)
     }
 }
@@ -221,7 +286,12 @@ func runPolicyRelayExchange(
 
     // Command; the relay answers then closes the connection.
     send(connection, Data(commandLine.utf8) + Data([0x0A]))
-    _ = wait(5.0) { data, closed in closed }
+    if !wait(5.0, { _, closed in closed }) {
+        state.lock.lock()
+        let byteCount = state.received.count
+        state.lock.unlock()
+        Issue.record("Relay command response did not close within the fixture deadline (received \(byteCount) bytes)")
+    }
 
     state.lock.lock()
     let raw = state.received

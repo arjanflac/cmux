@@ -14,7 +14,11 @@ struct CloudMachineLinkTimeoutRecoveryTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let socketPath = "/tmp/cmux-link-request-timeout-\(UUID().uuidString.lowercased()).sock"
         let listener = try Self.makeListener(at: socketPath)
-        defer { Darwin.close(listener); unlink(socketPath) }
+        var listenerTransferred = false
+        defer {
+            if !listenerTransferred { Darwin.close(listener) }
+            unlink(socketPath)
+        }
         let client = root.appendingPathComponent("fake-cmux-tui")
         try """
         #!/bin/sh
@@ -23,7 +27,12 @@ struct CloudMachineLinkTimeoutRecoveryTests {
         """.write(to: client, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: client.path)
         let requestReceived = CloudLinkFirstValue<Bool>()
-        let server = Task.detached { Self.serve(listener: listener, respondsToPing: true, requestReceived: requestReceived) }
+        let server = CloudLinkBlockingTestServer(ownedListener: listener) { server in
+            Self.serve(listener: listener, respondsToPing: true, requestReceived: requestReceived,
+                       cancelled: { server.isCancelled })
+        }
+        listenerTransferred = true
+        defer { server.cancel() }
         let clock = CloudLinkTestClock()
         let link = CloudMachineLink(machineID: "healthy-timeout-machine", clientURL: client, paths: CloudTuiClientPaths(home: root), deadlineClock: clock)
         _ = try await link.connect(route: "ws://127.0.0.1:1337/v1/link", session: "cloud", carrier: true, timeout: .seconds(2))
@@ -54,8 +63,9 @@ struct CloudMachineLinkTimeoutRecoveryTests {
 
         let socketPath = "/tmp/cmux-link-timeout-\(UUID().uuidString.lowercased()).sock"
         let listener = try Self.makeListener(at: socketPath)
+        var listenerTransferred = false
         defer {
-            Darwin.close(listener)
+            if !listenerTransferred { Darwin.close(listener) }
             unlink(socketPath)
         }
 
@@ -69,9 +79,12 @@ struct CloudMachineLinkTimeoutRecoveryTests {
 
         let requestReceived = CloudLinkFirstValue<Bool>()
         let probeReceived = CloudLinkFirstValue<Bool>()
-        let server = Task.detached(priority: .userInitiated) {
-            Self.serve(listener: listener, respondsToPing: false, requestReceived: requestReceived, probeReceived: probeReceived)
+        let server = CloudLinkBlockingTestServer(ownedListener: listener) { server in
+            Self.serve(listener: listener, respondsToPing: false, requestReceived: requestReceived,
+                       probeReceived: probeReceived, cancelled: { server.isCancelled })
         }
+        listenerTransferred = true
+        defer { server.cancel() }
         let clock = CloudLinkTestClock()
         let link = CloudMachineLink(
             machineID: "timeout-machine",
@@ -114,7 +127,11 @@ struct CloudMachineLinkTimeoutRecoveryTests {
         defer { try? FileManager.default.removeItem(at: root) }
         let socketPath = "/tmp/cmux-link-shutdown-\(UUID()).sock"
         let listener = try Self.makeListener(at: socketPath)
-        defer { Darwin.close(listener); unlink(socketPath) }
+        var listenerTransferred = false
+        defer {
+            if !listenerTransferred { Darwin.close(listener) }
+            unlink(socketPath)
+        }
         let client = root.appendingPathComponent("fake-cmux-tui")
         let pidFile = root.appendingPathComponent("pid")
         try """
@@ -125,7 +142,11 @@ struct CloudMachineLinkTimeoutRecoveryTests {
         exec tail -f /dev/null
         """.write(to: client, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: client.path)
-        let server = Task.detached { Self.serve(listener: listener, respondsToPing: true) }
+        let server = CloudLinkBlockingTestServer(ownedListener: listener) { server in
+            Self.serve(listener: listener, respondsToPing: true, cancelled: { server.isCancelled })
+        }
+        listenerTransferred = true
+        defer { server.cancel() }
         let clock = CloudLinkTestClock()
         let link = CloudMachineLink(machineID: "wedged-child", clientURL: client,
                                     paths: CloudTuiClientPaths(home: root), deadlineClock: clock)
@@ -164,18 +185,35 @@ struct CloudMachineLinkTimeoutRecoveryTests {
             Darwin.close(fd)
             throw POSIXError(.EADDRINUSE)
         }
+        guard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0 else {
+            let failure = errno
+            Darwin.close(fd)
+            unlink(path)
+            throw POSIXError(POSIXErrorCode(rawValue: failure) ?? .EIO)
+        }
         return fd
     }
 
-    private static func serve(listener: Int32, respondsToPing: Bool, requestReceived: CloudLinkFirstValue<Bool>? = nil, probeReceived: CloudLinkFirstValue<Bool>? = nil) {
-        let peer = accept(listener, nil, nil)
+    private static func serve(listener: Int32, respondsToPing: Bool, requestReceived: CloudLinkFirstValue<Bool>? = nil,
+                              probeReceived: CloudLinkFirstValue<Bool>? = nil, cancelled: @Sendable () -> Bool) {
+        var peer: Int32 = -1
+        while !cancelled() {
+            guard waitForInput(listener, cancelled: cancelled) else { return }
+            peer = accept(listener, nil, nil)
+            if peer >= 0 { break }
+            if errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK { continue }
+            return
+        }
         guard peer >= 0 else { return }
         defer { Darwin.close(peer) }
+        guard fcntl(peer, F_SETFL, fcntl(peer, F_GETFL) & ~O_NONBLOCK) == 0 else { return }
         var line = Data()
         var requestCount = 0
         var byte: UInt8 = 0
-        while !Task.isCancelled {
+        while !cancelled() {
+            guard waitForInput(peer, cancelled: cancelled) else { return }
             let count = withUnsafeMutableBytes(of: &byte) { Darwin.read(peer, $0.baseAddress, 1) }
+            if count < 0 && errno == EINTR { continue }
             guard count == 1 else { return }
             if byte == 0x0A {
                 guard
@@ -219,5 +257,16 @@ struct CloudMachineLinkTimeoutRecoveryTests {
                 line.append(byte)
             }
         }
+    }
+
+    private static func waitForInput(_ fd: Int32, cancelled: @Sendable () -> Bool) -> Bool {
+        while !cancelled() {
+            var descriptor = pollfd(fd: fd, events: Int16(POLLIN), revents: 0)
+            let ready = Darwin.poll(&descriptor, 1, 20)
+            if ready < 0 && errno == EINTR { continue }
+            if ready < 0 || descriptor.revents & Int16(POLLNVAL) != 0 { return false }
+            if ready > 0 { return true }
+        }
+        return false
     }
 }
