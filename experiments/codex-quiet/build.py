@@ -9,7 +9,7 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
-from check import HERE, orchestration_proof, prepare_release_lock, resume_compat_proof, run, tool_coverage_proof, working_tip_proof
+from check import HERE, aggregate_proof, orchestration_proof, prepare_release_lock, resume_compat_proof, run, tool_coverage_proof, working_tip_proof
 import source_mtimes
 
 
@@ -30,7 +30,8 @@ def main():
     for name in patches:
         if name in ('focus-mode.patch', 'working-tip.patch', 'orchestration.patch',
                     'resume-compat-tests.patch', 'resume-compat.patch',
-                    'tool-coverage-tests.patch', 'tool-coverage.patch'): continue
+                    'tool-coverage-tests.patch', 'tool-coverage.patch',
+                    'aggregate-tests.patch', 'aggregate.patch'): continue
         run(['git', 'apply', '--check', str(HERE / name)], source)
         run(['git', 'apply', str(HERE / name)], source)
     root = source / 'codex-rs'
@@ -73,6 +74,7 @@ def main():
         orchestration_proof(source, output, manifest)
         resume_compat_proof(source, output, manifest)
         tool_coverage_proof(source, output, manifest)
+        aggregate_proof(source, output, manifest)
         print('Building the installable quiet frontend', flush=True)
         with (output / 'build.log').open('w') as log:
             outcome = subprocess.run(['cargo', 'build', '--locked', '--release', '-p', 'codex-tui', '--bin', 'cmux-codex-quiet', '--features', 'cmux-quiet'], cwd=root, stdout=log, stderr=subprocess.STDOUT)
