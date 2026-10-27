@@ -12,9 +12,28 @@ cmux task send <task-id> --request-id <uuid> --wait -- 'Check the alternative to
 cmux task turns <task-id>
 cmux task result <operation-id>
 cmux task inbox <parent-task-id>
+cmux task workers --owner <parent-task-id> [--cursor <uuid>] [--limit <1-50>] [--include-retired]
 cmux task ack <parent-task-id> <event-id>
 cmux task attach <task-id> [--workspace <existing-id-or-ref>]
 ```
+
+`workers` rediscovers this conversation’s authorized descendants, including
+persistent workers outside the recent 100-record cache. A model cannot select
+another owner or use ancestry as a read wildcard. The directory contains small
+metadata and operation IDs, with no full prompts, results, provider-session IDs
+or credentials. Titles are the existing bounded, sanitized task titles.
+
+Pages use stable UUID order, a default limit of 20 (maximum 50), and
+`next_cursor`/`has_more`; malformed cursors fail instead of restarting at another
+page. Retired/retiring workers are hidden unless `--include-retired` is requested,
+and that flag never expands authority. A persistent, locally settled row may say
+`reusable: true` with `follow_up: requires_preflight`; actual sends still recheck
+provider activity, ownership and permission state. Read results through `result`,
+then explicitly acknowledge them. Listing never acknowledges or retires work.
+
+The query reads saved metadata and does not contact a provider. Existing lazy
+runtime initialization may start its normal read-only session observation; no
+inference, prompt replay, provider process or automatic parent wake is added.
 
 Providers are `codex`, `claude`, and `opencode`. Follow-ups retain the same
 provider session and return independent per-turn receipts. Keep a stable

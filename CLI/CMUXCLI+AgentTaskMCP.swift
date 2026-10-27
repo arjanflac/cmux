@@ -69,7 +69,11 @@ extension CMUXCLI {
         ["name": "cmux_tasks",
          "description": "Manage this cmux conversation's background workers, inbox and schedules. Mutations require a stable UUID request_id; reuse it only for an identical retry. Inspect uncertain work instead of resubmitting.",
          "inputSchema": ["type": "object", "required": ["action"], "properties": [
-             "action": ["type": "string", "enum": ["start", "send", "read", "turns", "result", "wait", "cancel", "interactions", "respond", "inbox", "ack", "schedule.create", "schedule.list", "schedule.read", "schedule.pause", "schedule.resume", "schedule.cancel"]],
+             "action": ["type": "string", "enum": ["start", "send", "read", "turns", "result", "wait", "cancel", "interactions", "respond", "workers", "inbox", "ack", "schedule.create", "schedule.list", "schedule.read", "schedule.pause", "schedule.resume", "schedule.cancel"]],
+             "cursor": ["type": "string", "format": "uuid"],
+             "limit": ["type": "integer", "minimum": 1, "maximum": 50, "default": 20],
+             "include_retired": ["type": "boolean", "default": false],
+             "lifecycle": ["type": "string", "enum": ["persistent", "oneShot"]],
              "request_id": ["type": "string"], "task_id": ["type": "string"], "operation_id": ["type": "string"],
              "provider": ["type": "string", "enum": ["codex", "claude", "opencode"]],
              "prompt": ["type": "string"], "model": ["type": "string"], "effort": ["type": "string"],

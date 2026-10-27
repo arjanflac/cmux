@@ -31,7 +31,7 @@ extension CMUXCLI {
             if index < args.count, !args[index].hasPrefix("--") {
                 params["schedule_id"] = args[index]; index += 1
             }
-        } else if command != "panel" {
+        } else if command != "panel" && command != "workers" {
             guard index < args.count else { throw CLIError(message: usage) }
             let key = ["result", "wait-turn"].contains(command) ? "operation_id" : "task_id"
             params[key] = args[index]; index += 1
@@ -43,6 +43,7 @@ extension CMUXCLI {
         while index < args.count {
             let flag = args[index]
             if flag == "--" { message = args.dropFirst(index + 1).joined(separator: " "); break }
+            if flag == "--include-retired", command == "workers" { params["include_retired"] = true; index += 1; continue }
             if flag == "--wait" { waits = true; index += 1; continue }
             guard flag.hasPrefix("--"), index + 1 < args.count else { throw CLIError(message: usage) }
             let value = args[index + 1]; index += 2
@@ -54,6 +55,12 @@ extension CMUXCLI {
             case "--prompt-file": promptFile = value
             case "--request-id": params["request_id"] = value
             case "--owner": params["owner_task_id"] = value
+            case "--cursor" where command == "workers":
+                guard UUID(uuidString: value) != nil, value.utf8.count == 36 else { throw CLIError(message: usage) }
+                params["cursor"] = value
+            case "--limit" where command == "workers":
+                guard let limit = Int(value), (1...50).contains(limit) else { throw CLIError(message: usage) }
+                params["limit"] = limit
             case "--target": params["target_task_id"] = value
             case "--provider": params["provider"] = value
             case "--cwd": params["cwd"] = resolvePath(value)
@@ -88,6 +95,9 @@ extension CMUXCLI {
             message = text
         }
         if let message { params["prompt"] = message }
+        if command == "workers" {
+            guard let rawOwner = params["owner_task_id"] as? String, UUID(uuidString: rawOwner) != nil else { throw CLIError(message: usage) }
+        }
         let mutation = ["send", "ack", "respond"].contains(command)
             || (command == "schedule" && ["create", "pause", "resume", "cancel"].contains(params["schedule_action"] as? String ?? ""))
         if mutation {

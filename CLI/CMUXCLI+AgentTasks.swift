@@ -10,6 +10,7 @@ extension CMUXCLI {
         cmux task read|wait|cancel <task-id>
         cmux task attach <task-id> [--workspace <id|ref>]
         cmux task list
+        cmux task workers --owner <task-id> [--cursor <uuid>] [--limit <1-50>] [--include-retired]
         cmux task send <task-id> [--request-id <uuid>] [--prompt-file <path|->] [--wait] -- <message>
         cmux task turns <task-id>
         cmux task result|wait-turn <operation-id>
@@ -36,7 +37,7 @@ extension CMUXCLI {
         let usage = Self.agentTaskUsage
         let options = args.prefix(while: { $0 != "--" })
         guard let command = args.first, !options.contains("--help") else { print(usage); return }
-        if ["send", "turns", "result", "wait-turn", "inbox", "ack", "schedule", "panel", "bridge", "interactions", "respond", "mcp"].contains(command) {
+        if ["send", "turns", "result", "wait-turn", "workers", "inbox", "ack", "schedule", "panel", "bridge", "interactions", "respond", "mcp"].contains(command) {
             try runAgentOrchestratorCommand(args, client: client, windowOverride: windowOverride)
             return
         }

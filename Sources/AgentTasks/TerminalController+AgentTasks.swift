@@ -21,7 +21,7 @@ extension TerminalController {
             let runtime = await agentTaskRuntimeForControl()
             try await runtime.restore()
             let orchestrationMethods: Set<String> = ["agent.task.start", "agent.task.send", "agent.task.turns",
-                "agent.task.result", "agent.task.wait-turn", "agent.task.inbox", "agent.task.ack",
+                "agent.task.result", "agent.task.wait-turn", "agent.task.workers", "agent.task.inbox", "agent.task.ack",
                 "agent.task.schedule", "agent.task.panel", "agent.task.bridge", "agent.task.interactions", "agent.task.respond"]
             if orchestrationMethods.contains(request.method) {
                 let input = try JSONSerialization.data(withJSONObject: params)

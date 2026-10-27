@@ -93,6 +93,13 @@ extension NativeAgentOrchestration {
             try await authorizeTarget(scope, id: existing.taskID, operation: .read)
             let receipt = action == "wait" ? try await runtime.coordinator.waitTurn(operation) : existing
             return try turnData(receipt)
+        case "workers":
+            let ownerID = try owner(args, scope: scope)
+            let query = try JSONDecoder().decode(AgentTaskWorkerDirectoryQuery.self, from: JSONSerialization.data(withJSONObject: args))
+            let page = try await runtime.coordinator.workers(query) {
+                try await self.workerDirectoryAccess(ownerID: ownerID, scope: scope)
+            }
+            return try data(object(page))
         case "inbox":
             let owner = try owner(args, scope: scope)
             try await authorizeTarget(scope, id: owner, operation: .read)
@@ -113,6 +120,25 @@ extension NativeAgentOrchestration {
             if action.hasPrefix("schedule.") { return try await scheduleCommand(args, scope: scope, operationID: operationID) }
             throw CocoaError(.featureUnsupported)
         }
+    }
+
+    /// A directory read cannot turn ancestry or a model-supplied owner into authority.
+    private func workerDirectoryAccess(ownerID: UUID, scope: AgentTaskScope?) async throws -> AgentTaskWorkerDirectoryAccess {
+        if let scope {
+            guard enabled, ownerID == scope.ownerTaskID else { throw CocoaError(.fileReadNoPermission) }
+            let current = try await authority.authorizeTrustedOwner(ownerTaskID: scope.ownerTaskID,
+                callerSessionID: scope.providerSessionID, bindingGeneration: scope.bindingGeneration, operation: .read)
+            guard enabled, current.workspaceStableID == scope.workspaceStableID else { throw CocoaError(.fileReadNoPermission) }
+            return AgentTaskWorkerDirectoryAccess(ownerTaskID: scope.ownerTaskID, workspaceStableID: scope.workspaceStableID,
+                allowedTaskIDs: scope.allowedTargets.intersection(current.allowedTargets))
+        }
+        // An explicit local operator may select an owner, but uses the identical
+        // descendant query and cannot turn this into a workspace-wide listing.
+        guard let owner = try await runtime.coordinator.record(ownerID), let workspace = owner.workspaceStableID else {
+            throw AgentTaskWorkerDirectoryQuery.Failure.ownerUnavailable
+        }
+        return AgentTaskWorkerDirectoryAccess(ownerTaskID: ownerID, workspaceStableID: workspace,
+            allowedTaskIDs: runtime.coordinator.descendantTaskIDs(of: ownerID))
     }
 
     /// Adapters may use a namespaced action/body shape; the domain sees one canonical object.

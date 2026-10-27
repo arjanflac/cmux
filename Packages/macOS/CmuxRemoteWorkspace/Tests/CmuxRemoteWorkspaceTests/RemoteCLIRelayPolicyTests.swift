@@ -9,7 +9,7 @@ struct RemoteCLIRelayPolicyTests {
 
     @Test("local managed task commands never cross the remote relay", arguments: [
         "start", "list", "read", "wait", "cancel", "report", "attach", "send", "turns", "result",
-        "wait-turn", "inbox", "ack", "schedule", "panel", "bridge", "interactions", "respond"
+        "wait-turn", "workers", "inbox", "ack", "schedule", "panel", "bridge", "interactions", "respond"
     ])
     func deniesLocalManagedTasks(verb: String) throws {
         try withServer { port, unixServer in

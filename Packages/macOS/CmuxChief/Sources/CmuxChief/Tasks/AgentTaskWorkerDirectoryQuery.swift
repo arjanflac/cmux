@@ -31,8 +31,8 @@ public struct AgentTaskWorkerDirectoryQuery: Codable, Equatable, Sendable {
             guard raw.utf8.count == 36, let id = UUID(uuidString: raw) else { throw Failure.invalidParameters }
             cursor = id
         } else { cursor = nil }
-        try self.init(cursor: cursor, limit: values.decodeIfPresent(Int.self, forKey: .limit) ?? 20,
-                      includeRetired: values.decodeIfPresent(Bool.self, forKey: .includeRetired) ?? false)
+        try self.init(cursor: cursor, limit: values.contains(.limit) ? values.decode(Int.self, forKey: .limit) : 20,
+                      includeRetired: values.contains(.includeRetired) ? values.decode(Bool.self, forKey: .includeRetired) : false)
     }
 
     /// Why a metadata read could not establish a bounded authorized snapshot.
