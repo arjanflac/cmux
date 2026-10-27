@@ -72,8 +72,7 @@ public struct CodexManagedDaemonAttachProbe: Sendable {
              cwd: String, expectedOutput: String? = nil,
              timeout: TimeInterval = 5, terminationGrace: TimeInterval = 0.25) -> Bool {
         let child = Process()
-        let finished = DispatchSemaphore(value: 0)
-        child.terminationHandler = { _ in finished.signal() }
+        let supervisor = ProbeChildSupervisor(child)
         child.executableURL = URL(fileURLWithPath: executable)
         child.arguments = arguments
         child.environment = environment
@@ -81,25 +80,10 @@ public struct CodexManagedDaemonAttachProbe: Sendable {
         let output = expectedOutput == nil ? nil : Pipe()
         child.standardOutput = output?.fileHandleForWriting ?? FileHandle.nullDevice
         child.standardError = FileHandle.nullDevice
-        do { try child.run() } catch { return false }
+        do { try supervisor.launch() } catch { return false }
         try? output?.fileHandleForWriting.close()
         defer { try? output?.fileHandleForReading.close() }
-        let owner = ProbeChildIdentity(child.processIdentifier)
-        let deadline = DispatchWorkItem {
-            guard child.isRunning, owner?.isCurrent == true else { return }
-            child.terminate()
-        }
-        let escalation = DispatchWorkItem {
-            guard child.isRunning, owner?.isCurrent == true else { return }
-            _ = Darwin.kill(child.processIdentifier, SIGKILL)
-        }
-        let queue = DispatchQueue.global(qos: .utility)
-        queue.asyncAfter(deadline: .now() + timeout, execute: deadline)
-        queue.asyncAfter(deadline: .now() + timeout + terminationGrace, execute: escalation)
-        defer { deadline.cancel(); escalation.cancel() }
-        // Never wait without a bound, even if the kernel cannot reap an owned
-        // probe after SIGKILL. Neither timeout may signal a reused PID.
-        guard finished.wait(timeout: .now() + timeout + terminationGrace + 0.5) == .success else { return false }
+        guard supervisor.completedWithinDeadline(timeout: timeout, terminationGrace: terminationGrace) else { return false }
         guard child.terminationReason == .exit, child.terminationStatus == 0 else { return false }
         if let expectedOutput {
             if let descriptor = output?.fileHandleForReading.fileDescriptor {
@@ -109,33 +93,5 @@ public struct CodexManagedDaemonAttachProbe: Sendable {
                   String(decoding: bytes, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) == expectedOutput else { return false }
         }
         return true
-    }
-}
-
-/// Exact generation of the child created by this probe, not an inherited agent PID.
-private struct ProbeChildIdentity: Sendable {
-    let pid: Int32
-    let seconds: UInt64
-    let microseconds: UInt64
-
-    init?(_ pid: Int32) {
-        guard let info = Self.info(pid) else { return nil }
-        self.pid = pid
-        seconds = info.pbi_start_tvsec
-        microseconds = info.pbi_start_tvusec
-    }
-
-    var isCurrent: Bool {
-        guard let info = Self.info(pid) else { return false }
-        return info.pbi_start_tvsec == seconds && info.pbi_start_tvusec == microseconds
-    }
-
-    private static func info(_ pid: Int32) -> proc_bsdinfo? {
-        var info = proc_bsdinfo()
-        let size = MemoryLayout<proc_bsdinfo>.stride
-        guard pid > 1, proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(size)) == size,
-              info.pbi_uid == getuid(), info.pbi_ppid == UInt32(getpid()),
-              info.pbi_status != UInt32(SZOMB) else { return nil }
-        return info
     }
 }
