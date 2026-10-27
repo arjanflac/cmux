@@ -382,6 +382,10 @@ jobs:
       - name: Validate isolated workspace churn fixture cleanup
         run: python3 tests/test_workspace_churn_fixture_cleanup.py
 
+      - name: Validate quiet frontend artifact pairing policy
+        if: ${{ matrix.group == 'preflight' }}
+        run: python3 tests/test_quiet_codex_bundle_policy.py
+
       - name: Validate Python test execution registry
         if: ${{ matrix.group == 'preflight' }}
         env:

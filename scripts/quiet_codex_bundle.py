@@ -30,6 +30,59 @@ def validate_native_reuse(native_sha: str, frontend_sha: str, comparison: dict) 
                 raise ValueError('Native inputs changed; compile a new app instead of reusing this artifact')
 
 
+FRONTEND_BUILD_INPUTS = (
+    ('experiments/codex-quiet', 'tree'),
+    ('.github/workflows/quiet-codex-proof.yml', 'blob'),
+    ('.github/workflows/quiet-codex-frontend.yml', 'blob'),
+    ('scripts/select-ci-xcode.sh', 'blob'),
+    ('.xcode-version', 'blob'),
+    ('scripts/ci/xcode-pins.txt', 'blob'),
+)
+
+
+def _frontend_input_objects(source_sha: str, repository: Path) -> dict[str, tuple[str, str, str]]:
+    def git(*arguments: str) -> str:
+        try:
+            return subprocess.check_output(['git', *arguments], cwd=repository,
+                                           stderr=subprocess.DEVNULL, text=True).strip()
+        except subprocess.CalledProcessError as error:
+            raise ValueError('Cannot resolve immutable frontend build inputs') from error
+
+    if git('cat-file', '-t', source_sha) != 'commit':
+        raise ValueError('Frontend input identity must name a commit object')
+    objects = {}
+    for path, expected_type in FRONTEND_BUILD_INPUTS:
+        entry = git('ls-tree', source_sha, '--', path)
+        try:
+            metadata, name = entry.split('\t', 1)
+            mode, kind, object_sha = metadata.split()
+        except ValueError as error:
+            raise ValueError(f'Missing frontend build input: {path}') from error
+        if (name != path or kind != expected_type
+                or mode not in ({'040000'} if kind == 'tree' else {'100644', '100755'})
+                or not re.fullmatch(r'[0-9a-f]{40}', object_sha)):
+            raise ValueError(f'Invalid frontend build input: {path}')
+        objects[path] = (mode, kind, object_sha)
+    return objects
+
+
+def validate_fresh_native_frontend(native_sha: str, frontend_sha: str,
+                                   repository: Path = ROOT) -> None:
+    """Pair a newly compiled app with an existing frontend only for identical inputs.
+
+    Native changes are allowed because the native artifact is compiled afresh.
+    This is intentionally separate from the stricter compiled-native reuse lane.
+    """
+    if not all(isinstance(value, str) and re.fullmatch(r'[0-9a-f]{40}', value)
+               for value in [native_sha, frontend_sha]):
+        raise ValueError('Expected immutable source commit identities')
+    native_inputs = _frontend_input_objects(native_sha, repository)
+    frontend_inputs = _frontend_input_objects(frontend_sha, repository)
+    changed = [path for path in native_inputs if native_inputs[path] != frontend_inputs[path]]
+    if changed:
+        raise ValueError('Frontend build inputs changed; build a new frontend: ' + ', '.join(changed))
+
+
 def validate_artifact(artifact: Path, proof: Path = PROOF) -> Path:
     expected = json.loads((proof / 'source.json').read_text())
     manifest_path = artifact / 'manifest.json'
@@ -78,6 +131,8 @@ def stage_artifact(artifact: Path, resources: Path, verify_binary=verify_macos_b
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Check an explicit native/frontend artifact pairing.')
+    parser.add_argument('--fresh-native', action='store_true',
+                        help='A new native build may pair only with identical frontend Git inputs')
     parser.add_argument('repository')
     parser.add_argument('native_sha')
     parser.add_argument('frontend_sha')
@@ -86,7 +141,11 @@ if __name__ == '__main__':
         parser.error('Expected an owner/repository identifier')
     if not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in [args.native_sha, args.frontend_sha]):
         parser.error('Expected immutable source commit identities')
-    comparison = {} if args.native_sha == args.frontend_sha else json.loads(subprocess.check_output([
-        'gh', 'api', f'repos/{args.repository}/compare/{args.native_sha}...{args.frontend_sha}'], text=True))
-    validate_native_reuse(args.native_sha, args.frontend_sha, comparison)
-    print('Verified native source is unchanged outside the maintained frontend proof.')
+    if args.fresh_native:
+        validate_fresh_native_frontend(args.native_sha, args.frontend_sha)
+        print('Verified a fresh native build uses exactly the selected frontend build inputs.')
+    else:
+        comparison = {} if args.native_sha == args.frontend_sha else json.loads(subprocess.check_output([
+            'gh', 'api', f'repos/{args.repository}/compare/{args.native_sha}...{args.frontend_sha}'], text=True))
+        validate_native_reuse(args.native_sha, args.frontend_sha, comparison)
+        print('Verified native source is unchanged outside the maintained frontend proof.')

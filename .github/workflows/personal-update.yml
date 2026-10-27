@@ -93,6 +93,22 @@ jobs:
             echo 'release=packaging-only' >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # A new native compile can use a retained frontend from another commit
+          # only when the complete frontend tree, workflows and SDK selector match.
+          # Native inputs are built from this exact source; no overlay is allowed.
+          if [[ -n "$QUIET_FRONTEND_RUN" ]]; then
+            [[ "$EVENT_NAME" == workflow_dispatch ]]
+            [[ "$SOURCE_REF" != personal ]]
+            [[ "$QUIET_FRONTEND_RUN" =~ ^[0-9]+$ ]]
+            quiet_producer="repos/$GITHUB_REPOSITORY/actions/runs/$QUIET_FRONTEND_RUN"
+            quiet_sha=$(gh api "$quiet_producer" --jq .head_sha)
+            quiet_path=$(gh api "$quiet_producer" --jq .path)
+            [[ "$quiet_sha" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$quiet_path" == .github/workflows/quiet-codex-proof.yml || "$quiet_path" == .github/workflows/quiet-codex-frontend.yml ]]
+            git fetch --no-tags --depth=1 origin "$quiet_sha"
+            python3 scripts/quiet_codex_bundle.py --fresh-native "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$quiet_sha"
+            echo "quiet_sha=$quiet_sha" >> "$GITHUB_OUTPUT"
+          fi
           # A manually selected feature branch gets an exact-source build and
           # artifact without changing personal or merging upstream into it.
           if [[ "$SOURCE_REF" != personal ]]; then
@@ -283,12 +299,13 @@ jobs:
           QUIET_RUN: ${{ inputs.quiet_frontend_run }}
           QUIET_REPOSITORY: ${{ github.repository }}
           QUIET_SOURCE_SHA: ${{ needs.prepare.outputs.quiet_sha }}
+          REUSE_NATIVE: ${{ needs.prepare.outputs.reuse_native }}
         run: |
           [[ "$QUIET_RUN" =~ ^[0-9]+$ ]]
           test "$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json headSha --jq .headSha)" = "$QUIET_SOURCE_SHA"
-          # Prepare verified a frontend-only descendant before allowing this
-          # overlay. Preserve the native archive's original source identity.
-          if [[ "$(git rev-parse HEAD)" != "$QUIET_SOURCE_SHA" ]]; then
+          # Only the compiled-native reuse lane may overlay a verified
+          # frontend-only descendant. Fresh native builds keep their source.
+          if [[ "$REUSE_NATIVE" == true && "$(git rev-parse HEAD)" != "$QUIET_SOURCE_SHA" ]]; then
             git fetch --no-tags --depth=1 origin "$QUIET_SOURCE_SHA"
             git restore --source="$QUIET_SOURCE_SHA" --worktree -- experiments/codex-quiet
           fi
@@ -297,6 +314,11 @@ jobs:
           test "$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json conclusion --jq .conclusion)" = success
           gh run download "$QUIET_RUN" --repo "$QUIET_REPOSITORY" \
             --name "quiet-codex-ARM64-$QUIET_RUN" --dir "$RUNNER_TEMP/cmux-quiet-frontend"
+          python3 - "$RUNNER_TEMP/cmux-quiet-frontend/manifest.json" "$QUIET_SOURCE_SHA" <<'PY'
+          import json, pathlib, sys
+          if json.loads(pathlib.Path(sys.argv[1]).read_text()).get("cmux_commit") != sys.argv[2]:
+              raise ValueError("Frontend artifact does not name the selected producer commit")
+          PY
       - name: Package candidate without official auto-updates
         run: |
           quiet_args=()
