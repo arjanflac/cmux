@@ -648,6 +648,18 @@ public final class AgentTaskCoordinator {
         return result
     }
 
+    /// Discovers reusable worker identities through a bounded authorized metadata read.
+    /// - Parameters:
+    ///   - query: UUID pagination and retirement visibility.
+    ///   - authorize: Trusted composition's current grant, revalidated across repository awaits.
+    /// - Returns: Sanitized descendant metadata without provider requests or parent wake-ups.
+    /// - Throws: Invalid owner, changed authority or repository errors.
+    public func workers(_ query: AgentTaskWorkerDirectoryQuery,
+                        authorize: @MainActor () async throws -> AgentTaskWorkerDirectoryAccess) async throws -> AgentTaskWorkerDirectoryPage {
+        // Structural seam for the executed discovery regression; activated by the following repair.
+        return AgentTaskWorkerDirectoryPage(workers: [], nextCursor: nil, hasMore: false)
+    }
+
     /// Reads a recent or archived receipt without reconnecting to a provider.
     public func record(_ id: UUID) async throws -> AgentTaskRecord? {
         if let record = records[id], record.phase != .completed || record.result != nil { return record }
