@@ -2327,6 +2327,7 @@ private final class TextBoxSubmitEventRunner {
 }
 
 struct TextBoxInputContainer: View {
+    @Environment(\.cmuxGlobalFontMagnificationPercent) private var globalFontPercent
     @AppStorage(TerminalTextBoxInputSettings.defaultSubmitActionKey)
     var configuredDefaultSubmitActionID = TerminalTextBoxInputSettings.defaultSubmitActionID
     @AppStorage(TerminalTextBoxInputSettings.submitActionsKey)
@@ -2368,6 +2369,12 @@ struct TextBoxInputContainer: View {
     private var pendingCommentCount: Int {
         commentPool.pendingCount(workspaceId: surface.owningWorkspace()?.id)
     }
+
+    // The symbols grow with chrome magnification; their surrounding frames must
+    // reserve the same space rather than clipping an enlarged AppKit image.
+    var controlScale: CGFloat { max(1, GlobalFontMagnification.scale(for: globalFontPercent)) }
+    var iconButtonSize: CGFloat { TextBoxLayout.iconButtonSize * controlScale }
+    var submitIconSize: CGFloat { TextBoxSubmitActionImageSupport.iconSize * controlScale }
 
     private var textBasePointSize: CGFloat { max(14, terminalFont.pointSize / max(GlobalFontMagnification.scale, 0.01) + 2) }
 
@@ -2419,8 +2426,9 @@ struct TextBoxInputContainer: View {
             }
             HStack(alignment: .bottom, spacing: 6) {
             addFilesButton(foreground: foreground)
-                .offset(x: TextBoxLayout.leadingButtonHorizontalOffset)
-                .padding(.bottom, TextBoxLayout.buttonBottomPadding)
+                .offset(x: TextBoxLayout.leadingButtonHorizontalOffset * controlScale)
+                .padding(.bottom, TextBoxLayout.buttonBottomPadding * controlScale)
+                .fixedSize()
 
             ZStack(alignment: .leading) {
                 TextBoxInputView(
@@ -2469,11 +2477,12 @@ struct TextBoxInputContainer: View {
             .frame(maxWidth: .infinity)
 
             sendButton(canSend: canSend, presentation: submitActionPresentation)
-                .offset(x: TextBoxLayout.trailingButtonHorizontalOffset)
-                .padding(.bottom, TextBoxLayout.buttonBottomPadding)
+                .offset(x: TextBoxLayout.trailingButtonHorizontalOffset * controlScale)
+                .padding(.bottom, TextBoxLayout.buttonBottomPadding * controlScale)
+                .fixedSize()
             }
         }
-        .padding(.horizontal, TextBoxLayout.pillHorizontalPadding)
+        .padding(.horizontal, TextBoxLayout.pillHorizontalPadding * controlScale)
         .padding(.vertical, TextBoxLayout.pillVerticalPadding)
         .background(
             TextBoxInputGlassPillBackground(
@@ -2517,7 +2526,7 @@ struct TextBoxInputContainer: View {
     private func addFilesButton(foreground: Color) -> some View {
         Button(action: chooseFiles) {
             CmuxSystemSymbolImage(magnified: "plus", pointSize: TextBoxLayout.iconSymbolSize, weight: .semibold, tint: foreground.opacity(0.82))
-                .frame(width: TextBoxLayout.iconButtonSize, height: TextBoxLayout.iconButtonSize)
+                .frame(width: iconButtonSize, height: iconButtonSize)
                 .background(
                     Circle()
                         .fill(foreground.opacity(0.10))
@@ -2531,7 +2540,7 @@ struct TextBoxInputContainer: View {
         .foregroundStyle(foreground.opacity(0.82))
         .help(String(localized: "textbox.addFiles.tooltip", defaultValue: "Add Files"))
         .accessibilityLabel(String(localized: "textbox.addFiles.tooltip", defaultValue: "Add Files"))
-        .frame(width: TextBoxLayout.iconButtonSize, height: TextBoxLayout.iconButtonSize)
+        .frame(width: iconButtonSize, height: iconButtonSize)
     }
 
     private func attachmentStrip(foreground: Color) -> some View {
