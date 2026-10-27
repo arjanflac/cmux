@@ -88,23 +88,64 @@ import Testing
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-probe-timeout-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
-        let pidFile = root.appendingPathComponent("child.pid")
         let termFile = root.appendingPathComponent("term.receipt")
         let script = """
-        $SIG{TERM}=sub { open(my $f,'>',$ARGV[1]) or die; print $f 'TERM'; close($f); };
-        open(my $p,'>',$ARGV[0]) or die; print $p $$; close($p);
+        $SIG{TERM}=sub { open(my $f,'>',$ARGV[0]) or die; print $f 'TERM'; close($f); };
+        $|=1; print "READY\\n";
         while (1) { select(undef,undef,undef,0.05); }
         """
+        let child = Process()
+        let output = Pipe()
+        child.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
+        child.arguments = ["-e", script, termFile.path]
+        child.environment = [:]
+        child.standardOutput = output
+        child.standardError = FileHandle.nullDevice
+        let supervisor = ProbeChildSupervisor(child)
+        try supervisor.launch()
+        try output.fileHandleForWriting.close()
+        defer {
+            if child.isRunning { _ = supervisor.completedWithinDeadline(timeout: 0, terminationGrace: 0.1) }
+            try? output.fileHandleForReading.close()
+        }
+        try #require(try awaitProbeReady(output.fileHandleForReading), "Child must install its TERM handler before supervision starts")
         let start = ContinuousClock.now
-        #expect(!CodexManagedDaemonAttachProbe().run("/usr/bin/perl",
-            arguments: ["-e", script, pidFile.path, termFile.path], environment: [:], cwd: root.path,
-            timeout: 0.3, terminationGrace: 0.1))
+        #expect(!supervisor.completedWithinDeadline(timeout: 0.1, terminationGrace: 0.1))
         #expect(start.duration(to: .now) < .seconds(2))
         #expect(try String(contentsOf: termFile, encoding: .utf8) == "TERM")
-        let pid = try #require(Int32(String(contentsOf: pidFile, encoding: .utf8)))
-        let presence = kill(pid, 0)
+        #expect(!child.isRunning)
+        #expect(child.terminationReason == .uncaughtSignal)
+        #expect(child.terminationStatus == SIGKILL)
+        let presence = kill(child.processIdentifier, 0)
         let presenceError = errno
         #expect(presence == -1 && presenceError == ESRCH, "Only the spawned probe must have exited and been reaped")
+    }
+
+    @Test("The probe startup deadline does not depend on child readiness")
+    func startupDeadlineRemainsBounded() {
+        let start = ContinuousClock.now
+        #expect(!CodexManagedDaemonAttachProbe().run("/usr/bin/perl", arguments: ["-e", "sleep 5"],
+            environment: [:], cwd: "/", timeout: 0.001, terminationGrace: 0.1))
+        #expect(start.duration(to: .now) < .seconds(2))
+    }
+
+    private func awaitProbeReady(_ handle: FileHandle) throws -> Bool {
+        let descriptor = handle.fileDescriptor
+        let flags = fcntl(descriptor, F_GETFL)
+        guard flags != -1, fcntl(descriptor, F_SETFL, flags | O_NONBLOCK) != -1 else { return false }
+        let deadline = DispatchTime.now().uptimeNanoseconds + 5_000_000_000
+        var bytes = Data()
+        while bytes.count < 6 {
+            let now = DispatchTime.now().uptimeNanoseconds
+            guard now < deadline else { return false }
+            let remaining = deadline - now
+            var descriptorState = pollfd(fd: descriptor, events: Int16(POLLIN), revents: 0)
+            let ready = poll(&descriptorState, 1, Int32(min((remaining + 999_999) / 1_000_000, 5_000)))
+            if ready < 0, errno == EINTR { continue }
+            guard ready > 0, let chunk = try handle.read(upToCount: 6 - bytes.count), !chunk.isEmpty else { return false }
+            bytes.append(chunk)
+        }
+        return bytes == Data("READY\n".utf8)
     }
 
     @Test("A normally exiting native probe completes before either termination deadline")
@@ -113,5 +154,12 @@ import Testing
         #expect(CodexManagedDaemonAttachProbe().run("/usr/bin/perl", arguments: ["-e", "print 'probe-ok'"],
             environment: [:], cwd: "/", expectedOutput: "probe-ok", timeout: 3, terminationGrace: 0.1))
         #expect(start.duration(to: .now) < .seconds(2))
+    }
+
+    @Test("A timed-out probe cannot succeed by exiting zero in its TERM handler")
+    func timedOutProbeFailsEvenWhenTerminationExitsZero() {
+        #expect(!CodexManagedDaemonAttachProbe().run("/usr/bin/perl",
+            arguments: ["-e", "$SIG{TERM}=sub { exit 0 }; while (1) { select(undef,undef,undef,0.05); }"],
+            environment: [:], cwd: "/", timeout: 0.3, terminationGrace: 0.1))
     }
 }
