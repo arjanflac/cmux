@@ -223,3 +223,48 @@ first. Small durable acknowledgement tombstones preserve exact replay/conflict
 checks, so restarting cannot make old consumed results appear unread. Original
 result bodies remain in the independent turn repository. Tombstones share the
 existing private SQLite page quota; storage exhaustion still fails closed.
+
+
+## Session-first navigation
+
+Settings > Keyboard Shortcuts > Base Keymap > **Session-first** previews an
+optional layout: Cmd+T creates a sidebar workspace for a new conversation,
+Cmd+N adds a terminal surface to the current workspace, and Ctrl+Tab /
+Ctrl+Shift+Tab move between sidebar workspaces. Cmd+D and Cmd+Shift+D still
+create splits. Applying the preset preserves shortcuts customized by hand;
+choosing **cmux (Default)** removes the preset's overrides. It does not move,
+close or merge existing workspaces or change their directories.
+
+For a conversation list instead of workspace rows, enable **Conversation
+Sidebar** in Settings > Beta Features, then choose **Conversations** from the
+left sidebar picker. In the personal build the local switch is sufficient;
+upstream builds also require their release rollout. This existing native view combines live Codex/Claude and
+other supported agent sessions with Vault history, deduplicates by provider and
+session identity, and focuses the exact existing pane when an open session is
+selected. Two conversations in one repository can therefore appear separately
+without creating a second repository or backend. The keymap's Ctrl+Tab lane
+still navigates workspaces; individual conversations within one workspace are
+selected directly from the list. Provider discovery and resume support depend
+on the corresponding existing integration and binding evidence.
+
+
+## Presentation and control boundaries
+
+The quiet Codex frontend shows deterministic worker activity and unread results
+from the coordinator, including nested workers. This does not make a Claude or
+OpenCode conversation a Codex-native subagent. Their sessions are independently
+addressable through native provider interfaces; ordinary follow-ups target the
+same worker after its prior submission settles. Busy steering and a general
+peer-to-peer wake bus are not implemented.
+
+Legacy terminal-hook `agent.task.report` submissions are unsupported. Only the
+managed provider drivers publish task completion receipts. The local operator
+CLI uses the workstation user's socket authority; scoped model tools are a
+separate, narrower capability and cannot approve their own requests. It is not
+a sandbox against arbitrary same-user shell execution.
+
+The existing `cmux browser` API can drive the in-app browser with explicit
+workspace and surface targets. The task broker does not expose desktop computer
+use or screenshot responses. Enabling the old Codex integration is not a shared
+daemon fix: its per-launch MCP overrides select embedded execution. Keep that
+route off when preserving ordinary stock-daemon and phone access.
