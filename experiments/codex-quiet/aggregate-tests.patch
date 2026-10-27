@@ -11,7 +11,7 @@ index 0f4817e..d15f02b 100644
 +mod cmux_activity_summary_tests;
 diff --git a/codex-rs/tui/src/app/cmux_activity_summary_tests.rs b/codex-rs/tui/src/app/cmux_activity_summary_tests.rs
 new file mode 100644
-index 0000000..8724bd3
+index 0000000..c41e9d7
 --- /dev/null
 +++ b/codex-rs/tui/src/app/cmux_activity_summary_tests.rs
 @@ -0,0 +1,42 @@
@@ -33,7 +33,7 @@ index 0000000..8724bd3
 +async fn cmux_activity_summary_live_and_retained_share_one_row() -> Result<()> {
 +    let (mut app,_events,_ops)=crate::app::tests::make_test_app_with_channels().await;
 +    attach_thread(&mut app,ThreadId::new());app.local_settings.tui.animations=false;
-+    let mut tui=crate::tui::test_support::make_test_tui()?;tui.set_owned_screen(true)?;tui.terminal.resize(Size::new(100,30))?; let size=Size::new(100,30);
++    let mut tui=crate::tui::test_support::make_test_tui()?;tui.set_owned_screen(true)?; let size=tui.terminal.size()?;
 +    // Actual live source, then a retained predecessor: no synthetic history mutation.
 +    active_web(&mut app,false);
 +    for retained in [false,true] {
@@ -51,9 +51,9 @@ index 0000000..8724bd3
 +async fn cmux_activity_summary_live_after_prose_starts_a_new_batch() -> Result<()> {
 +    let (mut app,_events,_ops)=crate::app::tests::make_test_app_with_channels().await;
 +    attach_thread(&mut app,ThreadId::new());app.local_settings.tui.animations=false;
-+    let mut tui=crate::tui::test_support::make_test_tui()?;tui.set_owned_screen(true)?;tui.terminal.resize(Size::new(100,30))?;app.transcript_cells=vec![web(),Arc::new(history_cell::PlainHistoryCell::new(vec!["Progress prose".into()]))];
++    let mut tui=crate::tui::test_support::make_test_tui()?;tui.set_owned_screen(true)?; let size=tui.terminal.size()?;app.transcript_cells=vec![web(),Arc::new(history_cell::PlainHistoryCell::new(vec!["Progress prose".into()]))];
 +    active_web(&mut app,false);
-+    app.render_owned_transcript(&mut tui,Size::new(100,30))?;
++    app.render_owned_transcript(&mut tui,size)?;
 +    let screen=buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal));assert_eq!(summaries(&screen),if cfg!(feature="cmux-quiet"){2}else{0},"{screen}");assert!(screen.contains("Progress prose"));
 +    tui.set_owned_screen(false)?;Ok(())
 +}
