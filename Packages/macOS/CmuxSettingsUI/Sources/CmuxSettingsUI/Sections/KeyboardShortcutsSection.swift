@@ -9,6 +9,7 @@ import SwiftUI
 /// `ShortcutAction` (using the new package recorder).
 @MainActor
 public struct KeyboardShortcutsSection: View {
+    private let showsBaseKeymap: Bool
     private let hostActions: SettingsHostActions
     private let keymapProposals: ShortcutKeymapProposalInbox?
     @State private var model: ShortcutListModel
@@ -32,8 +33,10 @@ public struct KeyboardShortcutsSection: View {
         errorLog: SettingsErrorLog,
         hostActions: SettingsHostActions,
         defaultShortcutResolver: ShortcutDefaultResolver = .builtIn,
-        keymapProposals: ShortcutKeymapProposalInbox? = nil
+        keymapProposals: ShortcutKeymapProposalInbox? = nil,
+        showsBaseKeymap: Bool = true
     ) {
+        self.showsBaseKeymap = showsBaseKeymap
         self.hostActions = hostActions
         self.keymapProposals = keymapProposals
         _model = State(initialValue: ShortcutListModel(
@@ -58,8 +61,10 @@ public struct KeyboardShortcutsSection: View {
             SettingsSectionHeader(String(localized: "settings.section.keyboardShortcuts", defaultValue: "Keyboard Shortcuts"), section: .keyboardShortcuts)
                 .accessibilityIdentifier("SettingsKeyboardShortcutsSection")
             SettingsCard {
-                ShortcutKeymapPresetRow(model: model, proposals: keymapProposals)
-                SettingsCardDivider()
+                if showsBaseKeymap {
+                    ShortcutKeymapPresetRow(model: model, proposals: keymapProposals)
+                    SettingsCardDivider()
+                }
                 chordsRow
                 SettingsCardDivider()
                 ModifierHoldHintsSettingsRow()

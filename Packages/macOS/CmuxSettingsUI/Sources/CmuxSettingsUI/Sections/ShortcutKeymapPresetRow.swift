@@ -13,6 +13,7 @@ import SwiftUI
 struct ShortcutKeymapPresetRow: View {
     let model: ShortcutListModel
     let proposals: ShortcutKeymapProposalInbox?
+    var section: SettingsSectionID = .keyboardShortcuts
     @State private var proposedPreset: ShortcutKeymapPreset?
     @State private var isApplying = false
 
@@ -42,7 +43,7 @@ struct ShortcutKeymapPresetRow: View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsCardRow(
                 configurationReview: .json("shortcuts.bindings"),
-                searchAnchorID: "setting:keyboardShortcuts:base-keymap",
+                searchAnchorID: "setting:\(section.rawValue):base-keymap",
                 String(localized: "settings.shortcuts.baseKeymap", defaultValue: "Base Keymap"),
                 subtitle: String(
                     localized: "settings.shortcuts.baseKeymap.subtitle",

@@ -106,18 +106,19 @@ public struct SettingsSearchIndex: Sendable {
     ///     focused subset; hosts can append their own entries to expose
     ///     additional rows.
     /// Builds the shipped search index from the catalog-backed default entry table.
-    public init(catalog: SettingCatalog) {
-        self.init(catalog: catalog, curatedEntries: .cmuxDefault(catalog: catalog))
+    public init(catalog: SettingCatalog, personalCustomizationAvailable: Bool = false) {
+        self.init(catalog: catalog, curatedEntries: .cmuxDefault(catalog: catalog), personalCustomizationAvailable: personalCustomizationAvailable)
     }
 
     public init(
         catalog: SettingCatalog,
-        curatedEntries: [CuratedSettingEntry]
+        curatedEntries: [CuratedSettingEntry],
+        personalCustomizationAvailable: Bool = false
     ) {
         let matcher = SettingsSearchMatcher()
         var built: [Entry] = []
 
-        for section in SettingsSectionID.allCases {
+        for section in SettingsSectionID.allCases where PersonalSettingsRouting.isVisible(section, available: personalCustomizationAvailable) {
             built.append(Entry(
                 id: "section:\(section.rawValue)",
                 kind: .section,
@@ -132,22 +133,23 @@ public struct SettingsSearchIndex: Sendable {
 
         var pathAnchors: [String: String] = [:]
 
-        for entry in curatedEntries {
-            let entryID = "setting:\(entry.section.rawValue):\(entry.id)"
+        for entry in curatedEntries where PersonalSettingsRouting.isVisible(entry.section, available: personalCustomizationAvailable) {
+            let section = PersonalSettingsRouting.destination(for: entry, available: personalCustomizationAvailable)
+            let entryID = "setting:\(section.rawValue):\(entry.id)"
             let searchPaths = entry.paths.isEmpty
                 ? matcher.dottedTokens(in: entry.synonyms)
                 : entry.paths
             let pathSearchText = searchPaths.flatMap { matcher.searchTokens(forSettingPath: $0) }.joined(separator: " ")
             built.append(Entry(
                 id: entryID,
-                kind: .setting(parent: entry.section),
+                kind: .setting(parent: section),
                 title: entry.title,
-                symbolName: entry.section.symbolName,
+                symbolName: section.symbolName,
                 normalizedSearchText: matcher.normalize(
                     [
-                        entry.section.rawValue,
-                        entry.section.title,
-                        entry.section.searchKeywords,
+                        section.rawValue,
+                        section.title,
+                        section.searchKeywords,
                         entry.id,
                         entry.title,
                         entry.detailText,

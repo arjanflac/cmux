@@ -254,6 +254,10 @@ final class HostSettingsActions: SettingsHostActions {
         LanguageSettingsStore(defaults: .standard, domainName: ProcessDefaultsDomain.name).applyLanguageOverride(language)
     }
 
+    var isPersonalCustomizationAvailable: Bool { Bundle.main.object(forInfoDictionaryKey: "CMUXPersonalBuild") as? Bool == true }
+
+    func togglePersonalSidebar() { _ = AppDelegate.shared?.toggleSidebarInActiveMainWindow() }
+
     func quietCodexStatus() async -> QuietCodexStatus {
         let resources = Bundle.main.resourceURL
         let stock = try? AgentExecutableResolver().resolve(.codex).executableURL

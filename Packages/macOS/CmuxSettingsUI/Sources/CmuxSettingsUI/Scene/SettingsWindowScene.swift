@@ -40,6 +40,7 @@ public struct SettingsWindowRoot: View {
     ) {
         self.runtime = runtime
         self.searchIndex = runtime.searchIndex
+        let initialSection = initialSection == .personal && !runtime.hostActions.isPersonalCustomizationAvailable ? .app : initialSection
         self.initialSection = initialSection
         _pendingInitialSection = State(initialValue: initialSection)
         _searchQuery = State(initialValue: SettingsSearchQuery(index: runtime.searchIndex))
@@ -47,13 +48,14 @@ public struct SettingsWindowRoot: View {
         // target has to be known before the first body evaluation because
         // that pass runs inside `NSWindow(contentViewController:)`.
         let defaults = UserDefaults.standard
-        let restoredSection = defaults.string(forKey: Self.selectedSectionDefaultsKey)
+        let storedSection = defaults.string(forKey: Self.selectedSectionDefaultsKey)
             .flatMap(SettingsSectionID.init(rawValue:)) ?? .account
+        let restoredSection = storedSection == .personal && !runtime.hostActions.isPersonalCustomizationAvailable ? .app : storedSection
         let cloudAvailable = !ManagedDevicePolicy().isEnforced(.disableCloud)
             && runtime.hostActions.isCloudMachinesAvailable
         _mountModel = State(initialValue: mountModel ?? SettingsSectionMountModel(
             initial: initialSection ?? restoredSection,
-            order: Self.mountOrder(cloudAvailable: cloudAvailable)
+            order: Self.mountOrder(cloudAvailable: cloudAvailable, personalAvailable: runtime.hostActions.isPersonalCustomizationAvailable)
         ))
     }
     /// A targeted open's section, shown until the first navigation request
@@ -133,7 +135,8 @@ public struct SettingsWindowRoot: View {
     /// defaulting to ``SettingsSectionID/account`` when the stored value
     /// is unrecognized (e.g., after dropping a case).
     var selectedSection: SettingsSectionID {
-        SettingsSectionID(rawValue: selectedSectionRaw) ?? .account
+        let section = SettingsSectionID(rawValue: selectedSectionRaw) ?? .account
+        return section == .personal && !hostActions.isPersonalCustomizationAvailable ? .app : section
     }
     /// The section whose pane the detail shows.
     var activeSection: SettingsSectionID {
@@ -218,12 +221,17 @@ public struct SettingsWindowRoot: View {
     public static let navigationRequestName = Notification.Name("cmux.settings.navigate")
     public static let sidebarToggleRequestName = Notification.Name("cmux.settings.toggleSidebar")
 
+    /// Resolves the destination consumed by both selection and detail scrolling.
+    static func navigationDestination(for notification: Notification, personalAvailable: Bool) -> (section: SettingsSectionID, anchorID: String)? {
+        SettingsSectionID.navigationDestination(userInfo: notification.userInfo)
+    }
+
     /// Updates the selection state (sidebar entry + section pane) for a
     /// navigation request. The detail scroll's observer calls this before
     /// ``applyScrollNavigation(_:proxy:)`` turns the same request into a
     /// scroll, so one observer handles both halves.
     private func applyNavigationRequest(_ notification: Notification) {
-        guard let target = SettingsSectionID.navigationDestination(userInfo: notification.userInfo)?.section else {
+        guard let target = Self.navigationDestination(for: notification, personalAvailable: hostActions.isPersonalCustomizationAvailable)?.section else {
             return
         }
         pendingInitialSection = nil
@@ -429,9 +437,10 @@ public struct SettingsWindowRoot: View {
     /// still the latest — otherwise an earlier request would clobber
     /// the user's most recent navigation.
     private func applyScrollNavigation(_ notification: Notification, proxy: ScrollViewProxy) {
-        guard let destination = SettingsSectionID.navigationDestination(userInfo: notification.userInfo) else { return }
-        let target = destination.section
-        let anchorID = destination.anchorID
+        guard let destination = Self.navigationDestination(for: notification, personalAvailable: hostActions.isPersonalCustomizationAvailable) else { return }
+        let resolved = PersonalSettingsRouting.navigation(section: destination.section, anchorID: destination.anchorID, available: hostActions.isPersonalCustomizationAvailable)
+        let target = resolved.section
+        let anchorID = resolved.anchorID
         let shouldHighlight = (notification.userInfo?["highlight"] as? Bool) ?? false
         settingsNavigationGeneration += 1
         let navigationGeneration = settingsNavigationGeneration
