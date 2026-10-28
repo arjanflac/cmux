@@ -14,6 +14,39 @@ spec.loader.exec_module(bundle)
 
 
 class NativeReuseTests(unittest.TestCase):
+    def test_reuses_descendants_that_only_change_the_two_quiet_workflows(self):
+        native, frontend = '1' * 40, '2' * 40
+        proof = '.github/workflows/quiet-codex-proof.yml'
+        build = '.github/workflows/quiet-codex-frontend.yml'
+        for files in [
+            [{'filename': proof}], [{'filename': build}],
+            [{'filename': proof}, {'filename': build}, {'filename': 'experiments/codex-quiet/source.json'}],
+            [{'filename': build, 'previous_filename': proof}],
+            [{'filename': proof, 'previous_filename': 'experiments/codex-quiet/old-proof.yml'}],
+        ]:
+            with self.subTest(files=files):
+                bundle.validate_native_reuse(native, frontend,
+                    dict(status='ahead', merge_base_commit={'sha': native}, files=files))
+
+    def test_other_workflows_native_files_and_policy_changes_still_require_a_build(self):
+        native, frontend = '1' * 40, '2' * 40
+        allowed = '.github/workflows/quiet-codex-proof.yml'
+        forbidden = [
+            '.github/workflows/personal-update.yml', '.github/workflows/ci.yml',
+            '.github/workflows/quiet-codex-proof.yml.backup', '.github/workflows/quiet-codex-proof.yml/child',
+            '.github/workflows/quiet-codex-proof.yaml', 'Sources/AppDelegate.swift',
+            'scripts/quiet_codex_bundle.py', 'scripts/personal-package.py', 'scripts/select-ci-xcode.sh',
+        ]
+        for path in forbidden:
+            for files in [
+                [{'filename': allowed}, {'filename': path}],
+                [{'filename': allowed, 'previous_filename': path}],
+                [{'filename': path, 'previous_filename': allowed}],
+            ]:
+                with self.subTest(path=path, files=files), self.assertRaises(ValueError):
+                    bundle.validate_native_reuse(native, frontend,
+                        dict(status='ahead', merge_base_commit={'sha': native}, files=files))
+
     def test_reuses_only_a_complete_frontend_only_descendant(self):
         native, frontend = '1' * 40, '2' * 40
         comparison = dict(status='ahead', merge_base_commit={'sha': native},
