@@ -17458,55 +17458,55 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Changes the last active cmux window. This is a window action, not a saved preference."
+            "value": "Changes the sidebar in the last active cmux window."
           }
         },
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "يغيّر آخر نافذة cmux نشطة. هذا إجراء على النافذة، وليس تفضيلًا محفوظًا."
+            "value": "يغيّر الشريط الجانبي في آخر نافذة cmux نشطة."
           }
         },
         "de": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ändert das zuletzt aktive cmux-Fenster. Dies ist eine Fensteraktion, keine gespeicherte Einstellung."
+            "value": "Ändert die Seitenleiste im zuletzt aktiven cmux-Fenster."
           }
         },
         "es": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cambia la última ventana activa de cmux. Es una acción de ventana, no una preferencia guardada."
+            "value": "Cambia la barra lateral de la última ventana activa de cmux."
           }
         },
         "fr": {
           "stringUnit": {
             "state": "translated",
-            "value": "Modifie la dernière fenêtre cmux active. Il s’agit d’une action sur la fenêtre, pas d’une préférence enregistrée."
+            "value": "Modifie la barre latérale de la dernière fenêtre cmux active."
           }
         },
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "最後にアクティブだった cmux ウィンドウを変更します。保存される設定ではなく、ウィンドウへの操作です。"
+            "value": "最後にアクティブだった cmux ウィンドウのサイドバーを変更します。"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "마지막으로 활성화된 cmux 창을 변경합니다. 저장되는 환경설정이 아닌 창 동작입니다."
+            "value": "마지막으로 활성화된 cmux 창의 사이드바를 변경합니다."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "更改最后使用的 cmux 窗口。这是窗口操作，不是保存的偏好设置。"
+            "value": "更改最后使用的 cmux 窗口中的侧边栏。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "變更最後使用的 cmux 視窗。這是視窗操作，不是儲存的偏好設定。"
+            "value": "變更最後使用的 cmux 視窗中的側邊欄。"
           }
         }
       }

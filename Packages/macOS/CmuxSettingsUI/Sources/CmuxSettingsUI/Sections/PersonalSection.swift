@@ -47,7 +47,7 @@ struct PersonalSection: View {
                 SettingsCardDivider()
                 SettingsCardRow(configurationReview: .settingsOnly, searchAnchorID: "setting:personal:sidebar-visibility",
                     String(localized: "settings.personal.sidebar", defaultValue: "Show / Hide Sidebar (⌘B)", bundle: .module),
-                    subtitle: String(localized: "settings.personal.sidebarApply", defaultValue: "Changes the last active cmux window. This is a window action, not a saved preference.", bundle: .module)) {
+                    subtitle: String(localized: "settings.personal.sidebarApply", defaultValue: "Changes the sidebar in the last active cmux window.", bundle: .module)) {
                     Button(String(localized: "settings.personal.sidebar", defaultValue: "Show / Hide Sidebar (⌘B)", bundle: .module)) { runtime.hostActions.togglePersonalSidebar() }
                         .accessibilityIdentifier("SettingsPersonalSidebarButton")
                 }
