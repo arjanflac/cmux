@@ -167,6 +167,7 @@ struct SettingsRowAnchorResolutionTests {
         "terminal.rendererRealization.idleSeconds",
         "terminal.rendererRealization.maxWarmRenderers",
         "terminal.autoResumeAgentSessions",
+        "terminal.codexQuietFrontend",
         "terminal.copyOnSelect",
         "terminal.showCopyConfirmation",
         "terminal.reflowHardWrapOnCopy",
