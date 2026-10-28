@@ -401,15 +401,13 @@ index 92c5d6e..4f43dd8 100644
      let generated = view.entry_layout(&cells, 1, false).unwrap();
      assert!(generated.text().contains(TOKEN));
 diff --git a/codex-rs/tui/src/transcript_view/layout.rs b/codex-rs/tui/src/transcript_view/layout.rs
-index 0998708..6ed6b30 100644
+index 19a0e6fa5e193de05c9818962fbde1491bf6239e..8c3471b2f12a946c8e6d72dd650dfb14ead24c90 100644
 --- a/codex-rs/tui/src/transcript_view/layout.rs
 +++ b/codex-rs/tui/src/transcript_view/layout.rs
-@@ -168,8 +168,13 @@ impl TranscriptView {
+@@ -256,6 +256,14 @@ impl TranscriptView {
              return Some(Arc::new(TextLayout::new(Vec::new(), width)));
          }
          let mode = self.mode;
--        if self.is_cmux_quiet() && !full_content && cell.quiet_fullscreen_is_routine() {
--            return Some(Arc::new(TextLayout::new(Vec::new(), width)));
 +        if self.is_cmux_quiet() && !full_content && cell.quiet_fullscreen_has_routine() {
 +            let follows_routine = crate::history_cell::quiet_batch_follows(&cells[..index]);
 +            let mut layout = TextLayout::new(cell.quiet_fullscreen_batch_lines(width, follows_routine), width);
@@ -417,9 +415,34 @@ index 0998708..6ed6b30 100644
 +                layout = layout.with_leading_separator();
 +            }
 +            return Some(Arc::new(layout));
-         }
-         let ids = cell.activity_ids();
-         let disclosure = !self.detailed && mode == HistoryRenderMode::Rich && !ids.is_empty();
++        }
+         let cmux_quiet = self.is_cmux_quiet();
+         let mut presentation = self.content_presentation(cell.as_ref(), full_content, mode);
+         let shortcut = self
+@@ -265,8 +273,8 @@ impl TranscriptView {
+         let shares_prompt_background = is_rich_user_prompt(cell.as_ref(), mode)
+             && (0..index)
+                 .rev()
+-                .find(|&previous| {
+-                    let previous = &cells[previous];
++                .find(|&previous_index| {
++                    let previous = &cells[previous_index];
+                     let key = EntryKey::cell(previous);
+                     if let Some(layout) = self.search.match_layout(key).or_else(|| {
+                         self.snapshot()
+@@ -275,6 +283,12 @@ impl TranscriptView {
+                     }) {
+                         return layout.row_count() > 0;
+                     }
++                    if cmux_quiet && previous.quiet_fullscreen_has_routine() {
++                        return !previous.quiet_fullscreen_batch_lines(
++                            width,
++                            crate::history_cell::quiet_batch_follows(&cells[..previous_index]),
++                        ).is_empty();
++                    }
+                     let previous_presentation =
+                         self.content_presentation(previous.as_ref(), self.detailed, mode);
+                     self.cache
 diff --git a/codex-rs/tui/src/transcript_view/layout_tests.rs b/codex-rs/tui/src/transcript_view/layout_tests.rs
 index 44b39bc..45863a6 100644
 --- a/codex-rs/tui/src/transcript_view/layout_tests.rs

@@ -241,30 +241,31 @@
          self.selection = None;
 --- a/codex-rs/tui/src/transcript_view/layout.rs
 +++ b/codex-rs/tui/src/transcript_view/layout.rs
-@@ -194,7 +194,7 @@
-             .disclosure
-             .keymap
-             .primary_hint(KeymapContext::Global, "open_transcript");
--        let cmux_quiet = self.is_cmux_quiet();
-+        let cmux_quiet = self.is_cmux_quiet() && !full_content;
-         Some(self.cache.get(cell, width, presentation, || {
-             let mut layout = if disclosure {
-                 let quiet = (!expanded && (!cfg!(feature = "cmux-quiet") || cmux_quiet))
-@@ -207,6 +207,8 @@
-                             cell.expanded_hyperlink_lines(width)
-                         } else if let Some(line) = quiet {
-                             vec![line]
-+                        } else if cmux_quiet {
-+                            cell.quiet_fullscreen_hyperlink_lines(width)
-                         } else {
-                             cell.compact_hyperlink_lines(width)
-                         },
-@@ -221,6 +223,8 @@
-                     expanded,
-                     shortcut,
-                 )
-+            } else if cmux_quiet && !cell.as_any().is::<crate::history_cell::SessionInfoCell>() {
-+                TextLayout::new(cell.quiet_fullscreen_hyperlink_lines(width), width)
-             } else {
-                 TextLayout::new(
-                     crate::history_cell::fullscreen_session_lines(
+@@ -66,7 +66,8 @@ fn cell_content_layout(
+     shortcut: Option<ShortcutHint>,
+     cmux_quiet: bool,
+ ) -> TextLayout {
+-    if cmux_quiet && !presentation.detailed && cell.quiet_fullscreen_is_routine() {
++    let cmux_quiet = cmux_quiet && !presentation.detailed;
++    if cmux_quiet && cell.quiet_fullscreen_is_routine() {
+         return TextLayout::new(Vec::new(), width);
+     }
+     let mut layout = if presentation.disclosure {
+@@ -80,6 +81,8 @@ fn cell_content_layout(
+                     cell.expanded_hyperlink_lines(width)
+                 } else if let Some(line) = quiet {
+                     vec![line]
++                } else if cmux_quiet {
++                    cell.quiet_fullscreen_hyperlink_lines(width)
+                 } else {
+                     cell.compact_hyperlink_lines(width)
+                 },
+@@ -94,6 +97,8 @@ fn cell_content_layout(
+             presentation.expanded,
+             shortcut,
+         )
++    } else if cmux_quiet && !cell.as_any().is::<crate::history_cell::SessionInfoCell>() {
++        TextLayout::new(cell.quiet_fullscreen_hyperlink_lines(width), width)
+     } else {
+         TextLayout::new(
+             crate::history_cell::fullscreen_session_lines(cell, width, presentation.detailed, mode),
