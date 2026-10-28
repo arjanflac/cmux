@@ -37,7 +37,7 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           repository: openai/codex
-          ref: 6aaac694803004a63c6f393d153c96d22521a6b9
+          ref: 360319d8dee62d87e2d59fc0c21805d79519cfed
           path: codex
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8
@@ -47,8 +47,10 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             quiet-target
-          key: quiet-frontend-v1-${{ runner.os }}-${{ runner.arch }}-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
-          restore-keys: quiet-frontend-v1-${{ runner.os }}-${{ runner.arch }}-6aaac694-
+          key: quiet-frontend-v1-${{ runner.os }}-${{ runner.arch }}-360319d8-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
+          restore-keys: |
+            quiet-frontend-v1-${{ runner.os }}-${{ runner.arch }}-360319d8-
+            quiet-frontend-v1-${{ runner.os }}-${{ runner.arch }}-6aaac694-
       - name: Validate artifact provenance helpers
         run: python3 -m unittest discover -s lane/experiments/codex-quiet -p 'test_*.py'
       - name: Test attach boundaries and rendering, then package the derived frontend
@@ -60,7 +62,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             quiet-target
-          key: quiet-frontend-v1-${{ runner.os }}-${{ runner.arch }}-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
+          key: quiet-frontend-v1-${{ runner.os }}-${{ runner.arch }}-360319d8-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:
