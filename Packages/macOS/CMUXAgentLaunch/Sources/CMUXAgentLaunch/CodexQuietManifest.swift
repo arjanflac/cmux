@@ -15,7 +15,7 @@ public struct CodexQuietManifest: Sendable {
     /// - Returns: Nil for malformed provenance or an unsupported artifact kind.
     public init?(data: Data) {
         guard data.count <= 65_536, let payload = try? JSONDecoder().decode(Payload.self, from: data),
-              payload.attachOnly, payload.release == "rust-v0.164.0", payload.repository == "https://github.com/openai/codex",
+              payload.attachOnly, payload.repository == "https://github.com/openai/codex",
               payload.platform == "Darwin", ["arm64", "aarch64"].contains(payload.architecture),
               Self.isHex(payload.commit, length: 40), Self.isHex(payload.binarySHA256, length: 64),
               payload.release.hasPrefix("rust-v"), payload.release.utf8.count <= 64 else { return nil }

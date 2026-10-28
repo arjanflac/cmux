@@ -760,9 +760,24 @@ cmux_codex_export_launch_capture() {
 # Quiet presentation is a separate, explicit cmux setting. Check compatibility
 # before exec; the derived process never falls back or replays accepted input.
 # This is independent of hook injection so stock shared-daemon sessions stay intact.
+cmux_codex_quiet_version() {
+    local manifest release attach_only
+    manifest="$(cd "$(dirname "$0")/.." && pwd)/licenses/codex-quiet/manifest.json"
+    [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
+    # Preserve embedded/trailing newlines so malformed release strings fail the
+    # canonical numeric match instead of being normalized by command substitution.
+    release="$(/usr/bin/plutil -extract release raw -expect string -n -o - "$manifest" 2>/dev/null && printf '|')" || return 1
+    release="${release%|}"
+    attach_only="$(/usr/bin/plutil -extract attach_only raw -expect bool -n -o - "$manifest" 2>/dev/null)" || return 1
+    [[ "$attach_only" == "true" && ${#release} -le 64 &&
+       "$release" =~ ^rust-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || return 1
+    printf '%s' "${release#rust-v}"
+}
+
 if [[ "$IN_CMUX" == "1" && "${CMUX_CODEX_QUIET_FRONTEND:-0}" == "1" && -t 0 && -t 1 ]]; then
     quiet_frontend="$(cd "$(dirname "$0")" && pwd)/cmux-codex-quiet"
-    if [[ -x "$quiet_frontend" && "$("$REAL_CODEX" --version 2>/dev/null)" == "codex-cli 0.164.0" ]] &&
+    quiet_version="$(cmux_codex_quiet_version)"
+    if [[ -x "$quiet_frontend" && -n "$quiet_version" && "$("$REAL_CODEX" --version 2>/dev/null)" == "codex-cli $quiet_version" ]] &&
        CMUX_QUIET_STOCK_CODEX="$REAL_CODEX" "$quiet_frontend" --cmux-check "$@" >/dev/null 2>&1; then
         cmux_codex_export_launch_capture "$@"
         export CMUX_QUIET_STOCK_CODEX="$REAL_CODEX"
