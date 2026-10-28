@@ -223,7 +223,8 @@ public struct SettingsWindowRoot: View {
 
     /// Resolves the destination consumed by both selection and detail scrolling.
     static func navigationDestination(for notification: Notification, personalAvailable: Bool) -> (section: SettingsSectionID, anchorID: String)? {
-        SettingsSectionID.navigationDestination(userInfo: notification.userInfo)
+        guard let destination = SettingsSectionID.navigationDestination(userInfo: notification.userInfo) else { return nil }
+        return PersonalSettingsRouting.navigation(section: destination.section, anchorID: destination.anchorID, available: personalAvailable)
     }
 
     /// Updates the selection state (sidebar entry + section pane) for a
@@ -438,9 +439,8 @@ public struct SettingsWindowRoot: View {
     /// the user's most recent navigation.
     private func applyScrollNavigation(_ notification: Notification, proxy: ScrollViewProxy) {
         guard let destination = Self.navigationDestination(for: notification, personalAvailable: hostActions.isPersonalCustomizationAvailable) else { return }
-        let resolved = PersonalSettingsRouting.navigation(section: destination.section, anchorID: destination.anchorID, available: hostActions.isPersonalCustomizationAvailable)
-        let target = resolved.section
-        let anchorID = resolved.anchorID
+        let target = destination.section
+        let anchorID = destination.anchorID
         let shouldHighlight = (notification.userInfo?["highlight"] as? Bool) ?? false
         settingsNavigationGeneration += 1
         let navigationGeneration = settingsNavigationGeneration

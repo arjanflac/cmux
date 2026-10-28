@@ -26,6 +26,7 @@ public struct KeyboardShortcutsSection: View {
     ///   - hostActions: Host callbacks for opening the external configuration editor.
     ///   - defaultShortcutResolver: Host-scoped factory defaults for dynamic actions.
     ///   - keymapProposals: Base keymap choices from outside Settings to preview here.
+    ///   - showsBaseKeymap: False when the host presents the shared picker on its personal page.
     public init(
         jsonStore: JSONConfigStore,
         userDefaultsStore: UserDefaultsSettingsStore? = nil,

@@ -2,10 +2,8 @@ import CmuxFoundation
 import CmuxSettings
 import SwiftUI
 
-/// **Terminal** section — mirrors the legacy in-app section
-/// row-for-row: scroll bar, copy on selection, resume agent sessions,
-/// agent hibernation enable + idle seconds + max live terminals, plus
-/// the JSON-backed Resume Commands editor.
+/// Terminal controls. Stock hosts also show the shared session controls here;
+/// personal hosts place those controls on the cmux+ Settings page.
 @MainActor
 public struct TerminalSection: View {
     private let defaultsStore: UserDefaultsSettingsStore

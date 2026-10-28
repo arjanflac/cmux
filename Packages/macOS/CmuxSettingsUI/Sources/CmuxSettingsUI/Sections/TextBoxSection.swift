@@ -18,6 +18,7 @@ public struct TextBoxSection: View {
     /// - Parameters:
     ///   - defaultsStore: The store used to read and write TextBox settings.
     ///   - catalog: The catalog that provides the TextBox-related setting keys.
+    ///   - showsLaunchControls: False when the host presents the shared launch toggles on its personal page.
     public init(defaultsStore: UserDefaultsSettingsStore, catalog: SettingCatalog, showsLaunchControls: Bool = true) {
         self.defaultsStore = defaultsStore
         self.catalog = catalog
