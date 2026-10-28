@@ -249,6 +249,22 @@ public actor AgentTaskScopeAuthority {
         return updated
     }
 
+    /// Reads the remaining nonreplenishing child reservations for an authorized owner.
+    /// - Parameter owner: Live scope returned by trusted validation, with child-creation authority.
+    /// - Returns: The lesser remaining direct-child and root-descendant budget, or zero at maximum depth.
+    /// - Throws: Invalid, revoked, expired or unauthorized capability errors.
+    public func remainingChildCapacity(owner: AgentTaskScope) async throws -> Int {
+        let now = try observe(await clock())
+        guard owner.appEpoch == epoch else { throw AgentTaskScopeError.epochMismatch }
+        let scope = try registered(owner.tokenDigest, now: now)
+        guard owner.ownerTaskID == scope.ownerTaskID else { throw AgentTaskScopeError.targetNotOwned }
+        try check(scope, callerSessionID: owner.providerSessionID, bindingGeneration: owner.bindingGeneration,
+                  operation: .createChild, targetTaskID: nil, parentTaskID: nil)
+        guard let node = nodes[scope.ownerTaskID], node.depth < node.budget.maxDepth else { return 0 }
+        let descendants = nodes.values.filter { $0.rootTaskID == node.rootTaskID && $0.parentTaskID != nil }.count
+        return max(0, min(node.budget.maxChildrenPerOwner - node.children.count, node.budget.maxDescendants - descendants))
+    }
+
     /// Revokes every capability for an owner and its descendants without refunding slots.
     ///
     /// Trusted app lifecycle calls this on process exit, session switch, ownership

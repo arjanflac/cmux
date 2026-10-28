@@ -11,6 +11,13 @@ actor TurnFixtureBackend: AgentTaskBackend {
     private var submissionWaiters: [UUID: [CheckedContinuation<Submission, Never>]] = [:]
     private var streams: [UUID: AsyncThrowingStream<AgentTaskEvent, any Error>.Continuation] = [:]
     private(set) var cancelled: [UUID] = []
+    private(set) var released: [UUID] = []
+    private var releaseGate: TurnFixtureGate?
+    func holdRelease(_ gate: TurnFixtureGate) { releaseGate = gate }
+    func releaseIdleResources(id: UUID) async {
+        if let gate = releaseGate { await gate.hold() }
+        released.append(id)
+    }
     var submittedCount: Int { submissions.count }
 
     func start(id: UUID, request: AgentTaskRequest) -> AsyncThrowingStream<AgentTaskEvent, any Error> {

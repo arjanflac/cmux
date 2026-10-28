@@ -34,7 +34,7 @@ public struct AgentTaskScheduleRequest: Codable, Equatable, Sendable {
     public let misfire: MisfirePolicy
     /// Optional exclusive UTC expiry, after which no new dispatch is allowed.
     public let expiresAt: Date?
-    /// Total number of claimed or skipped wakes, between 1 and 100; once requires 1.
+    /// Total claimed/skipped wakes, 1–100 for an existing worker or at most eight for fresh workers; once requires one.
     public let maxRuns: Int
 
     /// Creates intent; validation occurs when the scheduler admits it.
@@ -83,7 +83,7 @@ public struct AgentTaskScheduleRequest: Codable, Equatable, Sendable {
             }
         }
         if case .newTask(let task) = target {
-            guard task.prompt == prompt, task.parentTaskID == ownerTaskID,
+            guard maxRuns <= 8, task.prompt == prompt, task.parentTaskID == ownerTaskID,
                   task.workspaceStableID != nil, task.workingDirectory.isFileURL,
                   task.workingDirectory.path.hasPrefix("/") else {
                 throw AgentTaskJournalError.invalidRequest

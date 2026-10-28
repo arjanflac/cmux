@@ -31,6 +31,46 @@ class BusyFixture:
         self.rows = [row for row in self.rows if row[1] != workspace]
 
 
+class TerminalFixture:
+    def __init__(self, panels, focused):
+        self.panels = list(panels)
+        self.focused = focused
+        self.responder = None
+        self.created = []
+        self.focus_attempts = 0
+        self.activated = False
+
+    def list_surfaces(self):
+        return [(i, sid, sid == self.focused) for i, (sid, _kind) in enumerate(self.panels)]
+
+    def surface_health(self):
+        return [{"index": i, "id": sid, "type": kind} for i, (sid, kind) in enumerate(self.panels)]
+
+    def new_surface(self, *, panel_type):
+        if panel_type != "terminal":
+            raise AssertionError("latency fixture must create a terminal")
+        sid = "new-terminal"
+        self.panels.append((sid, panel_type))
+        self.created.append(sid)
+        return sid
+
+    def activate_app(self):
+        self.activated = True
+
+    def focus_surface(self, surface):
+        sid = self.panels[surface][0] if isinstance(surface, int) else surface
+        if dict(self.panels).get(sid) != "terminal":
+            raise churn.cmuxError("Panel is not a terminal")
+        self.focused = sid
+        self.focus_attempts += 1
+        # The first focus can precede the attached Ghostty view's responder.
+        if self.activated and self.focus_attempts >= 2:
+            self.responder = sid
+
+    def is_terminal_focused(self, panel):
+        return self.responder == panel
+
+
 class ChurnFixtureCleanupTests(unittest.TestCase):
     def test_busy_isolated_github_fixture_can_reach_measurement(self):
         client = BusyFixture('/tmp/cmux-debug-ci-lag.sock')
@@ -47,6 +87,26 @@ class ChurnFixtureCleanupTests(unittest.TestCase):
                 with patch.dict(os.environ, {'GITHUB_ACTIONS': github}), self.assertRaises(churn.cmuxError):
                     churn.keep_only_first_workspace(client)
                 self.assertEqual(client.closed, [])
+
+
+class ChurnTerminalReadinessTests(unittest.TestCase):
+    def test_focused_chief_does_not_masquerade_as_terminal(self):
+        client = TerminalFixture([("chief", "chief"), ("shell", "terminal")], "chief")
+        self.assertEqual(churn.focused_terminal_panel(client), "shell")
+        self.assertTrue(client.is_terminal_focused("shell"))
+        self.assertEqual(client.created, [])
+
+    def test_nonterminal_workspace_gets_one_explicit_terminal(self):
+        client = TerminalFixture([("browser", "browser")], "browser")
+        self.assertEqual(churn.focused_terminal_panel(client), "new-terminal")
+        self.assertEqual(client.created, ["new-terminal"])
+        self.assertTrue(client.is_terminal_focused("new-terminal"))
+
+    def test_model_focus_waits_for_actual_terminal_responder(self):
+        client = TerminalFixture([("shell", "terminal")], "shell")
+        self.assertEqual(churn.focused_terminal_panel(client), "shell")
+        self.assertTrue(client.is_terminal_focused("shell"))
+        self.assertEqual(client.created, [])
 
 
 if __name__ == '__main__':

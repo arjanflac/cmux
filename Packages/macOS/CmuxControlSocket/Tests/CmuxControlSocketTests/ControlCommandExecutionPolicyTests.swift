@@ -55,7 +55,7 @@ struct ControlCommandExecutionPolicyTests {
             "agent.task.start", "agent.task.attach", "agent.task.list", "agent.task.read",
             "agent.task.wait", "agent.task.cancel", "agent.task.report",
             "agent.task.send", "agent.task.turns", "agent.task.result", "agent.task.wait-turn",
-            "agent.task.inbox", "agent.task.ack", "agent.task.schedule", "agent.task.panel",
+            "agent.task.workers", "agent.task.inbox", "agent.task.ack", "agent.task.schedule", "agent.task.panel",
             "agent.task.bridge", "agent.task.interactions", "agent.task.respond",
             "browser.download.list", "browser.download.wait", "system.top", "system.memory",
             "workspace.remote.pty_bridge", "workspace.env", "sidebar.custom.reload",
@@ -99,7 +99,7 @@ struct ControlCommandExecutionPolicyTests {
             "agent.task.start", "agent.task.attach", "agent.task.list", "agent.task.read",
             "agent.task.wait", "agent.task.cancel", "agent.task.report",
             "agent.task.send", "agent.task.turns", "agent.task.result", "agent.task.wait-turn",
-            "agent.task.inbox", "agent.task.ack", "agent.task.schedule", "agent.task.panel",
+            "agent.task.workers", "agent.task.inbox", "agent.task.ack", "agent.task.schedule", "agent.task.panel",
             "agent.task.bridge", "agent.task.interactions", "agent.task.respond",
             // Chief awaits its owner actor and the store's send; never inline on main.
             "chief.open", "chief.send", "chief.status", "chief.conversations",

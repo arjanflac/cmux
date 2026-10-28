@@ -76,39 +76,28 @@ struct JSONConfigStoreTests {
         defer { try? FileManager.default.removeItem(at: directory) }
         try Data(#"{"app":{"appearance":"dark"}}"#.utf8).write(to: fileURL)
 
-        let readyURL = directory.appendingPathComponent("writer-lock-ready")
         let script = """
-        import fcntl, os, pathlib, sys
+        import fcntl, os, sys
         fd = os.open(sys.argv[1], os.O_RDWR | os.O_CREAT, 0o600)
         fcntl.flock(fd, fcntl.LOCK_EX)
-        pathlib.Path(sys.argv[2]).write_text("ready")
+        print("CMUX_WRITER_LOCK_READY", flush=True)
         sys.stdin.buffer.read(1)
         fcntl.flock(fd, fcntl.LOCK_UN)
         os.close(fd)
         """
-        let process = Process()
-        let releasePipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        process.arguments = [
-            "-c",
-            script,
-            fileURL.path + ".cmux-write.lock",
-            readyURL.path,
-        ]
-        process.standardInput = releasePipe
-        try process.run()
-        defer {
-            if process.isRunning {
-                process.terminate()
-                process.waitUntilExit()
-            }
-        }
+        let child = try WriterLockChild(script: script, arguments: [fileURL.path + ".cmux-write.lock"])
+        defer { #expect(child.stop(), "Writer-lock child did not acknowledge exit after cleanup") }
 
-        for _ in 0..<200 {
-            if FileManager.default.fileExists(atPath: readyURL.path) { break }
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        #expect(FileManager.default.fileExists(atPath: readyURL.path))
+        try await waitForWriterLock(process: child.process, output: child.output.fileHandleForReading)
+
+        // The acknowledgement follows flock; independently confirm that a
+        // second descriptor cannot acquire the same lock before mutating.
+        let lockFD = Darwin.open(fileURL.path + ".cmux-write.lock", O_RDWR)
+        try #require(lockFD >= 0)
+        defer { Darwin.close(lockFD) }
+        let lockResult = flock(lockFD, LOCK_EX | LOCK_NB)
+        let lockErrno = errno
+        try #require(lockResult == -1 && lockErrno == EWOULDBLOCK)
 
         let key = JSONKey<String>(id: "app.appearance", defaultValue: "system")
         let writeTask = Task {
@@ -117,12 +106,151 @@ struct JSONConfigStoreTests {
         await Task.yield()
         #expect(try String(contentsOf: fileURL, encoding: .utf8).contains(#""dark""#))
 
-        releasePipe.fileHandleForWriting.write(Data([0]))
-        releasePipe.fileHandleForWriting.closeFile()
+        child.input.fileHandleForWriting.write(Data([0]))
         try await writeTask.value
 
         #expect(await store.value(for: key) == "light")
         #expect(try String(contentsOf: fileURL, encoding: .utf8).contains(#""light""#))
+    }
+
+    @Test(arguments: [false, true])
+    func writerLockHandshakeReportsStartupFailureOrTimeout(timesOut: Bool) async throws {
+        let child = try WriterLockChild(script: timesOut
+            ? "import sys; sys.stdin.buffer.read(1)"
+            : "import sys; print('writer fixture startup failure', file=sys.stderr, flush=True); sys.exit(23)")
+        defer { #expect(child.stop(), "Writer-lock child did not acknowledge exit after cleanup") }
+        do {
+            try await waitForWriterLock(
+                process: child.process,
+                output: child.output.fileHandleForReading,
+                timeout: timesOut ? .milliseconds(30) : .seconds(2)
+            )
+            Issue.record("A child without a lock acknowledgement was accepted")
+        } catch let error as WriterLockStartupError {
+            if timesOut {
+                #expect(error.description.contains("startup timed out"))
+                #expect(error.description.contains("still running"))
+            } else {
+                #expect(error.description.contains("closed its output"))
+                #expect(error.description.contains("writer fixture startup failure"))
+                try #require(child.waitForExit(timeout: .seconds(1)))
+                #expect(child.process.terminationStatus == 23)
+            }
+        }
+    }
+
+    @Test func writerLockChildCleanupEscalatesAfterIgnoredTermination() async throws {
+        let child = try WriterLockChild(script: """
+        import signal
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        print("CMUX_WRITER_LOCK_READY", flush=True)
+        while True:
+            signal.pause()
+        """)
+        defer { #expect(child.stop(), "Writer-lock child did not acknowledge exit after cleanup") }
+        try await waitForWriterLock(process: child.process, output: child.output.fileHandleForReading)
+        try #require(child.stop())
+        #expect(child.process.terminationReason == .uncaughtSignal)
+        #expect(child.process.terminationStatus == SIGKILL)
+    }
+
+    /// Owns only the test's child. Foundation's termination callback acknowledges
+    /// exit/reaping; cleanup never calls the unbounded waitUntilExit().
+    private final class WriterLockChild {
+        let process = Process()
+        let input = Pipe()
+        let output = Pipe()
+        private let exited = DispatchGroup()
+        private var stopped = false
+
+        init(script: String, arguments: [String] = []) throws {
+            let exited = self.exited
+            exited.enter()
+            process.terminationHandler = { _ in exited.leave() }
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+            process.arguments = ["-c", script] + arguments
+            process.standardInput = input
+            process.standardOutput = output
+            process.standardError = output
+            do {
+                try process.run()
+            } catch {
+                process.terminationHandler = nil
+                exited.leave()
+                input.fileHandleForReading.closeFile()
+                input.fileHandleForWriting.closeFile()
+                output.fileHandleForReading.closeFile()
+                output.fileHandleForWriting.closeFile()
+                throw error
+            }
+            // Only the child holds the write end, so failed startup produces EOF.
+            output.fileHandleForWriting.closeFile()
+        }
+
+        func waitForExit(timeout: DispatchTimeInterval) -> Bool {
+            exited.wait(timeout: .now() + timeout) == .success
+        }
+
+        func stop() -> Bool {
+            guard !stopped else { return waitForExit(timeout: .nanoseconds(0)) }
+            stopped = true
+            defer {
+                input.fileHandleForReading.closeFile()
+                input.fileHandleForWriting.closeFile()
+                output.fileHandleForReading.closeFile()
+            }
+            if waitForExit(timeout: .nanoseconds(0)) { return true }
+            if process.isRunning { process.terminate() }
+            if waitForExit(timeout: .milliseconds(100)) { return true }
+            if process.isRunning { Darwin.kill(process.processIdentifier, SIGKILL) }
+            return waitForExit(timeout: .seconds(1))
+        }
+    }
+
+    private struct WriterLockStartupError: Error, CustomStringConvertible {
+        let description: String
+    }
+
+    private func waitForWriterLock(
+        process: Process,
+        output: FileHandle,
+        timeout: Duration = .seconds(2)
+    ) async throws {
+        let fd = output.fileDescriptor
+        let flags = fcntl(fd, F_GETFL)
+        guard flags >= 0, fcntl(fd, F_SETFL, flags | O_NONBLOCK) == 0 else {
+            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+        }
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: timeout)
+        var received = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        var reason = "startup timed out after \(timeout)"
+        while clock.now < deadline {
+            let count = Darwin.read(fd, &buffer, buffer.count)
+            if count > 0 {
+                received.append(contentsOf: buffer.prefix(count))
+                if String(decoding: received, as: UTF8.self).split(separator: "\n")
+                    .contains("CMUX_WRITER_LOCK_READY") {
+                    return
+                }
+                if received.count >= 4096 {
+                    reason = "startup output exceeded 4096 bytes without a lock acknowledgement"
+                    break
+                }
+            } else if count == 0 {
+                reason = "child closed its output before acknowledging the lock"
+                break
+            } else if errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR {
+                reason = "reading the child handshake failed with errno \(errno)"
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let state = process.isRunning ? "still running" : "exit status \(process.terminationStatus)"
+        throw WriterLockStartupError(description:
+            "Writer-lock child \(reason) (\(state)); output: \(String(decoding: received, as: UTF8.self))"
+        )
     }
 
     @Test func rollbackFailurePreservesSourceConflictAndRecovery() throws {

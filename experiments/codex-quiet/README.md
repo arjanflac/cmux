@@ -2,15 +2,60 @@
 
 This is a maintained, cmux-bundled derivative of the pinned Codex TUI. It attaches
 to the existing stock managed daemon. The ordinary `codex` executable, official
-apps, global configuration and phone access are unchanged.
+apps and global configuration are unchanged. Background coordination is a
+separate opt-in with the phone-handoff limits documented below.
 
 `terminal.codexQuietFrontend` defaults off. Enable **Hide Codex Tool Calls** in
 Terminal settings, open a new cmux terminal, and run normal `codex`. Positively
-identified routine agent command calls (including terminal polling), text MCP
-calls and dynamic text tool calls occupy no transcript rows. **Ctrl+T** switches
+identified routine agent commands, successful file edits, web search/open/find,
+image-view bookkeeping, text MCP/dynamic calls and native computer activity
+(including returned screenshots) and native collaborator activity share one fixed
+**Activity** row per contiguous batch between prose updates. **Ctrl+T** switches
 between true quiet and the original compact view. Assistant messages, user shell
-commands, failures, approvals, unknown/media content and meaningful status stay
+commands, failures, approvals, questions, unknown tool/media content and meaningful
+status stay visible. User images and generated assistant image artifacts remain
 visible. Full-content search and F4 retain the original tool data.
+
+## Tool coverage at the pinned source
+
+The inventory covers all 40 `HistoryCell` implementations in `history_cell/`
+and `exec_cell/render.rs`. Quiet classification defaults to visible; it does not
+inspect rendered wording, strip terminal output, or hide arbitrary media.
+
+| Cells | Quiet behavior |
+| --- | --- |
+| `ExecCell` | Hide active/successful agent command, read/list/search and polling groups; preserve user shell, nonzero exits and interruption. |
+| `PatchHistoryCell`, `PatchFailureCell` | Hide successful add/update/delete/rename summaries and diffs; preserve failed patch diagnostics. |
+| `WebSearchCell`, `ViewImageHistoryCell` | Hide known search/open/find activity and viewed-image metadata; preserve unknown web actions. The pinned web cell has no failure status; separate diagnostics stay visible. |
+| `McpToolCallCell`, `ComputerActivityCell`, `DynamicToolCallCell` | Hide active/successful text calls and grouped native `cua_repl` activity, including its screenshot results. Preserve transport/tool errors, interruptions, other media, resources and unknown blocks. |
+| `CompositeHistoryCell`, `ActivityDetails`/`ActivityGroup` | Recurse through known routine members. Preserve protected descendants; show retained group details when they contain assistant content or errors. Transcript-only reasoning and terminal bookkeeping remain in backing content. |
+| `PlanUpdateCell` | Hide routine plan-tool checklists; preserve authored proposed plans and streamed plan text. |
+| `ImageGenerationHistoryCell`, user/assistant message and authored plan cells | Preserve generated artifacts, image attachments, spoken artifact links, chat, final results and proposed plans. |
+| `CollabHistoryCell` | Collapse typed start/interact/completion and successful collaborator calls into the same activity batch; preserve interrupted/failed outcomes and agent diagnostics. Canonical report previews remain available in compact/details. |
+| Plain/wrapped/link cells, requests/approval results, hooks, warnings, safety, session, recap, update and separator cells | Preserve upstream behavior. Explicit `/ps` process summaries stay visible; `UnifiedExecInteractionCell` remains transcript-only. |
+
+`tool-coverage-tests.patch` appends dedicated retained/live rendering fixtures
+after the original twelve patches. `tool-coverage.patch` adds the classification
+and shared group presentation. Both proof entrypoints require the same 21 tests
+to fail behaviorally before the fix, pass after it, and pass with the feature
+disabled. Fixtures cover active/completed calls, five-action computer groups,
+screenshots, two-file edits, nested protected content, repeated Ctrl+T-equivalent
+toggles, clearing stale live expansion when entering quiet mode, search and
+detailed/raw backing content. Hooks already discard routine context-only success
+upstream; warning/error/stop/feedback output remains visible even on a Completed
+status. Rust execution belongs to CI;
+Python gate tests and patch/syntax checks alone do not establish those results.
+
+`aggregate-tests.patch` and `aggregate.patch` append the batch presentation after
+those fourteen unchanged patches. Thirteen rendered fixtures cover retained and
+live coalescing, nested groups, prose/error boundaries, typed native collaborator
+rows, web actions, transcript-only reasoning, repeated toggles and full backing
+content. A batch keeps the fixed **Activity** label as calls complete; it never
+rewrites a title from “Interacted” to “Interacted with”. Ordinary contextual notices
+and authored assistant/agent replies stay visible. The lane requires executed
+red/green and feature-off results, then reruns the earlier focus and coverage
+suites with their final one-row batch expectations. The private source transcript,
+provider work and passive worker indicator are unchanged.
 
 The derived frontend also suppresses the recurring **Working** tip. Startup and
 completion guidance stays available. With **Background Agent Coordination**
@@ -19,6 +64,26 @@ passive worker row above the composer. Existing resumed threads retain their
 original tools. [Coordination controls and limits](../../docs/agent-messages.md)
 include headless workers, exact-session follow-ups, passive receipts and finite
 schedules; they do not install global hooks or a scheduling daemon.
+
+Coordination tools persist with a Codex thread once advertised. Ordinary phone
+continuation has been tested, but invoking those custom tools from a phone after
+the cmux frontend closes has not. The current broker serves a verified frontend
+or its own managed turn, not a durable phone-turn tool host. Keep coordination
+off for phone-dependent chats until that specific handoff is verified; quiet
+rendering is independent of this setting. Fresh outside sessions receive neither
+the tools nor cmux instructions.
+
+The appended `workers-schema-tests.patch` / `workers-schema.patch` cohort makes
+`workers` discovery and `lifecycle: persistent|oneShot` visible to newly created
+cmux-owned chats. Discovery reads this conversation's scoped worker directory;
+`limit` defaults to 20 (maximum 50), `cursor` uses the returned `next_cursor`, and
+`include_retired` defaults to false. It does not submit input or select another
+owner. Use `send` with a discovered `task_id` to continue a reusable worker.
+The app provides bounded metadata, not provider session IDs, prompts or results.
+Three serialized-tool fixtures require executed pre-fix failure, patched and
+feature-off passes, followed by the existing bridge regressions. All sixteen
+earlier patches remain byte-identical. Existing resumed chats keep their
+original tool schema; this update does not replay or replace those conversations.
 
 ## Launch boundaries
 
@@ -53,6 +118,19 @@ restore-compatibility regressions with feature-off controls. Regression failures
 failures, never compilation errors. Release compilation belongs on GitHub,
 not the 8 GB workstation. No account/model turns are used by this lane.
 
+Manual builds on the same branch queue behind the active run so it can finish
+and save its cache. GitHub retains one pending run; another manual dispatch can
+replace that pending run. Automatic push builds still supersede older push work.
+The full regression and optimized frontend lane has a three-hour build budget.
+
+For independent parallel builds, dispatch **Personal cmux updates** on the exact
+feature source with `native_only=true`, leaving both artifact inputs empty.
+It retains the compiled native archive and skips frontend waiting, packaging and
+promotion. After both producers succeed, dispatch again with their explicit
+`native_artifact_run` and `quiet_frontend_run` values. The usual source/provenance
+checks still apply; a waiting frontend cannot make the successful native-only
+run red.
+
 Select that run in **Personal cmux updates**, input `quiet_frontend_run`, on the
 same source branch. Native and Rust builds can run concurrently. Candidate
 packaging verifies the upstream pin, ordered patch hashes, binary checksum,
@@ -66,6 +144,17 @@ build/update workflow. Stock Codex updates normally. A new version can use stock
 until an agent reviews the new source pin, adapts patches, runs regressions and
 bundles a replacement. The button does not automatically repatch arbitrary
 upstream code, update Codex or replace a running app.
+
+The current source targets Codex **0.165.0**. Four layout patches were rebased
+onto its shared transcript layout helper; the other fourteen patches and all
+non-layout sections retain their earlier bytes. Earlier byte-preservation notes
+describe cohort boundaries within a release, not an absence of upgrade rebases.
+
+Codex’s stock managed updater can advance the shared daemon independently while cmux is open. Launch and restore
+eligibility derive the required version from the bundled manifest and still
+require an exact compatible stock CLI/daemon. This setting does not pin global
+Codex updates. A mismatch uses stock before submission; keep that fallback until
+the matching derived frontend has been built and verified.
 
 The app observes trusted cmux-owned chat IDs on the native coordinator's existing
 connection. Read-only `thread/read` metadata and `thread/status/changed` cover

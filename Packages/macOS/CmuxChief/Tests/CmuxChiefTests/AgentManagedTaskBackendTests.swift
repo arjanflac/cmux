@@ -334,14 +334,14 @@ struct AgentManagedTaskBackendTests {
                          permissionMode: permission)
     }
 
-    private func claudeBackend(confirmsInterrupt: Bool = true)
+    private func claudeBackend(confirmsInterrupt: Bool = true, idleLimit: Int = 1)
         -> (AgentManagedTaskBackend, AsyncStream<MadeClaudeDriver>.Iterator) {
         let (made, sink) = AsyncStream.makeStream(of: MadeClaudeDriver.self)
         let backend = AgentManagedTaskBackend(connection: TaskProtocolFixture(), claudeFactory: { configuration in
             let fixture = ManagedClaudeFixture(confirmsInterrupt: confirmsInterrupt)
             sink.yield(MadeClaudeDriver(fixture: fixture, configuration: configuration))
             return fixture
-        }, cancelDeadline: .milliseconds(200))
+        }, cancelDeadline: .milliseconds(200), idleClaudeLimit: idleLimit)
         return (backend, made.makeAsyncIterator())
     }
 
@@ -439,7 +439,41 @@ struct AgentManagedTaskBackendTests {
         #expect(await made.fixture.promptIDs == [operation])
         await made.fixture.send(.session("replacement-session"))
         #expect(await collect(stream) == [.disconnected("claude_session_changed")])
-        #expect(await made.fixture.shutdowns == 1)
+        #expect(await made.fixture.shutdowns == 0)
+    }
+
+    @Test(.timeLimit(.minutes(1))) func uncertainClaudeWorkIsQuarantinedNotKilledReusedOrEvicted() async throws {
+        let (backend, factory) = claudeBackend(idleLimit: 1)
+        var drivers = factory
+        let uncertainID = UUID()
+        let unknown = try await backend.start(id: uncertainID, request: claudeRequest())
+        let quarantined = try #require(await drivers.next()).fixture
+        await quarantined.waitForRuns(1)
+        await quarantined.send(.session("uncertain-session"))
+        await quarantined.end(throwing: ClaudeManagedTurnError.unconfirmed("lost completion channel"))
+        #expect(await collect(unknown) == [.session("uncertain-session"), .running, .disconnected("lost completion channel")])
+        #expect(await quarantined.shutdowns == 0)
+        #expect(await backend.hasActiveTurn(id: uncertainID))
+        await #expect(throws: AgentManagedTaskError.cancellationUnconfirmed) { try await backend.park(id: uncertainID) }
+        // Known-idle eviction must not mistake the uncertain retained process for idle.
+        let firstID = UUID(), secondID = UUID()
+        let first = try await backend.start(id: firstID, request: claudeRequest())
+        let firstDriver = try #require(await drivers.next()).fixture
+        await firstDriver.waitForRuns(1); await firstDriver.send(.session("known-first")); await firstDriver.send(.finished)
+        _ = await collect(first)
+        let second = try await backend.start(id: secondID, request: claudeRequest())
+        let secondDriver = try #require(await drivers.next()).fixture
+        await secondDriver.waitForRuns(1); await secondDriver.send(.session("known-second")); await secondDriver.send(.finished)
+        _ = await collect(second)
+        await firstDriver.waitForShutdown()
+        #expect(await firstDriver.shutdowns == 1)
+        #expect(await secondDriver.shutdowns == 0)
+        #expect(await quarantined.shutdowns == 0)
+        #expect(await quarantined.prompts == ["Review the diff"])
+        await #expect(throws: AgentManagedTaskError.cancellationUnconfirmed) {
+            try await backend.continueTask(id: uncertainID, record: record(uncertainID, provider: .claude, session: "uncertain-session"),
+                                           request: AgentTaskTurnRequest(prompt: "Do not replay"))
+        }
     }
 
     @Test(.timeLimit(.minutes(1))) func claudeCancellationNeedsTheNativeInterruptedOutcome() async throws {
@@ -552,6 +586,11 @@ private actor ManagedClaudeFixture: AgentClaudeDriver {
     private(set) var answers: [String] = []
     private(set) var interrupts = 0
     private(set) var shutdowns = 0
+    private var shutdownWaiters: [CheckedContinuation<Void, Never>] = []
+    func waitForShutdown() async {
+        if shutdowns > 0 { return }
+        await withCheckedContinuation { shutdownWaiters.append($0) }
+    }
 
     init(confirmsInterrupt: Bool) { self.confirmsInterrupt = confirmsInterrupt }
 
@@ -593,6 +632,7 @@ private actor ManagedClaudeFixture: AgentClaudeDriver {
 
     func shutdown() {
         shutdowns += 1
+        for waiter in shutdownWaiters { waiter.resume() }; shutdownWaiters.removeAll()
         end()
     }
 }

@@ -13,6 +13,8 @@ import Foundation
 /// `Sections/`.
 public enum SettingsSectionID: String, CaseIterable, Identifiable, Sendable, Hashable {
     case account
+    /// Personal-build customization hub; omitted by ordinary hosts.
+    case personal
     case app
     /// App appearance, accent color, terminal themes, and browser theme.
     case themes
@@ -61,6 +63,7 @@ public enum SettingsSectionID: String, CaseIterable, Identifiable, Sendable, Has
     /// User-facing section title shown in the sidebar.
     public var title: String {
         switch self {
+        case .personal: return String(localized: "settings.section.personal", defaultValue: "cmux+ Settings", bundle: .module)
         case .account: return String(localized: "settings.section.account", defaultValue: "Account")
         case .computers: return String(localized: "settings.section.devices", defaultValue: "Devices")
         case .app: return String(localized: "settings.section.app", defaultValue: "App")
@@ -89,6 +92,7 @@ public enum SettingsSectionID: String, CaseIterable, Identifiable, Sendable, Has
     /// SF Symbol shown alongside the title in the sidebar.
     public var symbolName: String {
         switch self {
+        case .personal: return "sparkles"
         case .account: return "person.crop.circle"
         case .computers: return "desktopcomputer"
         case .app: return "gearshape"
@@ -119,6 +123,7 @@ public enum SettingsSectionID: String, CaseIterable, Identifiable, Sendable, Has
     /// by capability rather than only by title.
     public var searchKeywords: String {
         switch self {
+        case .personal: return "quiet codex tool calls coordinator workers schedules resume sessions keymap memory hibernation working first custom personal"
         case .account: return "sign in team sync user profile"
         case .computers:
             return String(

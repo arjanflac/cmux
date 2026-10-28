@@ -18,7 +18,8 @@ permissions:
 
 concurrency:
   group: quiet-codex-rendering-proof-${{ github.ref }}
-  cancel-in-progress: true
+  # Let manual builds finish and save their cache before the next one starts.
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   frontend:
@@ -46,23 +47,24 @@ jobs:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           repository: openai/codex
-          ref: 6aaac694803004a63c6f393d153c96d22521a6b9 # rust-v0.164.0
+          ref: 360319d8dee62d87e2d59fc0c21805d79519cfed # rust-v0.165.0
           path: codex
           persist-credentials: false
       - name: Install upstream Linux build dependencies
         run: |
           sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends build-essential clang lld cmake pkg-config libcap-dev libasound2-dev libssl-dev bubblewrap
-      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1, as pinned by Codex 0.164
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1, as pinned by Codex 0.165
       - uses: actions/cache/restore@v4
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             quiet-target
-          key: quiet-render-v2-linux-rust1991-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
+          key: quiet-render-v2-linux-rust1991-360319d8-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
           restore-keys: |
-            quiet-render-v2-linux-rust1991-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-
+            quiet-render-v2-linux-rust1991-360319d8-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-
+            quiet-render-v2-linux-rust1991-360319d8-
             quiet-render-v2-linux-rust1991-6aaac694-
       - name: Require behavioral failure on stock and success after the rendering patch
         run: |
@@ -75,7 +77,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             quiet-target
-          key: quiet-render-v2-linux-rust1991-6aaac694-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
+          key: quiet-render-v2-linux-rust1991-360319d8-${{ hashFiles('lane/experiments/codex-quiet/*.patch') }}-${{ github.run_id }}
       - uses: actions/upload-artifact@v4
         if: always()
         with:

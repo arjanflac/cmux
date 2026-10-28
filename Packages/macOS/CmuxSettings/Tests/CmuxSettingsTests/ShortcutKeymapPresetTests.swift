@@ -32,6 +32,26 @@ struct ShortcutKeymapPresetTests {
         #expect(ShortcutKeymapPreset.cmux.plan(from: empty).isEmpty)
     }
 
+    @Test func sessionPresetCreatesSidebarWorkspacesAndKeepsAnExplicitSurfaceLane() throws {
+        let plan = ShortcutKeymapPreset.sessions.plan(from: empty)
+        let effective = Dictionary(uniqueKeysWithValues: plan.changes.map { ($0.action, $0.after) })
+        #expect(effective[.newTab] == ShortcutKeymapBinding.stroke("cmd+t").shortcut)
+        #expect(effective[.newSurface] == ShortcutKeymapBinding.stroke("cmd+n").shortcut)
+        #expect(effective[.nextSidebarTab] == ShortcutKeymapBinding.stroke("ctrl+tab").shortcut)
+        #expect(effective[.prevSidebarTab] == ShortcutKeymapBinding.stroke("ctrl+shift+tab").shortcut)
+        #expect(plan.kept.isEmpty)
+        #expect(!plan.changes.contains { $0.action == .splitRight || $0.action == .splitDown })
+        #expect(ShortcutKeymapPreset.active(in: snapshot(applied(.sessions))) == .sessions)
+    }
+
+    @Test func sessionPresetPreservesUserNavigationAndCreationBindings() {
+        let custom = ShortcutKeymapBinding.stroke("cmd+opt+t").shortcut!
+        let plan = ShortcutKeymapPreset.sessions.plan(from: snapshot([.newTab: custom]))
+        #expect(plan.kept == [.newTab])
+        #expect(!plan.changes.contains { $0.action == .newTab })
+        #expect(plan.changes.contains { $0.action == .newSurface })
+    }
+
     @Test func applyingToDefaultsWritesOnlyThePresetOverrides() throws {
         let plan = ShortcutKeymapPreset.iTerm2.plan(from: empty)
 

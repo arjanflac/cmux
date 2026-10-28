@@ -327,18 +327,14 @@ extension TextBoxInputContainer {
         } label: {
             submitButtonActionImage(presentation.action, canSend: canSend)
                 .cmuxFont(size: TextBoxLayout.sendSymbolSize, weight: .bold)
-                .frame(
-                    width: TextBoxSubmitActionImageSupport.iconSize,
-                    height: TextBoxSubmitActionImageSupport.iconSize
-                )
-                .frame(width: TextBoxLayout.iconButtonSize, height: TextBoxLayout.iconButtonSize)
+                .frame(width: iconButtonSize, height: iconButtonSize)
         }
         .buttonStyle(TextBoxSendButtonStyle(
             canSend: canSend
         ))
         .help(presentation.helpText)
         .accessibilityLabel(presentation.accessibilityLabel)
-        .frame(width: TextBoxLayout.iconButtonSize, height: TextBoxLayout.iconButtonSize)
+        .frame(width: iconButtonSize, height: iconButtonSize)
         .contextMenu {
             if pendingProviderLaunchAction != nil {
                 Button {
@@ -383,8 +379,8 @@ extension TextBoxInputContainer {
                 .foregroundStyle(Color.black)
                 .opacity(iconOpacity)
                 .frame(
-                    width: TextBoxSubmitActionImageSupport.iconSize,
-                    height: TextBoxSubmitActionImageSupport.iconSize
+                    width: submitIconSize,
+                    height: submitIconSize
                 )
         } else if let assetName = resolvedSubmitActionAssetName(for: action) {
             CmuxResolvedIconImage(request: submitActionIconRequest(
@@ -393,17 +389,17 @@ extension TextBoxInputContainer {
             ))
                 .opacity(iconOpacity)
                 .frame(
-                    width: TextBoxSubmitActionImageSupport.iconSize,
-                    height: TextBoxSubmitActionImageSupport.iconSize
+                    width: submitIconSize,
+                    height: submitIconSize
                 )
         } else {
-            Image(systemName: action.systemImage)
-                .foregroundStyle(Color.black)
-                .opacity(iconOpacity)
-                .frame(
-                    width: TextBoxSubmitActionImageSupport.iconSize,
-                    height: TextBoxSubmitActionImageSupport.iconSize
-                )
+            CmuxSystemSymbolImage(
+                magnified: action.systemImage,
+                pointSize: TextBoxLayout.sendSymbolSize,
+                weight: .bold,
+                tint: .black
+            )
+            .opacity(iconOpacity)
         }
     }
 

@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -263,7 +264,8 @@ class ResumeCompatProofTests(unittest.TestCase):
                 contextlib.redirect_stdout(io.StringIO()):
             check.main()
         self.assertEqual(len(applied), len(set(applied)))
-        self.assertEqual(applied[-2:], ["resume-compat-tests.patch", "resume-compat.patch"])
+        start = applied.index("resume-compat-tests.patch")
+        self.assertEqual(applied[start:start + 2], ["resume-compat-tests.patch", "resume-compat.patch"])
         self.assertEqual(set(applied), set(manifest["patches"]))
 
     def test_manifest_appends_compatibility_and_counts_all_fixtures(self):
@@ -272,10 +274,259 @@ class ResumeCompatProofTests(unittest.TestCase):
             "regression-tests.patch", "quiet-fullscreen.patch", "attach-only.patch", "session-binding.patch",
             "focus-tests.patch", "focus-mode.patch", "working-tip-tests.patch", "working-tip.patch",
             "orchestration-tests.patch", "orchestration.patch", "resume-compat-tests.patch", "resume-compat.patch",
+            "tool-coverage-tests.patch", "tool-coverage.patch",
+            "aggregate-tests.patch", "aggregate.patch",
+            "workers-schema-tests.patch", "workers-schema.patch",
         ])
         source = (check.HERE / "resume-compat-tests.patch").read_text()
         count = len(re.findall(r'^\+\s*fn cmux_resume_compat_\w+\(', source, re.M))
         self.assertEqual(count, manifest["resumeCompatTestCount"])
+
+
+class ToolCoverageProofTests(unittest.TestCase):
+    def exercise(self, outputs=None):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        count = manifest["toolCoverageTestCount"]
+        applied, features = [], []
+
+        def git(arguments, directory):
+            if arguments[:2] == ["git", "apply"] and "--check" not in arguments:
+                applied.append(Path(arguments[-1]).name)
+            return ""
+
+        def cargo(arguments, **kwargs):
+            self.assertIn("cmux_tool_coverage_", arguments)
+            self.assertIn("--lib", arguments)
+            self.assertIn("--test-threads=1", arguments)
+            self.assertEqual(applied[0], "tool-coverage-tests.patch")
+            features.append("--features" in arguments)
+            if len(features) == 1:
+                self.assertNotIn("tool-coverage.patch", applied)
+            else:
+                self.assertIn("tool-coverage.patch", applied)
+            failed = int(len(features) == 1)
+            text = f"test result: {'FAILED' if failed else 'ok'}. {count-failed} passed; {failed} failed; 0 ignored;\n"
+            if outputs is not None:
+                text = outputs[len(features)-1]
+                failed = int("FAILED" in text or "error:" in text)
+            kwargs["stdout"].write(text)
+            return subprocess.CompletedProcess(arguments, failed)
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch.object(check, "run", git), \
+                patch.object(check.subprocess, "run", cargo), \
+                contextlib.redirect_stdout(io.StringIO()):
+            try:
+                check.tool_coverage_proof(Path(directory), Path(directory), manifest)
+            finally:
+                self.applied, self.features = applied, features
+
+    def test_requires_executed_red_green_and_feature_off_control(self):
+        self.exercise()
+        self.assertEqual(self.applied, ["tool-coverage-tests.patch", "tool-coverage.patch"])
+        self.assertEqual(self.features, [True, True, False])
+
+    def test_invalid_before_evidence_cannot_apply_fix(self):
+        count = json.loads((check.HERE / "source.json").read_text())["toolCoverageTestCount"]
+        for output in ["error: compilation failed\n", "test result: FAILED. 0 passed; 0 failed; 0 ignored;\n",
+                       f"test result: ok. {count} passed; 0 failed; 0 ignored;\n",
+                       f"test result: FAILED. 0 passed; {count-1} failed; 1 ignored;\n"]:
+            with self.subTest(output=output), self.assertRaises(RuntimeError):
+                self.exercise([output])
+            self.assertEqual(self.applied, ["tool-coverage-tests.patch"])
+
+    def test_after_and_feature_off_failure_reject_proof(self):
+        count = json.loads((check.HERE / "source.json").read_text())["toolCoverageTestCount"]
+        red = f"test result: FAILED. {count-1} passed; 1 failed; 0 ignored;\n"
+        green = f"test result: ok. {count} passed; 0 failed; 0 ignored;\n"
+        for outputs in [[red, red], [red, green, red]]:
+            with self.subTest(outputs=outputs), self.assertRaises(RuntimeError):
+                self.exercise(outputs)
+            self.assertEqual(len(self.features), len(outputs))
+
+    def test_check_applies_coverage_only_after_all_twelve_prior_patches(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        applied = []
+
+        def git(arguments, directory):
+            if arguments[1] == "rev-parse":
+                return manifest["commit"]
+            if arguments[:2] == ["git", "apply"] and "--check" not in arguments:
+                applied.append(Path(arguments[-1]).name)
+            return ""
+
+        def tests(source, log, expected_count, **kwargs):
+            if kwargs.get("selector") == "cmux_tool_coverage_" and "aggregate.patch" not in applied:
+                self.assertEqual(set(applied[:12]), set(manifest["patches"][:12]))
+                self.assertEqual(applied[12], "tool-coverage-tests.patch")
+                self.assertEqual("tool-coverage.patch" in applied, not kwargs["should_fail"])
+
+        with tempfile.TemporaryDirectory() as directory, \
+                patch("sys.argv", ["check.py", "--source", directory, "--logs", directory]), \
+                patch.object(check, "prepare_release_lock"), patch.object(check, "run", git), \
+                patch.object(check, "test", tests), contextlib.redirect_stdout(io.StringIO()):
+            check.main()
+        start = applied.index("tool-coverage-tests.patch")
+        self.assertEqual(applied[start:start + 2], ["tool-coverage-tests.patch", "tool-coverage.patch"])
+        self.assertEqual(len(applied), len(set(applied)))
+
+    def test_build_runs_coverage_proof_before_compilation_and_manifest(self):
+        build_spec = importlib.util.spec_from_file_location("quiet_coverage_build", check.HERE / "build.py")
+        build = importlib.util.module_from_spec(build_spec)
+        with patch.dict(sys.modules, {"check": check}):
+            build_spec.loader.exec_module(build)
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        applied, stages = [], []
+
+        def git(arguments, directory):
+            if arguments[1] == "rev-parse":
+                return manifest["commit"]
+            if arguments[:2] == ["git", "apply"] and "--check" not in arguments:
+                applied.append(Path(arguments[-1]).name)
+            return ""
+
+        def cargo(arguments, **kwargs):
+            if arguments[1] == "build":
+                self.assertEqual(stages, ["red", "green", "stock", "aggregate-red", "aggregate-green", "aggregate-stock", "workers-red", "workers-green", "workers-stock"])
+                stages.append("build")
+                return subprocess.CompletedProcess(arguments, 0)
+            selectors = {"cmux_quiet_": 7, "cmux_attach_": 2 if "--bin" in arguments else 3,
+                         "cmux_binding_": manifest["bindingTestCount"], "cmux_focus_": manifest["focusTestCount"],
+                         "cmux_working_tip_": manifest["workingTipTestCount"],
+                         "cmux_orchestration_": manifest["orchestrationTestCount"],
+                         "cmux_resume_compat_": manifest["resumeCompatTestCount"],
+                         "cmux_tool_coverage_": manifest["toolCoverageTestCount"],
+                         "cmux_activity_summary_": manifest["aggregateTestCount"],
+                         "cmux_workers_schema_": manifest["workersSchemaTestCount"]}
+            selector = next(key for key in selectors if key in arguments)
+            implementation = {"cmux_focus_": "focus-mode.patch", "cmux_working_tip_": "working-tip.patch",
+                              "cmux_orchestration_": "orchestration.patch", "cmux_resume_compat_": "resume-compat.patch",
+                              "cmux_tool_coverage_": "tool-coverage.patch",
+                              "cmux_activity_summary_": "aggregate.patch",
+                              "cmux_workers_schema_": "workers-schema.patch"}.get(selector)
+            failed = int(implementation is not None and implementation not in applied)
+            if selector == "cmux_tool_coverage_" and "aggregate.patch" not in applied:
+                self.assertEqual(set(applied[:12]), set(manifest["patches"][:12]))
+                self.assertEqual(applied[12], "tool-coverage-tests.patch")
+                stages.append("red" if failed else "green" if "--features" in arguments else "stock")
+            if selector == "cmux_activity_summary_":
+                self.assertEqual(applied[14], "aggregate-tests.patch")
+                stages.append("aggregate-red" if failed else "aggregate-green" if "--features" in arguments else "aggregate-stock")
+            if selector == "cmux_workers_schema_":
+                self.assertEqual(applied[16], "workers-schema-tests.patch")
+                stages.append("workers-red" if failed else "workers-green" if "--features" in arguments else "workers-stock")
+            kwargs["stdout"].write(f"test result: {'FAILED' if failed else 'ok'}. {selectors[selector]-failed} passed; {failed} failed; 0 ignored;\n")
+            return subprocess.CompletedProcess(arguments, failed)
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "source"
+            target = source / "codex-rs/target/release"
+            target.mkdir(parents=True)
+            (target / "cmux-codex-quiet").write_bytes(b"compiler fixture")
+            output = Path(directory) / "output"
+            with patch("sys.argv", ["build.py", "--source", str(source), "--output", str(output)]), \
+                    patch.dict("os.environ", {"CARGO_TARGET_DIR": str(target.parent)}), \
+                    patch.object(build, "prepare_release_lock"), patch.object(build, "run", git), \
+                    patch.object(check, "run", git), patch.object(build.subprocess, "run", cargo), \
+                    patch.object(build.source_mtimes, "restore", return_value=0), \
+                    patch.object(build.source_mtimes, "save", return_value=0), \
+                    patch.object(build.platform, "system", return_value="Linux"), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                build.main()
+            produced = json.loads((output / "manifest.json").read_text())
+        self.assertEqual(stages, ["red", "green", "stock", "aggregate-red", "aggregate-green", "aggregate-stock", "workers-red", "workers-green", "workers-stock", "build"])
+        start = applied.index("tool-coverage-tests.patch")
+        self.assertEqual(applied[start:start + 2], ["tool-coverage-tests.patch", "tool-coverage.patch"])
+        self.assertEqual(len(applied), len(set(applied)))
+        self.assertEqual(list(produced["patches"]), manifest["patches"])
+        self.assertEqual(produced["toolCoverageTestCount"], manifest["toolCoverageTestCount"])
+
+    def test_manifest_counts_all_dedicated_rust_fixtures(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        source = (check.HERE / "tool-coverage-tests.patch").read_text()
+        count = len(re.findall(r'^\+\s*(?:async )?fn cmux_tool_coverage_\w+\(', source, re.M))
+        self.assertEqual(count, manifest["toolCoverageTestCount"])
+
+
+class AggregateProofTests(unittest.TestCase):
+    def test_manifest_counts_all_rendered_fixtures(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        source = (check.HERE / "aggregate-tests.patch").read_text()
+        count = len(re.findall(r'^\+\s*(?:async )?fn cmux_activity_summary_\w+\(', source, re.M))
+        self.assertEqual(count, manifest["aggregateTestCount"])
+        self.assertEqual(manifest["patches"][14:16], ["aggregate-tests.patch", "aggregate.patch"])
+
+    def test_proof_requires_red_green_stock_then_prior_suite_controls(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        applied, stages = [], []
+        def git(arguments, directory):
+            if arguments[:2] == ["git", "apply"] and "--check" not in arguments:
+                applied.append(Path(arguments[-1]).name)
+            return ""
+        def tests(source, log, expected_count, **kwargs):
+            if not stages:
+                self.assertEqual(applied, ["aggregate-tests.patch"])
+            else:
+                self.assertEqual(applied, ["aggregate-tests.patch", "aggregate.patch"])
+            stages.append((kwargs["selector"], kwargs["feature"], kwargs["should_fail"], expected_count))
+        with tempfile.TemporaryDirectory() as directory, patch.object(check,"run",git), patch.object(check,"test",tests), contextlib.redirect_stdout(io.StringIO()):
+            check.aggregate_proof(Path(directory),Path(directory),manifest)
+        self.assertEqual(stages, [
+            ("cmux_activity_summary_",True,True,manifest["aggregateTestCount"]),
+            ("cmux_activity_summary_",True,False,manifest["aggregateTestCount"]),
+            ("cmux_activity_summary_",False,False,manifest["aggregateTestCount"]),
+            ("cmux_focus_",True,False,manifest["focusTestCount"]),
+            ("cmux_tool_coverage_",True,False,manifest["toolCoverageTestCount"]),
+            ("cmux_tool_coverage_",False,False,manifest["toolCoverageTestCount"]),
+        ])
+
+    def test_failed_discriminator_cannot_apply_aggregate_fix(self):
+        applied=[]
+        def git(arguments,directory):
+            if arguments[:2] == ["git","apply"] and "--check" not in arguments:
+                applied.append(Path(arguments[-1]).name)
+            return ""
+        with tempfile.TemporaryDirectory() as directory, patch.object(check,"run",git), patch.object(check,"test",side_effect=RuntimeError("missing regression")), self.assertRaises(RuntimeError):
+            check.aggregate_proof(Path(directory),Path(directory),json.loads((check.HERE / "source.json").read_text()))
+        self.assertEqual(applied,["aggregate-tests.patch"])
+
+
+class WorkersSchemaProofTests(unittest.TestCase):
+    def test_manifest_counts_all_serialized_tool_contract_fixtures(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        source = (check.HERE / "workers-schema-tests.patch").read_text()
+        count = len(re.findall(r'^\+\s*(?:async )?fn cmux_workers_schema_\w+\(', source, re.M))
+        self.assertEqual(count, manifest["workersSchemaTestCount"])
+        self.assertEqual(manifest["patches"][-2:], ["workers-schema-tests.patch", "workers-schema.patch"])
+
+    def test_proof_requires_red_green_stock_then_existing_bridge_control(self):
+        manifest = json.loads((check.HERE / "source.json").read_text())
+        applied, stages = [], []
+        def git(arguments, directory):
+            if arguments[:2] == ["git", "apply"] and "--check" not in arguments:
+                applied.append(Path(arguments[-1]).name)
+            return ""
+        def tests(source, log, expected_count, **kwargs):
+            self.assertEqual(applied, ["workers-schema-tests.patch"] if not stages else ["workers-schema-tests.patch", "workers-schema.patch"])
+            stages.append((kwargs["selector"], kwargs["feature"], kwargs["should_fail"], expected_count))
+        with tempfile.TemporaryDirectory() as directory, patch.object(check,"run",git), patch.object(check,"test",tests), contextlib.redirect_stdout(io.StringIO()):
+            check.workers_schema_proof(Path(directory),Path(directory),manifest)
+        self.assertEqual(stages, [
+            ("cmux_workers_schema_",True,True,manifest["workersSchemaTestCount"]),
+            ("cmux_workers_schema_",True,False,manifest["workersSchemaTestCount"]),
+            ("cmux_workers_schema_",False,False,manifest["workersSchemaTestCount"]),
+            ("cmux_orchestration_",True,False,manifest["orchestrationTestCount"]),
+        ])
+
+    def test_failed_discriminator_cannot_apply_schema_fix(self):
+        applied=[]
+        def git(arguments,directory):
+            if arguments[:2] == ["git","apply"] and "--check" not in arguments:
+                applied.append(Path(arguments[-1]).name)
+            return ""
+        with tempfile.TemporaryDirectory() as directory, patch.object(check,"run",git), patch.object(check,"test",side_effect=RuntimeError("missing regression")), self.assertRaises(RuntimeError):
+            check.workers_schema_proof(Path(directory),Path(directory),json.loads((check.HERE / "source.json").read_text()))
+        self.assertEqual(applied,["workers-schema-tests.patch"])
 
 
 class OrchestrationBrokerFixtureTests(unittest.TestCase):

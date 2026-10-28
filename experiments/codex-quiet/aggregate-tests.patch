@@ -1,0 +1,194 @@
+diff --git a/codex-rs/tui/src/app.rs b/codex-rs/tui/src/app.rs
+index 0f4817e..d15f02b 100644
+--- a/codex-rs/tui/src/app.rs
++++ b/codex-rs/tui/src/app.rs
+@@ -1304,3 +1304,6 @@ impl Drop for App {
+ pub(super) mod test_support;
+ #[cfg(test)]
+ mod tests;
++
++#[cfg(test)]
++mod cmux_activity_summary_tests;
+diff --git a/codex-rs/tui/src/app/cmux_activity_summary_tests.rs b/codex-rs/tui/src/app/cmux_activity_summary_tests.rs
+new file mode 100644
+index 0000000..c41e9d7
+--- /dev/null
++++ b/codex-rs/tui/src/app/cmux_activity_summary_tests.rs
+@@ -0,0 +1,42 @@
++use super::*;
++use crate::app::owned_transcript::tests::{attach_thread, buffer_text};
++use codex_app_server_protocol::WebSearchAction;
++fn web()->Arc<dyn history_cell::HistoryCell> { Arc::new(history_cell::new_web_search_call("retained".into(),"LIVE_SUMMARY_NEEDLE".into(),WebSearchAction::Search {query:Some("LIVE_SUMMARY_NEEDLE".into()),queries:None})) }
++fn summaries(text:&str)->usize {text.lines().filter(|line|line.trim()=="• Activity").count()}
++fn active_web(app:&mut App, complete:bool) {
++    let thread=app.chat_widget.thread_id().unwrap().to_string();
++    let notification=serde_json::from_value(serde_json::json!({
++        "method":if complete {"item/completed"} else {"item/started"},
++        "params":{"threadId":thread,"turnId":"summary-turn", "startedAtMs":0,"completedAtMs":0,
++            "item":{"type":"webSearch","id":"active","query":"LIVE_SUMMARY_NEEDLE","action":{"type":"search","query":"LIVE_SUMMARY_NEEDLE","queries":null},"results":[]}}
++    })).unwrap();
++    app.chat_widget.handle_server_notification(notification,None);
++}
++#[tokio::test]
++async fn cmux_activity_summary_live_and_retained_share_one_row() -> Result<()> {
++    let (mut app,_events,_ops)=crate::app::tests::make_test_app_with_channels().await;
++    attach_thread(&mut app,ThreadId::new());app.local_settings.tui.animations=false;
++    let mut tui=crate::tui::test_support::make_test_tui()?;tui.set_owned_screen(true)?; let size=tui.terminal.size()?;
++    // Actual live source, then a retained predecessor: no synthetic history mutation.
++    active_web(&mut app,false);
++    for retained in [false,true] {
++        if retained {app.transcript_cells.push(web());}
++        app.render_owned_transcript(&mut tui,size)?;
++        let screen=buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal));
++        assert_eq!(summaries(&screen),usize::from(cfg!(feature="cmux-quiet")),"{screen}");
++        if cfg!(feature="cmux-quiet") {assert!(!screen.contains("LIVE_SUMMARY_NEEDLE"),"{screen}");}
++    }
++    active_web(&mut app,true);app.render_owned_transcript(&mut tui,size)?;
++    let screen=buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal));assert_eq!(summaries(&screen),usize::from(cfg!(feature="cmux-quiet")),"{screen}");
++    assert_eq!(app.transcript_cells.len(),1);tui.set_owned_screen(false)?;Ok(())
++}
++#[tokio::test]
++async fn cmux_activity_summary_live_after_prose_starts_a_new_batch() -> Result<()> {
++    let (mut app,_events,_ops)=crate::app::tests::make_test_app_with_channels().await;
++    attach_thread(&mut app,ThreadId::new());app.local_settings.tui.animations=false;
++    let mut tui=crate::tui::test_support::make_test_tui()?;tui.set_owned_screen(true)?; let size=tui.terminal.size()?;app.transcript_cells=vec![web(),Arc::new(history_cell::PlainHistoryCell::new(vec!["Progress prose".into()]))];
++    active_web(&mut app,false);
++    app.render_owned_transcript(&mut tui,size)?;
++    let screen=buffer_text(crate::custom_terminal::test_support::last_rendered_buffer(&tui.terminal));assert_eq!(summaries(&screen),if cfg!(feature="cmux-quiet"){2}else{0},"{screen}");assert!(screen.contains("Progress prose"));
++    tui.set_owned_screen(false)?;Ok(())
++}
+diff --git a/codex-rs/tui/src/transcript_view.rs b/codex-rs/tui/src/transcript_view.rs
+index e365b92..9159c36 100644
+--- a/codex-rs/tui/src/transcript_view.rs
++++ b/codex-rs/tui/src/transcript_view.rs
+@@ -731,3 +731,6 @@ mod copy_on_select_tests;
+ 
+ #[cfg(test)]
+ pub(crate) mod cmux_tool_coverage_tests;
++
++#[cfg(test)]
++mod cmux_activity_summary_tests;
+diff --git a/codex-rs/tui/src/transcript_view/cmux_activity_summary_tests.rs b/codex-rs/tui/src/transcript_view/cmux_activity_summary_tests.rs
+new file mode 100644
+index 0000000..dbfbcab
+--- /dev/null
++++ b/codex-rs/tui/src/transcript_view/cmux_activity_summary_tests.rs
+@@ -0,0 +1,118 @@
++//! Rendered batch boundaries, canonical backing and stock controls; no provider work.
++use super::*;
++use crate::history_cell::*;
++use crate::multi_agents;
++use codex_app_server_protocol::{ThreadItem, WebSearchAction};
++use serde_json::json;
++
++fn prose(text: &str) -> Box<dyn HistoryCell> { Box::new(PlainHistoryCell::new(vec![text.to_owned().into()])) }
++fn web(action: WebSearchAction) -> Box<dyn HistoryCell> {
++    Box::new(new_web_search_call("web-summary".into(), "SUMMARY_NEEDLE".into(), action))
++}
++fn search() -> Box<dyn HistoryCell> { web(WebSearchAction::Search { query: Some("SUMMARY_NEEDLE".into()), queries: None }) }
++fn activity(kind: &str) -> Box<dyn HistoryCell> {
++    let item: ThreadItem = serde_json::from_value(json!({
++        "type":"subAgentActivity", "id":format!("agent-{kind}"), "kind":kind,
++        "agentThreadId":"00000000-0000-4000-8000-000000000001", "agentPath":"/worker"
++    })).unwrap();
++    Box::new(multi_agents::sub_agent_activity_history_cell(&item).unwrap())
++}
++fn collab(status: &str, agent_status: &str) -> Box<dyn HistoryCell> {
++    let id="00000000-0000-4000-8000-000000000001";
++    let item: ThreadItem=serde_json::from_value(json!({
++        "type":"collabAgentToolCall", "id":"wait-summary", "tool":"wait", "status":status,
++        "senderThreadId":id, "receiverThreadIds":[id], "prompt":null, "model":null,
++        "reasoningEffort":null, "agentsStates":{(id):{"status":agent_status,"message":"CHILD_REPORT_NEEDLE"}}
++    })).unwrap();
++    Box::new(multi_agents::tool_call_history_cell(&item,None, |_| Default::default()).unwrap())
++}
++fn retained(parts: Vec<Box<dyn HistoryCell>>) -> Vec<Arc<dyn HistoryCell>> { parts.into_iter().map(Arc::from).collect() }
++fn rendered(view:&mut TranscriptView,cells:&[Arc<dyn HistoryCell>],full:bool)->String {
++    let area=Rect::new(0,0,100,40); let mut b=Buffer::empty(area); view.render(area,&mut b,cells);
++    (0..cells.len()).filter_map(|i|view.entry_layout(cells,i,full)).map(|l|l.text().to_owned()).collect::<Vec<_>>().join("\n")
++}
++fn summaries(text:&str)->usize { text.lines().filter(|line|line.trim()=="• Activity").count() }
++
++#[test]
++fn cmux_activity_summary_known_tool_streak_is_one_fixed_row() {
++    let cells=retained(super::cmux_tool_coverage_tests::routine_cells());
++    let mut view=TranscriptView::default(); let out=rendered(&mut view,&cells,false);
++    assert_eq!(summaries(&out),usize::from(cfg!(feature="cmux-quiet")),"{out}");
++    if cfg!(feature="cmux-quiet") { assert!(!out.contains("COVERAGE_NEEDLE"),"{out}"); }
++    assert!(rendered(&mut view,&cells,true).contains("COVERAGE_NEEDLE"));
++}
++#[test]
++fn cmux_activity_summary_assistant_prose_anchors_each_new_batch() {
++    let cells=retained(vec![prose("First prose"),search(),activity("interacted"),prose("Second prose"),search(),search(),prose("Final answer")]);
++    let mut view=TranscriptView::default(); let out=rendered(&mut view,&cells,false);
++    assert_eq!(summaries(&out),if cfg!(feature="cmux-quiet"){2}else{0},"{out}");
++    for s in ["First prose","Second prose","Final answer"] { assert!(out.contains(s),"{out}"); }
++    if cfg!(feature="cmux-quiet") { assert!(out.find("First prose").unwrap()<out.find("• Activity").unwrap()); }
++}
++#[test]
++fn cmux_activity_summary_nested_mixed_groups_share_the_preceding_batch() {
++    let nested=CompositeHistoryCell::new(vec![search(),Box::new(CompositeHistoryCell::new(vec![activity("completed"),prose("Protected prose"),search()]))]);
++    let cells=retained(vec![search(),Box::new(nested),search()]); let mut view=TranscriptView::default();
++    let out=rendered(&mut view,&cells,false);
++    assert_eq!(summaries(&out),if cfg!(feature="cmux-quiet"){2}else{0},"{out}");
++    assert!(out.contains("Protected prose")); assert!(rendered(&mut view,&cells,true).contains("SUMMARY_NEEDLE"));
++}
++#[test]
++fn cmux_activity_summary_failures_and_attention_end_the_batch() {
++    let cells=retained(vec![search(),Box::new(new_error_event("ERROR_NEEDLE".into())),search(),activity("interrupted"),search(),collab("failed","errored")]);
++    let mut view=TranscriptView::default(); let out=rendered(&mut view,&cells,false);
++    assert_eq!(summaries(&out),if cfg!(feature="cmux-quiet"){3}else{0},"{out}");
++    for s in ["ERROR_NEEDLE","Interrupted","CHILD_REPORT_NEEDLE"] { assert!(out.contains(s),"{out}"); }
++}
++#[test]
++fn cmux_activity_summary_collab_rows_are_typed_and_reversible() {
++    let cells=retained(vec![activity("started"),activity("interacted"),activity("completed"),collab("completed","completed")]);
++    let mut view=TranscriptView::default(); let out=rendered(&mut view,&cells,false);
++    assert_eq!(summaries(&out),usize::from(cfg!(feature="cmux-quiet")),"{out}");
++    if cfg!(feature="cmux-quiet") { for s in ["Interacted","Completed","CHILD_REPORT_NEEDLE"] { assert!(!out.contains(s),"{out}"); } view.toggle_cmux_quiet(); }
++    let compact=rendered(&mut view,&cells,false); assert!(compact.contains("Interacted with")); assert!(compact.contains("CHILD_REPORT_NEEDLE"));
++    assert!(rendered(&mut view,&cells,true).contains("CHILD_REPORT_NEEDLE"));
++}
++#[test]
++fn cmux_activity_summary_web_open_find_and_search_have_the_same_label() {
++    let cells=retained(vec![search(),web(WebSearchAction::OpenPage {url:Some("https://example.test/needle".into())}),web(WebSearchAction::FindInPage {url:None,pattern:Some("WEB_FIND_NEEDLE".into())})]);
++    let mut view=TranscriptView::default(); let out=rendered(&mut view,&cells,false);
++    assert_eq!(summaries(&out),usize::from(cfg!(feature="cmux-quiet")),"{out}");
++    let detailed=rendered(&mut view,&cells,true); for s in ["SUMMARY_NEEDLE","example.test","WEB_FIND_NEEDLE"] { assert!(detailed.contains(s),"{detailed}"); }
++}
++#[test]
++fn cmux_activity_summary_unknown_actions_and_plain_context_stay_visible() {
++    let cells=retained(vec![prose("Service tier changed"),web(WebSearchAction::Other),prose("Assistant reply with an agent report")]);
++    let mut view=TranscriptView::default(); let out=rendered(&mut view,&cells,false);
++    assert_eq!(summaries(&out),0); for s in ["Service tier changed","SUMMARY_NEEDLE","Assistant reply with an agent report"] { assert!(out.contains(s),"{out}"); }
++}
++#[test]
++fn cmux_activity_summary_raw_and_detailed_never_aggregate() {
++    let cells=retained(vec![search(),activity("interacted"),collab("completed","completed")]); let mut view=TranscriptView::default();
++    view.set_presentation(false,HistoryRenderMode::Raw); let raw=rendered(&mut view,&cells,false);
++    assert_eq!(summaries(&raw),0); assert!(raw.contains("SUMMARY_NEEDLE"));assert!(raw.contains("CHILD_REPORT_NEEDLE"));
++    view.set_presentation(true,HistoryRenderMode::Rich);let full=rendered(&mut view,&cells,true);assert_eq!(summaries(&full),0);assert!(full.contains("Interacted with"));
++}
++#[test]
++fn cmux_activity_summary_full_content_search_keeps_hidden_group_children() {
++    let cells=retained(vec![Box::new(CompositeHistoryCell::new(vec![search(),prose("Authored prose"),collab("completed","completed")]))]);
++    let mut view=TranscriptView::default(); let quiet=rendered(&mut view,&cells,false); assert!(quiet.contains("Authored prose"));
++    let source=rendered(&mut view,&cells,true); assert!(source.contains("SUMMARY_NEEDLE")); assert!(source.contains("CHILD_REPORT_NEEDLE"));
++    assert!(cells[0].raw_lines().iter().any(|line|line.to_string().contains("CHILD_REPORT_NEEDLE")));
++}
++#[test]
++fn cmux_activity_summary_toggle_restores_the_same_canonical_entries() {
++    let cells=retained(vec![search(),activity("interacted")]);let mut view=TranscriptView::default();
++    let before=cells.iter().map(|c|c.raw_lines()).collect::<Vec<_>>();
++    for _ in 0..4 { let out=rendered(&mut view,&cells,false); assert_eq!(summaries(&out),usize::from(view.is_cmux_quiet()),"{out}");view.toggle_cmux_quiet(); }
++    assert_eq!(cells.iter().map(|c|c.raw_lines()).collect::<Vec<_>>(),before);
++}
++
++#[test]
++fn cmux_activity_summary_transcript_only_reasoning_is_not_a_prose_boundary() {
++    let reasoning=|| Box::new(ReasoningSummaryCell::new("Reasoning".into(),"HIDDEN_REASONING".into(),std::path::Path::new("/workspace"),true)) as Box<dyn HistoryCell>;
++    let cells=retained(vec![search(),reasoning(),Box::new(CompositeHistoryCell::new(vec![reasoning(),search(),reasoning()])),search()]);
++    let mut view=TranscriptView::default();let out=rendered(&mut view,&cells,false);
++    assert_eq!(summaries(&out),usize::from(cfg!(feature="cmux-quiet")),"{out}");
++    assert!(!out.contains("HIDDEN_REASONING"));assert!(rendered(&mut view,&cells,true).contains("HIDDEN_REASONING"));
++}

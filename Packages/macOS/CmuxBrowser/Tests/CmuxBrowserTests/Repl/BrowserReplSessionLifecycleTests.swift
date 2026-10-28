@@ -31,7 +31,8 @@ globalThis.__cmuxReplEval = (code) => new AsyncFunction("console", "call", "time
 struct BrowserReplSessionLifecycleTests {
     private func makeSession(
         driver: any BrowserReplDriver,
-        bundle: BrowserReplRuntimeBundle? = nil
+        bundle: BrowserReplRuntimeBundle? = nil,
+        sleeper: any BrowserReplSleeping = BrowserReplClockSleeper(clock: ContinuousClock())
     ) -> BrowserReplSession {
         BrowserReplSession(
             id: "lifecycle-\(UUID().uuidString)",
@@ -40,7 +41,8 @@ struct BrowserReplSessionLifecycleTests {
                 replScripts: [.init(name: "lifecycle.js", source: lifecycleRuntime)],
                 agentScripts: []
             ),
-            driver: driver
+            driver: driver,
+            sleeper: sleeper
         )
     }
 
@@ -140,11 +142,15 @@ struct BrowserReplSessionLifecycleTests {
 
     @Test("In JavaScriptCore, a timed-out cell's late output is dropped and its functions still print")
     func cancelledCellOutputInJavaScriptCore() async throws {
-        let session = makeSession(driver: RecordingReplDriver(), bundle: try browserReplRepositoryBundle())
+        let entry = CancelledCellEntry()
+        let session = makeSession(driver: entry, bundle: try browserReplRepositoryBundle(), sleeper: entry)
         defer { session.close() }
+        // The fixture clock starts its 200ms timeout only once tabs.list
+        // acknowledges that this cell defined hello and armed its late timer.
+        // Keep hello in this cancelled cell to cover its console provenance.
         let hung = await browserReplWithDeadline(seconds: 30) {
             await session.evaluate(
-                code: "function hello() { console.log('hello'); } setTimeout(() => console.log('late from cell 1'), 400); await new Promise(() => {})",
+                code: "function hello() { console.log('hello'); } setTimeout(() => console.log('late from cell 1'), 400); await tabs.list(); await new Promise(() => {})",
                 timeout: .milliseconds(200)
             )
         }
@@ -279,6 +285,39 @@ private final class CookieGateDriver: BrowserReplDriver, @unchecked Sendable {
 
     func attach(eventSink: @escaping BrowserReplDriverEventSink) {}
     func detach() {}
+}
+
+/// The real driver call proves the cell reached JavaScript before its short
+/// fixture deadline begins. AsyncStream also releases a waiter on cancellation.
+private final class CancelledCellEntry: BrowserReplDriver, BrowserReplSleeping {
+    private let entered: AsyncStream<Void>
+    private let acknowledgement: AsyncStream<Void>.Continuation
+
+    init() {
+        let (stream, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+        entered = stream
+        acknowledgement = continuation
+    }
+
+    var capabilities: [String] { [] }
+    func attach(eventSink: @escaping BrowserReplDriverEventSink) {}
+    func detach() {}
+
+    func call(method: String, paramsJSON: String) async -> Result<String, BrowserReplDriverError> {
+        if method == "tabs.list" {
+            acknowledgement.yield(())
+            return .success(#"[{"targetId":"t1","title":"Fixture","url":"about:blank","active":true}]"#)
+        }
+        return .success("null")
+    }
+
+    func sleep(for duration: Duration) async throws {
+        if duration == .milliseconds(200) {
+            var iterator = entered.makeAsyncIterator()
+            guard await iterator.next() != nil else { throw CancellationError() }
+        }
+        try await ContinuousClock().sleep(for: duration)
+    }
 }
 
 /// A cell that arms a timer whose callback never returns, and evaluates to

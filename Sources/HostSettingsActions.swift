@@ -2,6 +2,7 @@ import CmuxCloud
 import CmuxComputerUse
 import AppKit
 import CMUXMobileCore
+import CMUXAgentLaunch
 import CmuxWorkspaces
 import CmuxSettings
 import CmuxSettingsUI
@@ -253,14 +254,18 @@ final class HostSettingsActions: SettingsHostActions {
         LanguageSettingsStore(defaults: .standard, domainName: ProcessDefaultsDomain.name).applyLanguageOverride(language)
     }
 
+    var isPersonalCustomizationAvailable: Bool { Bundle.main.object(forInfoDictionaryKey: "CMUXPersonalBuild") as? Bool == true }
+
+    func togglePersonalSidebar() { _ = AppDelegate.shared?.toggleSidebarInActiveMainWindow() }
+
     func quietCodexStatus() async -> QuietCodexStatus {
         let resources = Bundle.main.resourceURL
         let stock = try? AgentExecutableResolver().resolve(.codex).executableURL
         return await Task.detached(priority: .utility) {
             guard let resources else { return QuietCodexStatus(bundledVersion: nil, stockVersion: nil, compatible: false) }
             let manifestURL = resources.appendingPathComponent("licenses/codex-quiet/manifest.json")
-            let manifest = (try? Data(contentsOf: manifestURL)).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
-            let version = (manifest?["release"] as? String)?.replacingOccurrences(of: "rust-v", with: "")
+            let manifest = (try? Data(contentsOf: manifestURL)).flatMap { CodexQuietManifest(data: $0) }
+            let version = manifest?.version
             func probe(_ executable: URL, _ arguments: [String]) -> (Bool, String?) {
                 let process = Process(); let output = Pipe()
                 process.executableURL = executable; process.arguments = arguments

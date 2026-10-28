@@ -19,13 +19,16 @@ public struct AgentRestoreEvidencePolicy: Sendable {
     ///   - hasLiveOwner: A currently validated process generation owns the session.
     ///   - indexComplete: The kind-specific ownership scan completed.
     ///   - writerLock: Codex's lock in the exact launch account, or nil for other providers.
+    ///   - managedFrontend: Verified daemon-only view plan; never permission to execute a stock writer.
     /// - Returns: The next recovery action; unavailable evidence never authorizes a duplicate.
     public func decision(
         hasLiveOwner: Bool,
         indexComplete: Bool,
-        writerLock: CodexWriterLockInspection.State?
+        writerLock: CodexWriterLockInspection.State?,
+        managedFrontend: CodexManagedDaemonAttachPlan? = nil
     ) -> Decision {
         if hasLiveOwner { return .observeOwner }
+        if managedFrontend != nil { return .claimLaunch }
         switch writerLock {
         case .available:
             return .claimLaunch

@@ -43,7 +43,8 @@ extension CMUXCLI {
     func execRestoreInvocation(
         _ invocation: AgentRestoreInvocation,
         appliedWorkingDirectory: String?,
-        admittedScope: RestoreLaunchAdmissionClaim? = nil
+        admittedScope: RestoreLaunchAdmissionClaim? = nil,
+        managedFrontend: CodexManagedDaemonAttachPlan? = nil
     ) throws {
         var invocationEnvironment = invocation.environment
         if let admittedScope {
@@ -55,7 +56,33 @@ extension CMUXCLI {
         if let appliedWorkingDirectory {
             invocationEnvironment["PWD"] = appliedWorkingDirectory
         }
-        guard let first = invocation.arguments.first,
+        let arguments: [String]
+        if let managedFrontend {
+            guard admittedScope?.managedCodexFrontend == true,
+                  managedFrontend.invocation == invocation,
+                  CodexManagedDaemonAttachProbe().verify(managedFrontend) else { throw managedCodexAttachUnavailable() }
+            invocationEnvironment["CODEX_HOME"] = managedFrontend.codexHome
+            invocationEnvironment["CMUX_QUIET_STOCK_CODEX"] = managedFrontend.stockExecutable
+            // This CLI PID becomes the frontend at exec. Never inherit another
+            // daemon/terminal's invocation identity or depend on a shell wrapper.
+            invocationEnvironment["CMUX_CODEX_PID"] = String(getpid())
+            invocationEnvironment["CMUX_CODEX_INVOCATION_ID"] = UUID().uuidString.lowercased()
+            invocationEnvironment.removeValue(forKey: "CMUX_CODEX_HOOK_PID")
+            invocationEnvironment.removeValue(forKey: "CMUX_CODEX_PARENT_INVOCATION_ID")
+            invocationEnvironment["CMUX_CODEX_HEADLESS"] = "0"
+            invocationEnvironment["CMUX_AGENT_LAUNCH_KIND"] = "codex"
+            invocationEnvironment["CMUX_AGENT_LAUNCH_EXECUTABLE"] = managedFrontend.stockExecutable
+            invocationEnvironment["CMUX_AGENT_LAUNCH_CWD"] = managedFrontend.workingDirectory
+            var capture = Data()
+            for argument in [managedFrontend.stockExecutable] + invocation.arguments.dropFirst() {
+                capture.append(contentsOf: argument.utf8); capture.append(0)
+            }
+            invocationEnvironment["CMUX_AGENT_LAUNCH_ARGV_B64"] = capture.base64EncodedString()
+            arguments = managedFrontend.arguments
+        } else {
+            arguments = invocation.arguments
+        }
+        guard let first = arguments.first,
               let executable = resolveRestoreExecutable(
                   first,
                   environment: invocationEnvironment
@@ -69,11 +96,11 @@ extension CMUXCLI {
                 )
             )
         }
-        try requireCodexWriterAvailable(
-            invocation: invocation,
-            workingDirectory: FileManager.default.currentDirectoryPath
-        )
-        let executionError = withCStringArray(invocation.arguments) { argv in
+        if managedFrontend == nil {
+            try requireCodexWriterAvailable(invocation: invocation,
+                workingDirectory: FileManager.default.currentDirectoryPath)
+        }
+        let executionError = withCStringArray(arguments) { argv in
             withEnvironmentCStringArray(invocationEnvironment) { environment in
                 executable.withCString { path in
                     cliExecFailureErrno {

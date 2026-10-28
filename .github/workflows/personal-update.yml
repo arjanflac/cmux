@@ -10,6 +10,10 @@ on:
     - cron: '31 17 * * 1'
   workflow_dispatch:
     inputs:
+      native_only:
+        description: Compile and retain a feature candidate without packaging
+        type: boolean
+        default: false
       native_artifact_run:
         description: Previous exact-source feature build to package without recompiling
         type: string
@@ -55,11 +59,20 @@ jobs:
           SOURCE_REF: ${{ github.event_name == 'workflow_dispatch' && github.ref_name || 'personal' }}
           NATIVE_ARTIFACT_RUN: ${{ inputs.native_artifact_run }}
           QUIET_FRONTEND_RUN: ${{ inputs.quiet_frontend_run }}
+          NATIVE_ONLY: ${{ inputs.native_only }}
         shell: bash
         run: |
           set -euo pipefail
           if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
             test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          fi
+          if [[ "$NATIVE_ONLY" == true ]]; then
+            # Keep compilation independent of a queued frontend. Package the
+            # two explicit successful producers in a later artifact-only run.
+            if [[ "$EVENT_NAME" != workflow_dispatch || "$SOURCE_REF" == personal || -n "$NATIVE_ARTIFACT_RUN" || -n "$QUIET_FRONTEND_RUN" ]]; then
+              echo '::error::Native-only builds require a feature-branch dispatch with both artifact inputs empty.'
+              exit 1
+            fi
           fi
           # Packaging can retry a retained native artifact without another compile.
           # The artifact must come from this repository's native workflow, with
@@ -92,6 +105,22 @@ jobs:
             echo "sha=$native_sha" >> "$GITHUB_OUTPUT"
             echo 'release=packaging-only' >> "$GITHUB_OUTPUT"
             exit 0
+          fi
+          # A new native compile can use a retained frontend from another commit
+          # only when the complete frontend tree, workflows and SDK selector match.
+          # Native inputs are built from this exact source; no overlay is allowed.
+          if [[ -n "$QUIET_FRONTEND_RUN" ]]; then
+            [[ "$EVENT_NAME" == workflow_dispatch ]]
+            [[ "$SOURCE_REF" != personal ]]
+            [[ "$QUIET_FRONTEND_RUN" =~ ^[0-9]+$ ]]
+            quiet_producer="repos/$GITHUB_REPOSITORY/actions/runs/$QUIET_FRONTEND_RUN"
+            quiet_sha=$(gh api "$quiet_producer" --jq .head_sha)
+            quiet_path=$(gh api "$quiet_producer" --jq .path)
+            [[ "$quiet_sha" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$quiet_path" == .github/workflows/quiet-codex-proof.yml || "$quiet_path" == .github/workflows/quiet-codex-frontend.yml ]]
+            git fetch --no-tags --depth=1 origin "$quiet_sha"
+            python3 scripts/quiet_codex_bundle.py --fresh-native "$GITHUB_REPOSITORY" "$GITHUB_SHA" "$quiet_sha"
+            echo "quiet_sha=$quiet_sha" >> "$GITHUB_OUTPUT"
           fi
           # A manually selected feature branch gets an exact-source build and
           # artifact without changing personal or merging upstream into it.
@@ -214,7 +243,8 @@ jobs:
           name: cmux-native-unpackaged-arm64-${{ github.run_id }}
           path: dist/native/*
           compression-level: 0
-          retention-days: 7
+          # Frontend-only upgrades reuse this compiled base across CLI releases.
+          retention-days: 90
       - name: Keep failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -223,9 +253,35 @@ jobs:
           path: /tmp/cmux-reload-workspace-icons.log
           retention-days: 7
 
+  frontend_ready:
+    needs: prepare
+    if: inputs.quiet_frontend_run != '' && inputs.native_only != true
+    runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
+    timeout-minutes: 190
+    env:
+      GH_TOKEN: ${{ github.token }}
+      QUIET_RUN: ${{ inputs.quiet_frontend_run }}
+    steps:
+      - name: Wait for the explicitly selected frontend without occupying a Mac runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$QUIET_RUN" =~ ^[0-9]+$ ]]
+          for ((attempt=1; attempt<=360; attempt++)); do
+            outcome=$(gh run view "$QUIET_RUN" --repo "$GITHUB_REPOSITORY" --json status,conclusion --jq '.status + ":" + .conclusion')
+            if [[ "$outcome" == completed:success ]]; then exit 0; fi
+            if [[ "$outcome" == completed:* ]]; then
+              echo "::error::Quiet frontend run $QUIET_RUN finished: $outcome"
+              exit 1
+            fi
+            sleep 30
+          done
+          echo "::error::Selected frontend did not finish within the queue/build budget"
+          exit 1
+
   package:
-    needs: [prepare, build]
-    if: ${{ !cancelled() && needs.prepare.result == 'success' && (needs.build.result == 'success' || needs.prepare.outputs.reuse_native == 'true') }}
+    needs: [prepare, build, frontend_ready]
+    if: ${{ inputs.native_only != true && !cancelled() && needs.prepare.result == 'success' && (needs.build.result == 'success' || needs.prepare.outputs.reuse_native == 'true') && (needs.frontend_ready.result == 'success' || needs.frontend_ready.result == 'skipped') }}
     runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'macos-15' || vars.MACOS_RUNNER_26 || 'blacksmith-6vcpu-macos-26' }}
     timeout-minutes: 90
     env:
@@ -257,29 +313,26 @@ jobs:
           QUIET_RUN: ${{ inputs.quiet_frontend_run }}
           QUIET_REPOSITORY: ${{ github.repository }}
           QUIET_SOURCE_SHA: ${{ needs.prepare.outputs.quiet_sha }}
+          REUSE_NATIVE: ${{ needs.prepare.outputs.reuse_native }}
         run: |
           [[ "$QUIET_RUN" =~ ^[0-9]+$ ]]
           test "$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json headSha --jq .headSha)" = "$QUIET_SOURCE_SHA"
-          # Prepare verified a frontend-only descendant before allowing this
-          # overlay. Preserve the native archive's original source identity.
-          if [[ "$(git rev-parse HEAD)" != "$QUIET_SOURCE_SHA" ]]; then
+          # Only the compiled-native reuse lane may overlay a verified
+          # frontend-only descendant. Fresh native builds keep their source.
+          if [[ "$REUSE_NATIVE" == true && "$(git rev-parse HEAD)" != "$QUIET_SOURCE_SHA" ]]; then
             git fetch --no-tags --depth=1 origin "$QUIET_SOURCE_SHA"
             git restore --source="$QUIET_SOURCE_SHA" --worktree -- experiments/codex-quiet
           fi
-          # Native and Rust builds may run concurrently. Wait only for this
-          # explicit frontend run, without dispatching or replaying anything.
-          for attempt in $(seq 1 120); do
-            status=$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json status --jq .status)
-            if [[ "$status" == completed ]]; then
-              conclusion=$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json conclusion --jq .conclusion)
-              [[ "$conclusion" == success ]] || { echo "::error::Quiet frontend run $QUIET_RUN finished: $conclusion"; exit 1; }
-              break
-            fi
-            [[ "$attempt" != 120 ]] || { echo "::error::Quiet frontend did not finish within 60 minutes"; exit 1; }
-            sleep 30
-          done
+          # The Linux readiness job already observed success. Recheck before
+          # fetching immutable artifacts; never dispatch or retry a build here.
+          test "$(gh run view "$QUIET_RUN" --repo "$QUIET_REPOSITORY" --json conclusion --jq .conclusion)" = success
           gh run download "$QUIET_RUN" --repo "$QUIET_REPOSITORY" \
             --name "quiet-codex-ARM64-$QUIET_RUN" --dir "$RUNNER_TEMP/cmux-quiet-frontend"
+          python3 - "$RUNNER_TEMP/cmux-quiet-frontend/manifest.json" "$QUIET_SOURCE_SHA" <<'PY'
+          import json, pathlib, sys
+          if json.loads(pathlib.Path(sys.argv[1]).read_text()).get("cmux_commit") != sys.argv[2]:
+              raise ValueError("Frontend artifact does not name the selected producer commit")
+          PY
       - name: Package candidate without official auto-updates
         run: |
           quiet_args=()
@@ -298,7 +351,7 @@ jobs:
 
   promote:
     needs: [prepare, package]
-    if: inputs.native_artifact_run == '' && (github.event_name != 'workflow_dispatch' || github.ref_name == 'personal')
+    if: inputs.native_only != true && inputs.native_artifact_run == '' && (github.event_name != 'workflow_dispatch' || github.ref_name == 'personal')
     runs-on: ${{ github.repository_owner != 'manaflow-ai' && 'ubuntu-24.04' || vars.LINUX_RUNNER || 'blacksmith-4vcpu-ubuntu-2404' }}
     timeout-minutes: 10
     permissions:

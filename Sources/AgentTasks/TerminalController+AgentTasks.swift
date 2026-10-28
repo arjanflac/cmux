@@ -10,11 +10,18 @@ extension TerminalController {
             guard request.params[WorkspaceRemoteRelayCommandRewriter.remoteWorkspaceIDKey] == nil else {
                 throw CocoaError(.fileReadNoPermission)
             }
+            // Managed providers publish receipts through their authenticated driver
+            // streams. Legacy terminal hook reports cannot authenticate a provider
+            // completion and must never manufacture a child result by session ID.
+            if request.method == "agent.task.report" {
+                return Self.v2Encoder.response(id: request.id, Self.controlCallResult(fromLegacy: .err(
+                    code: "unsupported_operation", message: CocoaError(.featureUnsupported).localizedDescription, data: nil)))
+            }
             let params = request.params.mapValues(\.foundationObject)
             let runtime = await agentTaskRuntimeForControl()
             try await runtime.restore()
             let orchestrationMethods: Set<String> = ["agent.task.start", "agent.task.send", "agent.task.turns",
-                "agent.task.result", "agent.task.wait-turn", "agent.task.inbox", "agent.task.ack",
+                "agent.task.result", "agent.task.wait-turn", "agent.task.workers", "agent.task.inbox", "agent.task.ack",
                 "agent.task.schedule", "agent.task.panel", "agent.task.bridge", "agent.task.interactions", "agent.task.respond"]
             if orchestrationMethods.contains(request.method) {
                 let input = try JSONSerialization.data(withJSONObject: params)
@@ -50,7 +57,7 @@ extension TerminalController {
                 else { attached = try await runtime.coordinator.attach(id, workspaceID: workspace, workspaceStableID: stableID) }
                 result = .ok(try await taskPayload(attached))
             case "agent.task.list":
-                let records = await runtime.coordinator.records.values.sorted { $0.createdAt > $1.createdAt }
+                let records = await runtime.coordinator.records.values.filter { !$0.isRetired }.sorted { $0.createdAt > $1.createdAt }
                 var rows: [[String: Any]] = []
                 for record in records.prefix(50) {
                     var row = try await taskPayload(record)
@@ -58,20 +65,11 @@ extension TerminalController {
                     rows.append(row)
                 }
                 result = .ok(["tasks": rows, "has_more": records.count > 50])
-            case "agent.task.read", "agent.task.wait", "agent.task.cancel", "agent.task.report":
+            case "agent.task.read", "agent.task.wait", "agent.task.cancel":
                 guard let id = (params["task_id"] as? String).flatMap(UUID.init(uuidString:)),
                       let record = try await runtime.coordinator.record(id) else { throw CocoaError(.fileNoSuchFile) }
                 if request.method == "agent.task.cancel" { try await runtime.coordinator.cancel(id) }
                 if request.method == "agent.task.wait" { _ = try await runtime.coordinator.wait(id) }
-                if request.method == "agent.task.report", !record.phase.isFinished {
-                    guard let session = params["session_id"] as? String, let event = params["event"] as? String else {
-                        throw CocoaError(.validationMissingMandatoryProperty)
-                    }
-                    if event == "started", let pid = params["owner_pid"] as? Int {
-                        await runtime.host.confirmOwner(id, session: session, pid: pid)
-                    }
-                    try await runtime.backend.reportClaude(id: id, session: session, event: event, text: params["text"] as? String)
-                }
                 let latest = try await runtime.coordinator.record(id) ?? record
                 result = .ok(try await taskPayload(latest))
             default: result = .err(code: "method_not_found", message: String(localized: "cli.agentTask.unknownMethod", defaultValue: "Unknown task method"), data: nil)

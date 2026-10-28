@@ -31,6 +31,8 @@ final class NativeAgentOrchestration {
         journal = try AgentTaskJournal(databaseURL: directory.appendingPathComponent("orchestration.sqlite"))
         ledger = AgentTaskCommandLedger(directory: directory.appendingPathComponent("commands"))
         panelsStore = AgentTaskPanelRepository(directory: directory.appendingPathComponent("panels"))
+        let journal = self.journal
+        runtime.coordinator.setRetirementPermit { taskID in try await !journal.preventsRetirement(of: taskID) }
     }
 
     var enabled: Bool {
@@ -53,6 +55,7 @@ final class NativeAgentOrchestration {
             try await self.runtime.turnRepository.visitReceipts { [weak self] turn in
                 try await self?.reconcileTurnReceipt(turn)
             }
+            try await self.runtime.coordinator.finishPendingRetirements()
             self.restored = true
             self.wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
                 forName: NSWorkspace.didWakeNotification, object: nil, queue: .main

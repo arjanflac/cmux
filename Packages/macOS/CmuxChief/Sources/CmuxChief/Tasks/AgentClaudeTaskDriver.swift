@@ -52,7 +52,7 @@ actor AgentClaudeTaskDriver {
     private var uncertain: Set<UUID> = []
 
     init(taskCommand: [String], cancelTerminal: @escaping @Sendable (UUID) async throws -> Void,
-         cancelDeadline: Duration, idleLimit: Int = 3,
+         cancelDeadline: Duration, idleLimit: Int = 1,
          factory: @escaping @Sendable (ClaudeCodeBrain.Configuration) -> any AgentClaudeDriver) {
         self.taskCommand = taskCommand
         self.cancelTerminal = cancelTerminal
@@ -109,6 +109,7 @@ actor AgentClaudeTaskDriver {
     /// carry the original permission mode, and defaults never escalate.
     func continueTask(id: UUID, record: AgentTaskRecord, request: AgentTaskTurnRequest) throws -> AsyncThrowingStream<AgentTaskEvent, any Error> {
         guard turns[id] == nil else { throw AgentManagedTaskError.busy }
+        guard !uncertain.contains(id) else { throw AgentManagedTaskError.cancellationUnconfirmed }
         guard let session = record.sessionID, !session.isEmpty else { throw AgentManagedTaskError.missingSession }
         let driver: any AgentClaudeDriver
         if let live = retained[id] {
@@ -198,16 +199,12 @@ actor AgentClaudeTaskDriver {
         await settle(id, outcome: outcome)
     }
 
-    /// Publishes `outcome`; an uncertain process is stopped first and never reused.
+    /// Publishes uncertainty without treating lost completion evidence as permission to stop work.
     ///
-    /// The stream ends only after the stop, so a follow-up cannot resume the
-    /// session while this process still owns it.
+    /// An uncertain retained process is quarantined: it cannot receive another
+    /// prompt, be handed to an interactive writer, or be evicted as known idle.
     private func settle(_ id: UUID, outcome: AgentTaskEvent) async {
         guard turns[id]?.settling == false else { return }
-        if case .disconnected = outcome {
-            turns[id]?.settling = true
-            await dropRetained(id)
-        }
         end(id, outcome: outcome)
     }
 
@@ -240,7 +237,7 @@ actor AgentClaudeTaskDriver {
 
     /// Stops the least recently used idle brains beyond the retention bound.
     private func evictIdle() {
-        let idle = retained.filter { turns[$0.key] == nil }
+        let idle = retained.filter { turns[$0.key] == nil && !uncertain.contains($0.key) }
         guard idle.count > idleLimit else { return }
         for (id, entry) in idle.sorted(by: { $0.value.lastUsed < $1.value.lastUsed }).prefix(idle.count - idleLimit) {
             retained.removeValue(forKey: id)
@@ -338,11 +335,12 @@ actor AgentClaudeTaskDriver {
         outcomes.expire(id: id, token: token)
     }
 
-    func hasActiveTurn(id: UUID) -> Bool { turns[id] != nil }
+    func hasActiveTurn(id: UUID) -> Bool { turns[id] != nil || uncertain.contains(id) }
 
     /// Stops an idle retained process so another client can own the session; never stops active work.
     func park(id: UUID) async throws {
         guard turns[id] == nil else { throw AgentManagedTaskError.busy }
+        guard !uncertain.contains(id) else { throw AgentManagedTaskError.cancellationUnconfirmed }
         await dropRetained(id)
     }
 }

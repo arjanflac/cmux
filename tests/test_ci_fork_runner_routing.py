@@ -929,7 +929,12 @@ class ForkRunnerRoutingTests(unittest.TestCase):
         package = re.search(r"(?ms)^  package:\n(.*?)(?=^  [\w-]+:|\Z)", text)
         self.assertIsNotNone(package)
         block = package.group(1)
-        self.assertIn("needs: [prepare, build]", block)
+        dependencies = re.search(r"(?m)^    needs: \[([^\]]+)\]$", block)
+        self.assertIsNotNone(dependencies)
+        self.assertEqual({name.strip() for name in dependencies.group(1).split(",")},
+                         {"prepare", "build", "frontend_ready"})
+        self.assertIn("needs.frontend_ready.result == 'success'", block)
+        self.assertIn("needs.frontend_ready.result == 'skipped'", block)
         self.assertIn("actions/download-artifact@", block)
         self.assertIn("cmux-native-unpackaged-arm64-", block)
         self.assertIn("python3 scripts/personal-package.py", block)

@@ -24,7 +24,19 @@ extension AgentTaskJournal {
                 guard event.result == result else { throw AgentTaskJournalError.conflict }
                 return event
             }
-            let count = try db().rows("SELECT COUNT(*) FROM task_inbox").first?.first.flatMap(Int.init) ?? 0
+            if let row = try db().rows("SELECT payload FROM task_inbox_acks WHERE owner = ? AND task = ? AND operation = ? AND kind = ?", key).first {
+                let tombstone = try decode(AgentTaskInboxTombstone.self, row[0])
+                guard try tombstone.matches(result) else { throw AgentTaskJournalError.conflict }
+                return tombstone.replay(result)
+            }
+            var count = try db().rows("SELECT COUNT(*) FROM task_inbox").first?.first.flatMap(Int.init) ?? 0
+            if count >= inboxCapacity {
+                // Global pressure may evict even a recent acknowledged payload, never an unread one.
+                let oldest = try db().rows("SELECT sequence, payload FROM task_inbox WHERE json_extract(payload, '$.acknowledgedAt') IS NOT NULL ORDER BY sequence LIMIT ?",
+                                           [String(count - inboxCapacity + 1)])
+                try compactAcknowledged(oldest)
+                count = try db().rows("SELECT COUNT(*) FROM task_inbox").first?.first.flatMap(Int.init) ?? 0
+            }
             guard count < inboxCapacity else { throw AgentTaskJournalError.capacity }
             let event = AgentTaskInboxEvent(ownerTaskID: ownerTaskID, taskID: taskID, operationID: operationID,
                                            phase: phase, result: result, now: now())
@@ -43,7 +55,7 @@ extension AgentTaskJournal {
     ///   - ownerTaskID: Owner already authorized by the app's scope layer.
     ///   - afterSequence: Exclusive durable cursor, default zero.
     ///   - limit: Bounded page size between 1 and 1,000, default 100.
-    /// - Returns: Acknowledged and unread events; advance a cursor only after consuming a returned page.
+    /// - Returns: Recent acknowledged payloads and every unread event; old acknowledgements may be compacted. Advance a cursor only after consuming a returned page.
     /// - Throws: Invalid cursor or limit, storage or decoding errors.
     public func inbox(ownerTaskID: UUID, afterSequence: Int64 = 0, limit: Int = 100) throws -> [AgentTaskInboxEvent] {
         guard afterSequence >= 0, (1...1_000).contains(limit) else { throw AgentTaskJournalError.invalidRequest }
@@ -71,14 +83,32 @@ extension AgentTaskJournal {
         try db().transaction {
             guard let row = try db().rows("SELECT sequence, payload FROM task_inbox WHERE owner = ? AND id = ?",
                                          [ownerTaskID.uuidString, eventID.uuidString]).first else {
-                throw AgentTaskJournalError.notFound
+                guard let saved = try db().rows("SELECT payload FROM task_inbox_acks WHERE owner = ? AND id = ?",
+                                               [ownerTaskID.uuidString, eventID.uuidString]).first else { throw AgentTaskJournalError.notFound }
+                return try decode(AgentTaskInboxTombstone.self, saved[0]).event
             }
             var event = try inboxEvent(row)
             guard event.acknowledgedAt == nil else { return event }
             event.acknowledgedAt = now()
             try db().execute("UPDATE task_inbox SET payload = ? WHERE owner = ? AND id = ?",
                              [try encode(event), ownerTaskID.uuidString, eventID.uuidString])
+            let old = try db().rows("SELECT sequence, payload FROM task_inbox WHERE owner = ? AND json_extract(payload, '$.acknowledgedAt') IS NOT NULL ORDER BY sequence DESC LIMIT -1 OFFSET ?",
+                                   [ownerTaskID.uuidString, String(acknowledgedInboxPerOwner)])
+            try compactAcknowledged(old)
             return event
+        }
+    }
+
+    /// Runs inside the caller's existing transaction, preserving exact acknowledgement identity.
+    private func compactAcknowledged(_ rows: [[String]]) throws {
+        for row in rows {
+            let event = try inboxEvent(row)
+            guard event.acknowledgedAt != nil else { throw AgentTaskJournalError.invalidTransition }
+            let tombstone = try AgentTaskInboxTombstone(event)
+            try db().execute("INSERT INTO task_inbox_acks(id, owner, task, operation, kind, payload) VALUES (?, ?, ?, ?, ?, ?)",
+                             [event.id.uuidString, event.ownerTaskID.uuidString, event.taskID.uuidString,
+                              event.operationID.uuidString, event.phase.rawValue, try encode(tombstone)])
+            try db().execute("DELETE FROM task_inbox WHERE id = ?", [event.id.uuidString])
         }
     }
 

@@ -30,6 +30,10 @@ public struct AgentTaskRecord: Codable, Equatable, Sendable {
     public var effort: String?
     /// Explicit worker permissions, absent for legacy receipts and externally enrolled chats.
     public var permissionMode: AgentTaskRequest.PermissionMode?
+    /// Whether this worker retires locally after its parent consumes a successful result.
+    public var lifecycle: AgentTaskRequest.Lifecycle?
+    /// Local retirement intent/receipt; absent for legacy and reusable conversations.
+    public var retirement: AgentTaskRetirement?
     /// Most recently admitted operation; absent in legacy receipts.
     public var latestOperationID: UUID?
     /// Number of admitted turns; absent in legacy receipts.
@@ -38,6 +42,8 @@ public struct AgentTaskRecord: Codable, Equatable, Sendable {
     public var sessionID: String?
     /// Native terminal surface created for this task.
     public var surfaceID: UUID?
+    /// Whether the worker is hidden from the active cmux list after local retirement.
+    public var isRetired: Bool { retirement?.retiredAt != nil }
     /// Last reported task state.
     public var phase: Phase
     /// Latest turn result reported by the provider.
@@ -61,6 +67,7 @@ public struct AgentTaskRecord: Codable, Equatable, Sendable {
         model = request.model
         effort = request.effort
         permissionMode = request.permissionMode
+        lifecycle = request.lifecycle
         latestOperationID = id
         turnCount = 1
         phase = .starting

@@ -70,7 +70,7 @@ public final class SettingsRuntime: @unchecked Sendable {
         searchIndex: SettingsSearchIndex? = nil
     ) {
         self.catalog = catalog
-        self.searchIndex = searchIndex ?? SettingsSearchIndex(catalog: catalog)
+        self.searchIndex = searchIndex ?? SettingsSearchIndex(catalog: catalog, personalCustomizationAvailable: hostActions.isPersonalCustomizationAvailable)
         self.userDefaultsStore = userDefaultsStore
         self.jsonStore = jsonStore
         self.secretStore = secretStore

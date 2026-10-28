@@ -12,9 +12,28 @@ cmux task send <task-id> --request-id <uuid> --wait -- 'Check the alternative to
 cmux task turns <task-id>
 cmux task result <operation-id>
 cmux task inbox <parent-task-id>
+cmux task workers --owner <parent-task-id> [--cursor <uuid>] [--limit <1-50>] [--include-retired]
 cmux task ack <parent-task-id> <event-id>
 cmux task attach <task-id> [--workspace <existing-id-or-ref>]
 ```
+
+`workers` rediscovers this conversation’s authorized descendants, including
+persistent workers outside the recent 100-record cache. A model cannot select
+another owner or use ancestry as a read wildcard. The directory contains small
+metadata and operation IDs, with no full prompts, results, provider-session IDs
+or credentials. Titles are the existing bounded, sanitized task titles.
+
+Pages use stable UUID order, a default limit of 20 (maximum 50), and
+`next_cursor`/`has_more`; malformed cursors fail instead of restarting at another
+page. Retired/retiring workers are hidden unless `--include-retired` is requested,
+and that flag never expands authority. A persistent, locally settled row may say
+`reusable: true` with `follow_up: requires_preflight`; actual sends still recheck
+provider activity, ownership and permission state. Read results through `result`,
+then explicitly acknowledge them. Listing never acknowledges or retires work.
+
+The query reads saved metadata and does not contact a provider. Existing lazy
+runtime initialization may start its normal read-only session observation; no
+inference, prompt replay, provider process or automatic parent wake is added.
 
 Providers are `codex`, `claude`, and `opencode`. Follow-ups retain the same
 provider session and return independent per-turn receipts. Keep a stable
@@ -62,7 +81,9 @@ cmux task schedule resume <schedule-id> --owner <task-id>
 cmux task schedule cancel <schedule-id> --owner <task-id>
 ```
 
-Dispatch runs **while cmux is open**. Missed wakes are held by default; explicit
+Dispatch requires **Background Agent Coordination** to remain enabled and runs
+**while cmux is open**. This also applies to schedules created through the local
+operator CLI. Missed wakes are held by default; explicit
 `--misfire skip|coalesceOne` changes that policy. Pausing or cancelling future work
 does not imply a running provider turn was interrupted. A private SQLite journal
 commits dispatch intent before provider I/O. Uncertain acceptance reserves the
@@ -72,6 +93,33 @@ Completed inbox events and per-turn receipts survive recent-cache pruning.
 
 These controls are local-only. No global skills, hooks, aliases, launcher
 replacement, Claude configuration or standalone scheduling service is installed.
+
+## Personal settings
+
+The personal app groups these controls in **Settings > cmux+**, at the top of
+the settings sidebar. The page uses the existing setting keys and stores; opening
+it does not change defaults or launch agents. Search results and older links to
+relocated controls lead to the same page. Other builds retain their regular panes.
+
+The page contains quiet-renderer compatibility and build links, background
+coordination, auto-resume, terminal memory controls, TextBox launch defaults,
+workspace ordering, the Session-first keymap and Conversation Sidebar. The sidebar
+button uses the existing action for the last active main window; it is not a new
+global visibility preference. Included window movement, narrower resize and input
+layout fixes need no separate switch. Chief remains separate from this coordinator.
+
+Quiet mode currently covers the **fullscreen transcript**. The inline/terminal
+scrollback renderer has a separate output path and is not covered. Ctrl+T retains
+the fullscreen quiet/compact toggle. This build compiles the derived TUI target,
+not a replacement stock CLI or daemon executable, although its upstream Rust
+libraries still need compilation.
+
+Pure frontend updates may reuse a retained compiled native app when the only
+changes are the quiet frontend subtree and its two exact proof/build workflows.
+Native, packaging and policy changes still require a new native base. New native
+archives are retained for 90 days; existing archives keep their original expiry.
+Source, workflow, patch, binary and signature checks remain required. Repackaging
+still stages a complete app and replaces only a closed installation.
 
 ## Hook-delivered messages
 
@@ -174,3 +222,106 @@ completion notifications remain responsible for Done alerts to avoid duplicates.
 Remote workspaces (`cmux ssh`) can send and receive messages through the SSH
 relay, but only for workspaces and surfaces owned by that remote session. A
 remote agent cannot message a local agent yet.
+
+
+## Worker retention and resource limits
+
+New background children with a parent default to `oneShot`. Use
+`cmux task start ... --lifecycle persistent` for a worker you intend to message
+repeatedly; legacy tasks and top-level sessions remain persistent. A one-shot
+retires from cmux's active task list only after successful completion and the
+parent's durable acknowledgement of that exact turn. Every non-retired descendant
+protects its ancestors, including a completed persistent worker between turns.
+This creates no ancestor retirement intent that could strand future follow-ups.
+A parent can acknowledge the same result again after its children are retired;
+use the CLI's default fresh request ID for that new cleanup attempt. One-shot
+retirement does not collect an entire delegation graph automatically. Outstanding descendants,
+schedules, attention and uncertain provider outcomes are retained. A worker
+explicitly attached to an interactive terminal stays under the user’s control. Results and
+turn receipts remain readable. A retired worker cannot receive more input or
+attach as a new controller; create a persistent worker for ongoing work.
+
+Retirement is **localOnly**. It does not delete Claude/OpenCode files or archive
+Codex app history. In pinned Codex 0.164.0, `thread/archive` shuts down loaded
+threads and their spawned subtree; it has no atomic “only if this exact turn is
+still idle” condition. Automatic provider archive would race another phone/app
+client, so this coordinator does not call it. Idle owned Claude resources can be
+released; uncertain processes are quarantined, never treated as idle or killed
+just because completion could not be established.
+
+The coordinator separately caps managed active/admitting/uncertain turns at six
+overall, four Codex, two Claude and two OpenCode. These are injected app limits,
+not Codex's native subagent settings. Known-idle conversations consume no active
+slot. Only one known-idle Claude process is retained; a later follow-up resumes
+its exact saved session if necessary. No throughput or memory benchmark is
+implied by these conservative defaults.
+
+Lineage reservations remain nonreplenishing: at most eight direct children,
+depth four, and 64 descendants under the default root budget. Retiring a worker
+does not refund those safety budgets. A new-worker schedule is rejected when
+its run count exceeds current remaining child reservations (never more than
+eight). For up to 100 interval wakes, target an existing persistent worker.
+Other work can still consume lineage capacity before a future wake. The scheduler
+rechecks before claiming due work and refuses excess launches. A race after the
+claim can still leave an uncertain dispatch receipt, which is never replayed.
+
+Inbox retention keeps every unread event and up to 100 recent acknowledged
+payloads per owner. Under global payload pressure it compacts acknowledged rows
+first. Small durable acknowledgement tombstones preserve exact replay/conflict
+checks, so restarting cannot make old consumed results appear unread. Original
+result bodies remain in the independent turn repository. Tombstones share the
+existing private SQLite page quota; storage exhaustion still fails closed.
+
+
+## Session-first navigation
+
+Settings > cmux+ > Base Keymap > **Session-first** in the personal app previews an
+optional layout: Cmd+T creates a sidebar workspace for a new conversation,
+Cmd+N adds a terminal surface to the current workspace, and Ctrl+Tab /
+Ctrl+Shift+Tab move between sidebar workspaces. Cmd+D and Cmd+Shift+D still
+create splits. Applying the preset preserves shortcuts customized by hand;
+choosing **cmux (Default)** removes the preset's overrides. It does not move,
+close or merge existing workspaces or change their directories.
+
+For a conversation list instead of workspace rows, enable **Conversation
+Sidebar** in Settings > cmux+, then choose **Conversations** from the
+left sidebar picker. In the personal build the local switch is sufficient;
+upstream builds also require their release rollout. This existing native view combines live Codex/Claude and
+other supported agent sessions with Vault history, deduplicates by provider and
+session identity, and focuses the exact existing pane when an open session is
+selected. Two conversations in one repository can therefore appear separately
+without creating a second repository or backend. The keymap's Ctrl+Tab lane
+still navigates workspaces; individual conversations within one workspace are
+selected directly from the list. Provider discovery and resume support depend
+on the corresponding existing integration and binding evidence.
+
+
+## Presentation and control boundaries
+
+The quiet Codex frontend shows deterministic worker activity and unread results
+from the coordinator, including nested workers. This does not make a Claude or
+OpenCode conversation a Codex-native subagent. Their sessions are independently
+addressable through native provider interfaces; ordinary follow-ups target the
+same worker after its prior submission settles. Busy steering and a general
+peer-to-peer wake bus are not implemented.
+
+Custom coordination definitions persist with their Codex thread. Resuming that
+same conversation on a phone can retain its tool definitions, even though fresh
+outside sessions receive none. The current broker handles a live verified cmux
+frontend or its own managed turn; it does not yet host arbitrary phone-started
+tool calls after the frontend disappears. Plain-text phone continuation is not
+proof of this tool handoff. Keep the coordination opt-in off for phone-dependent
+chats until an owned trial explicitly invokes a coordination tool from the phone.
+Quiet rendering and local operator task commands remain separate.
+
+Legacy terminal-hook `agent.task.report` submissions are unsupported. Only the
+managed provider drivers publish task completion receipts. The local operator
+CLI uses the workstation user's socket authority; scoped model tools are a
+separate, narrower capability and cannot approve their own requests. It is not
+a sandbox against arbitrary same-user shell execution.
+
+The existing `cmux browser` API can drive the in-app browser with explicit
+workspace and surface targets. The task broker does not expose desktop computer
+use or screenshot responses. Enabling the old Codex integration is not a shared
+daemon fix: its per-launch MCP overrides select embedded execution. Keep that
+route off when preserving ordinary stock-daemon and phone access.

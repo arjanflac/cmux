@@ -64,6 +64,7 @@ struct SettingsRowAnchorResolutionTests {
         "app.alwaysConfirmWorkspaceClose",
         "app.workspaceInheritWorkingDirectory",
         "agentMessages.enabled",
+        "chief.dangerouslySkipPermissions",
         "chief.effort",
         "chief.enabled",
         "chief.harness",
@@ -166,6 +167,7 @@ struct SettingsRowAnchorResolutionTests {
         "terminal.rendererRealization.idleSeconds",
         "terminal.rendererRealization.maxWarmRenderers",
         "terminal.autoResumeAgentSessions",
+        "terminal.codexQuietFrontend",
         "terminal.copyOnSelect",
         "terminal.showCopyConfirmation",
         "terminal.reflowHardWrapOnCopy",
@@ -254,9 +256,25 @@ struct SettingsRowAnchorResolutionTests {
         "setting:reset:reset-all",
     ]
 
-    @Test(arguments: rowConfigPaths)
-    func everyRowPathResolvesToAnIndexedEntry(path: String) throws {
-        let index = SettingsSearchIndex(catalog: SettingCatalog())
+    /// Explicit rows rendered by the personal page replace their stock-pane
+    /// anchors; the per-window sidebar button exists only on that page.
+    static func explicitAnchors(personal: Bool) -> Set<String> {
+        guard personal else { return explicitlyAnchoredEntryIDs }
+        return explicitlyAnchoredEntryIDs.subtracting([
+            "setting:keyboardShortcuts:base-keymap",
+            "setting:terminal:memory-guardrail",
+            "setting:terminal:memory-guardrail-threshold",
+        ]).union([
+            "setting:personal:base-keymap",
+            "setting:personal:memory-guardrail",
+            "setting:personal:memory-guardrail-threshold",
+            "setting:personal:sidebar-visibility",
+        ])
+    }
+
+    @Test(arguments: rowConfigPaths, [false, true])
+    func everyRowPathResolvesToAnIndexedEntry(path: String, personal: Bool) throws {
+        let index = SettingsSearchIndex(catalog: SettingCatalog(), personalCustomizationAvailable: personal)
         let anchor = try #require(
             index.anchorID(forSettingsPath: path),
             "no anchor for row path \(path) — its search hit won't scroll/highlight"
@@ -272,13 +290,13 @@ struct SettingsRowAnchorResolutionTests {
     /// reachable when some row anchor equals its id — either a row whose
     /// `configurationReview` path resolves to it, or a row explicitly
     /// tagged with its id.
-    @Test
-    func everyCuratedSettingEntryIsReachable() {
-        let index = SettingsSearchIndex(catalog: SettingCatalog())
+    @Test(arguments: [false, true])
+    func everyCuratedSettingEntryIsReachable(personal: Bool) {
+        let index = SettingsSearchIndex(catalog: SettingCatalog(), personalCustomizationAvailable: personal)
         let pathBackedIDs = Set(Self.rowConfigPaths.compactMap { index.anchorID(forSettingsPath: $0) })
         let sectionIDs = Set(SettingsSectionID.allCases.map { "section:\($0.rawValue)" })
         let reachable = pathBackedIDs
-            .union(Self.explicitlyAnchoredEntryIDs)
+            .union(Self.explicitAnchors(personal: personal))
             .union(sectionIDs)
 
         let unreachable = index.entries
@@ -306,9 +324,9 @@ struct SettingsRowAnchorResolutionTests {
     /// dump the user at the owning section. Section-only setting hits are
     /// dead ends for scroll/highlight and usually mean an internal
     /// persistence key leaked into the search index.
-    @Test
-    func settingEntriesDoNotUseSectionOnlyAnchors() {
-        let index = SettingsSearchIndex(catalog: SettingCatalog())
+    @Test(arguments: [false, true])
+    func settingEntriesDoNotUseSectionOnlyAnchors(personal: Bool) {
+        let index = SettingsSearchIndex(catalog: SettingCatalog(), personalCustomizationAvailable: personal)
         let sectionIDs = Set(SettingsSectionID.allCases.map { "section:\($0.rawValue)" })
         let sectionOnlySettings = index.entries
             .filter { if case .setting = $0.kind { return true } else { return false } }
@@ -330,9 +348,9 @@ struct SettingsRowAnchorResolutionTests {
     /// so every sub-row collided on one anchor.
     /// The DEBUG `:all` sentinel surfaces every indexed entry so the
     /// full search → scroll → highlight path can be walked row by row.
-    @Test
-    func debugSentinelReturnsEveryEntry() {
-        let index = SettingsSearchIndex(catalog: SettingCatalog())
+    @Test(arguments: [false, true])
+    func debugSentinelReturnsEveryEntry(personal: Bool) {
+        let index = SettingsSearchIndex(catalog: SettingCatalog(), personalCustomizationAvailable: personal)
         let all = index.match(":all")
         #expect(all.count == index.entries.count)
         #expect(Set(all.map(\.id)) == Set(index.entries.map(\.id)))
@@ -341,9 +359,9 @@ struct SettingsRowAnchorResolutionTests {
         #expect(index.match("copy on select").count < index.entries.count)
     }
 
-    @Test
-    func rowAnchorsAreUniqueAcrossRows() {
-        let index = SettingsSearchIndex(catalog: SettingCatalog())
+    @Test(arguments: [false, true])
+    func rowAnchorsAreUniqueAcrossRows(personal: Bool) {
+        let index = SettingsSearchIndex(catalog: SettingCatalog(), personalCustomizationAvailable: personal)
         var firstPath: [String: String] = [:]
         for path in Self.rowConfigPaths {
             guard let anchor = index.anchorID(forSettingsPath: path) else { continue }

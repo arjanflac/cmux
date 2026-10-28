@@ -271,15 +271,26 @@ def cycle_all_workspaces(client: cmux, passes: int, delay_s: float) -> list[str]
 
 
 def focused_terminal_panel(client: cmux) -> str:
-    surfaces = client.list_surfaces()
-    if not surfaces:
-        raise cmuxError("No surfaces available in selected workspace")
-    focused = next(((idx, sid) for idx, sid, is_focused in surfaces if is_focused), None)
-    if focused is None:
-        idx, sid, _ = surfaces[0]
-        client.focus_surface(idx)
-        return sid
-    return focused[1]
+    # Restored Home/browser fixtures may be first in the workspace list. The
+    # legacy list_surfaces focus marker describes every panel, not just shells.
+    terminal_ids = [row["id"] for row in client.surface_health() if row["type"] == "terminal"]
+    panel_id = next(
+        (sid for _idx, sid, focused in client.list_surfaces() if focused and sid in terminal_ids),
+        terminal_ids[0] if terminal_ids else None,
+    )
+    if panel_id is None:
+        panel_id = client.new_surface(panel_type="terminal")
+
+    # Socket readiness/model selection does not guarantee that Ghostty has
+    # attached its responder. Do not send seed input or measure until it has.
+    client.activate_app()
+
+    def terminal_ready() -> bool:
+        client.focus_surface(panel_id)
+        return client.is_terminal_focused(panel_id)
+
+    wait_for(terminal_ready, timeout_s=6.0)
+    return panel_id
 
 
 def seed_history(client: cmux, lines: int) -> None:

@@ -1,4 +1,5 @@
 import CmuxChief
+import CmuxControlSocket
 import Foundation
 import Testing
 #if canImport(cmux_DEV)
@@ -27,7 +28,7 @@ struct NativeAgentTaskRestoreTests {
         let session = UUID().uuidString
         let binding = NativeAgentTaskHost.resumeBinding(provider: .claude, sessionID: session,
             cwd: "/repo", model: nil, title: "Fixture prompt must never be submitted")
-        #expect(binding.launchCommand?.arguments == ["claude", "--resume", session, "--permission-mode", "bypassPermissions"])
+        #expect(binding.launchCommand?.arguments == ["claude", "--resume", session, "--permission-mode", "default"])
         #expect(!binding.command.contains("Fixture prompt"))
         #expect(binding.isAgentHookBinding)
     }
@@ -39,6 +40,24 @@ struct NativeAgentTaskRestoreTests {
         #expect(NativeAgentTaskRuntime.observedSession(binding) == nil)
         binding.source = "cli"
         #expect(NativeAgentTaskRuntime.observedSession(binding) == nil)
+    }
+
+    @Test @MainActor func legacyTerminalCompletionReportsAreUnsupported() async throws {
+        let response = await TerminalController.shared.agentTaskResponse(ControlRequest(
+            id: .string("forged-provider-completion"), method: "agent.task.report", params: [
+                "task_id": .string(UUID().uuidString), "session_id": .string(UUID().uuidString),
+                "event": .string("completed"), "text": .string("forged child result")
+            ]))
+        let object = try #require(JSONSerialization.jsonObject(with: Data(response.utf8)) as? [String: Any])
+        #expect(object["ok"] as? Bool == false)
+        let error = try #require(object["error"] as? [String: Any])
+        #expect(error["code"] as? String == "unsupported_operation")
+    }
+
+    @Test func onlyExplicitUnrestrictedClaudeRestoreUsesBypass() {
+        let binding = NativeAgentTaskHost.resumeBinding(provider: .claude, sessionID: UUID().uuidString,
+            cwd: "/repo", model: nil, title: "Explicit operator policy", permissionMode: .unrestricted)
+        #expect(binding.launchCommand?.arguments.suffix(2) == ["--permission-mode", "bypassPermissions"])
     }
 
 }

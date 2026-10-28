@@ -1,0 +1,466 @@
+diff --git a/codex-rs/tui/src/app/owned_transcript.rs b/codex-rs/tui/src/app/owned_transcript.rs
+index 0ff9e22..d83d485 100644
+--- a/codex-rs/tui/src/app/owned_transcript.rs
++++ b/codex-rs/tui/src/app/owned_transcript.rs
+@@ -102,13 +102,14 @@ impl App {
+             chat_widget.active_cell_transcript_hyperlink_lines(width)
+         });
+         let cmux_quiet = view.is_cmux_quiet();
++        let follows_routine = crate::history_cell::quiet_batch_follows(&self.transcript_cells);
+         let changed = if detailed {
+             view.sync_live_tail(transcript_width, active_key, |width| {
+                 chat_widget.active_cell_transcript_hyperlink_lines(width)
+             })
+         } else {
+-            view.sync_live_activity_tail(transcript_width, active_key, expanded, |width| {
+-                chat_widget.active_cell_owned_transcript_lines_with_focus(width, expanded, cmux_quiet)
++            view.sync_live_activity_batch_tail(transcript_width, active_key, expanded, follows_routine, |width| {
++                chat_widget.active_cell_owned_transcript_batch_lines(width, expanded, cmux_quiet, follows_routine)
+             })
+         };
+         changed || search_changed
+diff --git a/codex-rs/tui/src/chatwidget/activity_presentation.rs b/codex-rs/tui/src/chatwidget/activity_presentation.rs
+index 0b0d3ec..a7fa0ab 100644
+--- a/codex-rs/tui/src/chatwidget/activity_presentation.rs
++++ b/codex-rs/tui/src/chatwidget/activity_presentation.rs
+@@ -5,6 +5,25 @@ use super::*;
+ use crate::transcript_view::ActivityTranscriptLines;
+ 
+ impl ChatWidget {
++    /// Batch rendering shares retained activity's predecessor, preserving auxiliary prose.
++    pub(crate) fn active_cell_owned_transcript_batch_lines(
++        &self, width: u16, expanded: bool, quiet: bool, follows_routine: bool,
++    ) -> Option<ActivityTranscriptLines> {
++        let original = self.active_cell_owned_transcript_lines_with_focus(width, expanded, quiet);
++        if !(cfg!(feature = "cmux-quiet") && quiet && !expanded
++            && self.history_render_mode() == HistoryRenderMode::Rich) {
++            return original;
++        }
++        let Some(active) = self.transcript.active_cell.as_deref() else { return original; };
++        if !active.quiet_fullscreen_has_routine() { return original; }
++        let mut lines = original.unwrap_or(ActivityTranscriptLines {
++            activity: Vec::new(), auxiliary: Vec::new(), disclosure: None,
++        });
++        lines.activity = active.quiet_fullscreen_batch_lines(width, follows_routine);
++        lines.disclosure = None;
++        if lines.activity.is_empty() && lines.auxiliary.is_empty() { None } else { Some(lines) }
++    }
++
+     pub(crate) fn active_activity_ids(&self) -> Vec<String> {
+         self.transcript
+             .active_cell
+diff --git a/codex-rs/tui/src/chatwidget/tool_lifecycle.rs b/codex-rs/tui/src/chatwidget/tool_lifecycle.rs
+index 6061725..a369aa6 100644
+--- a/codex-rs/tui/src/chatwidget/tool_lifecycle.rs
++++ b/codex-rs/tui/src/chatwidget/tool_lifecycle.rs
+@@ -105,7 +105,7 @@ impl ChatWidget {
+         }
+     }
+ 
+-    pub(super) fn on_collab_event(&mut self, cell: PlainHistoryCell) {
++    pub(super) fn on_collab_event(&mut self, cell: impl HistoryCell + 'static) {
+         self.flush_answer_stream_with_separator();
+         self.add_to_history(cell);
+         self.request_redraw();
+diff --git a/codex-rs/tui/src/history_cell/base.rs b/codex-rs/tui/src/history_cell/base.rs
+index e27cc52..abad2ff 100644
+--- a/codex-rs/tui/src/history_cell/base.rs
++++ b/codex-rs/tui/src/history_cell/base.rs
+@@ -117,6 +117,30 @@ impl CompositeHistoryCell {
+ }
+ 
+ impl HistoryCell for CompositeHistoryCell {
++    fn quiet_fullscreen_has_routine(&self) -> bool {
++        self.parts.iter().any(|part| part.quiet_fullscreen_has_routine())
++    }
++
++    fn quiet_fullscreen_ends_routine(&self) -> bool {
++        self.parts.iter().rev().find(|part| !quiet_batch_is_transparent(part.as_ref()))
++            .is_some_and(|part| part.quiet_fullscreen_ends_routine())
++    }
++
++    fn quiet_fullscreen_batch_lines(&self, width: u16, mut follows_routine: bool) -> Vec<HyperlinkLine> {
++        let mut lines = Vec::new();
++        for part in &self.parts {
++            let next = part.quiet_fullscreen_batch_lines(width, follows_routine);
++            if !quiet_batch_is_transparent(part.as_ref()) {
++                follows_routine = part.quiet_fullscreen_ends_routine();
++            }
++            if !next.is_empty() {
++                if !lines.is_empty() { lines.push(HyperlinkLine::from("")); }
++                lines.extend(next);
++            }
++        }
++        lines
++    }
++
+     fn quiet_fullscreen_is_routine(&self) -> bool {
+         !self.parts.is_empty() && self.parts.iter().all(|part| part.quiet_fullscreen_is_routine())
+     }
+diff --git a/codex-rs/tui/src/history_cell/mod.rs b/codex-rs/tui/src/history_cell/mod.rs
+index cc087a3..c5d36a3 100644
+--- a/codex-rs/tui/src/history_cell/mod.rs
++++ b/codex-rs/tui/src/history_cell/mod.rs
+@@ -251,6 +251,19 @@ pub(crate) trait HistoryCell: std::fmt::Debug + Send + Sync + Any {
+     /// Only positively classified routine activity can disappear in focus mode.
+     fn quiet_fullscreen_is_routine(&self) -> bool { false }
+ 
++    /// Typed batch structure. Unknown/authored cells remain boundaries; no text matching.
++    fn quiet_fullscreen_has_routine(&self) -> bool { self.quiet_fullscreen_is_routine() }
++    fn quiet_fullscreen_ends_routine(&self) -> bool { self.quiet_fullscreen_is_routine() }
++
++    /// Keep one stable row per adjacent activity run, without changing canonical source.
++    fn quiet_fullscreen_batch_lines(&self, width: u16, follows_routine: bool) -> Vec<HyperlinkLine> {
++        if self.quiet_fullscreen_is_routine() {
++            if follows_routine { Vec::new() } else { vec![quiet_activity_summary()] }
++        } else {
++            self.quiet_fullscreen_hyperlink_lines(width)
++        }
++    }
++
+     /// Quiet presentation for a retained group that also contains protected content.
+     /// Leaves may use their compact view; containers must keep protected descendants visible.
+     fn quiet_fullscreen_hyperlink_lines(&self, width: u16) -> Vec<HyperlinkLine> {
+@@ -400,3 +413,21 @@ impl dyn HistoryCell {
+         self
+     }
+ }
++
++/// A fixed label: tool completions never rewrite the quiet batch's visible title.
++pub(crate) fn quiet_activity_summary() -> HyperlinkLine {
++    HyperlinkLine::from(Line::from("• Activity").dim())
++}
++
++/// Transcript-only reasoning has no viewport prose and must not split an activity batch.
++pub(crate) fn quiet_batch_is_transparent(cell: &dyn HistoryCell) -> bool {
++    cell.as_any().downcast_ref::<ReasoningSummaryCell>()
++        .is_some_and(ReasoningSummaryCell::is_transcript_only)
++        || cell.as_any().downcast_ref::<CompositeHistoryCell>()
++            .is_some_and(|group| group.parts.iter().all(|part| quiet_batch_is_transparent(part.as_ref())))
++}
++
++pub(crate) fn quiet_batch_follows(cells: &[std::sync::Arc<dyn HistoryCell>]) -> bool {
++    cells.iter().rev().find(|cell| !quiet_batch_is_transparent(cell.as_ref()))
++        .is_some_and(|cell| cell.quiet_fullscreen_ends_routine())
++}
+diff --git a/codex-rs/tui/src/multi_agents.rs b/codex-rs/tui/src/multi_agents.rs
+index 8210270..58886c3 100644
+--- a/codex-rs/tui/src/multi_agents.rs
++++ b/codex-rs/tui/src/multi_agents.rs
+@@ -4,7 +4,7 @@
+ //! picker entries, and the fast-switch keyboard shortcuts. Higher-level coordination, such as
+ //! deciding which thread becomes active or when a thread closes, stays in [`crate::app::App`].
+ 
+-use crate::history_cell::PlainHistoryCell;
++use crate::history_cell::{HistoryCell, PlainHistoryCell};
+ use crate::render::line_utils::prefix_lines;
+ use crate::style::accent_color;
+ use crate::text_formatting::truncate_text;
+@@ -27,6 +27,18 @@ use ratatui::text::Line;
+ use ratatui::text::Span;
+ use std::collections::HashSet;
+ 
++/// Provider-typed collaborator activity; authored assistant messages remain ordinary cells.
++#[derive(Debug)]
++pub(crate) struct CollabHistoryCell {
++    inner: PlainHistoryCell,
++    routine: bool,
++}
++impl HistoryCell for CollabHistoryCell {
++    fn display_lines(&self, width: u16) -> Vec<Line<'static>> { self.inner.display_lines(width) }
++    fn raw_lines(&self) -> Vec<Line<'static>> { self.inner.raw_lines() }
++    fn quiet_fullscreen_is_routine(&self) -> bool { self.routine }
++}
++
+ const COLLAB_PROMPT_PREVIEW_GRAPHEMES: usize = 160;
+ const COLLAB_AGENT_ERROR_PREVIEW_GRAPHEMES: usize = 160;
+ const COLLAB_AGENT_RESPONSE_PREVIEW_GRAPHEMES: usize = 240;
+@@ -205,7 +217,7 @@ pub(crate) fn tool_call_history_cell(
+     item: &ThreadItem,
+     cached_spawn_request: Option<&SpawnRequestSummary>,
+     mut agent_metadata: impl FnMut(ThreadId) -> AgentMetadata,
+-) -> Option<PlainHistoryCell> {
++) -> Option<CollabHistoryCell> {
+     let ThreadItem::CollabAgentToolCall {
+         tool,
+         status,
+@@ -223,7 +235,7 @@ pub(crate) fn tool_call_history_cell(
+         .and_then(|id| parse_thread_id(id));
+     let prompt = prompt.as_deref().unwrap_or_default();
+ 
+-    match tool {
++    let cell = match tool {
+         // V2 uses SubAgentActivity for display; these variants are analytics-only.
+         CollabAgentTool::SendMessage
+         | CollabAgentTool::FollowupTask
+@@ -281,7 +293,17 @@ pub(crate) fn tool_call_history_cell(
+             first_receiver
+                 .map(|receiver_thread_id| close_end(receiver_thread_id, &mut agent_metadata))
+         }
+-    }
++    };
++    cell.map(|mut cell| {
++        cell.routine = matches!(status, CollabAgentToolCallStatus::InProgress | CollabAgentToolCallStatus::Completed)
++            && agents_states.values().all(|state| matches!(state.status,
++                CollabAgentStatus::PendingInit | CollabAgentStatus::Running | CollabAgentStatus::Completed | CollabAgentStatus::Shutdown))
++            && (!matches!(tool, CollabAgentTool::SpawnAgent) || first_receiver.is_some())
++            && (!matches!(tool, CollabAgentTool::ResumeAgent)
++                || matches!(status, CollabAgentToolCallStatus::InProgress)
++                || first_agent_state(receiver_thread_ids, agents_states).is_some());
++        cell
++    })
+ }
+ 
+ pub(crate) fn sub_agent_activity_display(item: &ThreadItem) -> Option<SubAgentActivityDisplay> {
+@@ -306,17 +328,16 @@ pub(crate) fn sub_agent_activity_display(item: &ThreadItem) -> Option<SubAgentAc
+     })
+ }
+ 
+-pub(crate) fn sub_agent_activity_history_cell(item: &ThreadItem) -> Option<PlainHistoryCell> {
++pub(crate) fn sub_agent_activity_history_cell(item: &ThreadItem) -> Option<CollabHistoryCell> {
+     let ThreadItem::SubAgentActivity {
+         kind, agent_path, ..
+     } = item
+     else {
+         return None;
+     };
+-    Some(collab_event(
+-        sub_agent_activity_title(*kind, agent_path),
+-        Vec::new(),
+-    ))
++    let mut cell = collab_event(sub_agent_activity_title(*kind, agent_path), Vec::new());
++    cell.routine = !matches!(kind, SubAgentActivityKind::Interrupted);
++    Some(cell)
+ }
+ 
+ fn sub_agent_activity_title(kind: SubAgentActivityKind, agent_path: &str) -> Line<'static> {
+@@ -337,7 +358,7 @@ fn spawn_end(
+     prompt: &str,
+     spawn_request: Option<&SpawnRequestSummary>,
+     agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+-) -> PlainHistoryCell {
++) -> CollabHistoryCell {
+     let title = match new_thread_id {
+         Some(thread_id) => title_with_agent(
+             "Spawned",
+@@ -358,7 +379,7 @@ fn interaction_end(
+     receiver_thread_id: ThreadId,
+     prompt: &str,
+     agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+-) -> PlainHistoryCell {
++) -> CollabHistoryCell {
+     let title = title_with_agent(
+         "Sent input to",
+         agent_label(receiver_thread_id, &agent_metadata(receiver_thread_id)),
+@@ -375,7 +396,7 @@ fn interaction_end(
+ fn waiting_begin(
+     receiver_thread_ids: &[String],
+     agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+-) -> PlainHistoryCell {
++) -> CollabHistoryCell {
+     let receiver_agents = receiver_thread_ids
+         .iter()
+         .filter_map(|thread_id| parse_thread_id(thread_id))
+@@ -408,7 +429,7 @@ fn waiting_end(
+     receiver_thread_ids: &[String],
+     agents_states: &std::collections::HashMap<String, CollabAgentState>,
+     agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+-) -> PlainHistoryCell {
++) -> CollabHistoryCell {
+     let details = wait_complete_lines(receiver_thread_ids, agents_states, agent_metadata);
+     collab_event(title_text("Finished waiting"), details)
+ }
+@@ -416,7 +437,7 @@ fn waiting_end(
+ fn close_end(
+     receiver_thread_id: ThreadId,
+     agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+-) -> PlainHistoryCell {
++) -> CollabHistoryCell {
+     collab_event(
+         title_with_agent(
+             "Closed",
+@@ -430,7 +451,7 @@ fn close_end(
+ fn resume_begin(
+     receiver_thread_id: ThreadId,
+     agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+-) -> PlainHistoryCell {
++) -> CollabHistoryCell {
+     collab_event(
+         title_with_agent(
+             "Resuming",
+@@ -446,7 +467,7 @@ fn resume_end(
+     status: Option<&CollabAgentState>,
+     fallback_error: &str,
+     agent_metadata: &mut impl FnMut(ThreadId) -> AgentMetadata,
+-) -> PlainHistoryCell {
++) -> CollabHistoryCell {
+     collab_event(
+         title_with_agent(
+             "Resumed",
+@@ -457,12 +478,12 @@ fn resume_end(
+     )
+ }
+ 
+-fn collab_event(title: Line<'static>, details: Vec<Line<'static>>) -> PlainHistoryCell {
++fn collab_event(title: Line<'static>, details: Vec<Line<'static>>) -> CollabHistoryCell {
+     let mut lines: Vec<Line<'static>> = vec![title];
+     if !details.is_empty() {
+         lines.extend(prefix_lines(details, "  └ ".dim(), "    ".into()));
+     }
+-    PlainHistoryCell::new(lines)
++    CollabHistoryCell { inner: PlainHistoryCell::new(lines), routine: false }
+ }
+ 
+ fn title_text(title: impl Into<String>) -> Line<'static> {
+@@ -975,7 +996,7 @@ mod tests {
+         }
+     }
+ 
+-    fn cell_to_text(cell: &PlainHistoryCell) -> String {
++    fn cell_to_text(cell: &CollabHistoryCell) -> String {
+         cell.display_lines(/*width*/ 200)
+             .iter()
+             .map(line_to_text)
+diff --git a/codex-rs/tui/src/transcript_view.rs b/codex-rs/tui/src/transcript_view.rs
+index 9159c36..1604671 100644
+--- a/codex-rs/tui/src/transcript_view.rs
++++ b/codex-rs/tui/src/transcript_view.rs
+@@ -105,6 +105,7 @@ pub(crate) struct TranscriptView {
+     live_separated: Option<Arc<TextLayout>>,
+     live_key: Option<(u16, ActiveCellTranscriptKey)>,
+     live_continuation: bool,
++    cmux_live_follows_routine: Option<bool>,
+     area: Rect,
+     prompt_header_target: Option<(Rect, EntryKey)>,
+     suppressed_prompt_header: Option<prompt_header::SuppressedHeader>,
+@@ -146,6 +147,7 @@ impl Default for TranscriptView {
+             live_separated: None,
+             live_key: None,
+             live_continuation: false,
++            cmux_live_follows_routine: None,
+             area: Rect::default(),
+             prompt_header_target: None,
+             suppressed_prompt_header: None,
+@@ -351,6 +353,18 @@ impl TranscriptView {
+         })
+     }
+ 
++    pub(crate) fn sync_live_activity_batch_tail(
++        &mut self, width: u16, key: Option<ActiveCellTranscriptKey>, expanded: bool,
++        follows_routine: bool,
++        lines: impl FnOnce(u16) -> Option<ActivityTranscriptLines>,
++    ) -> bool {
++        if self.cmux_live_follows_routine != Some(follows_routine) {
++            self.cmux_live_follows_routine = Some(follows_routine);
++            self.live_key = None;
++        }
++        self.sync_live_activity_tail(width, key, expanded, lines)
++    }
++
+     pub(crate) fn sync_live_activity_tail(
+         &mut self,
+         width: u16,
+diff --git a/codex-rs/tui/src/transcript_view/cmux_tool_coverage_tests.rs b/codex-rs/tui/src/transcript_view/cmux_tool_coverage_tests.rs
+index 92c5d6e..4f43dd8 100644
+--- a/codex-rs/tui/src/transcript_view/cmux_tool_coverage_tests.rs
++++ b/codex-rs/tui/src/transcript_view/cmux_tool_coverage_tests.rs
+@@ -227,7 +227,7 @@ pub(crate) fn assert_routine(cell: Box<dyn HistoryCell>) {
+         draw(&mut view, &cells, width);
+         let quiet = view.entry_layout(&cells, 0, false).unwrap();
+         if cfg!(feature = "cmux-quiet") {
+-            assert_eq!(quiet.row_count(), 0, "{cell:?}: {}", quiet.text());
++            assert_eq!(quiet.text().trim(), "• Activity", "{cell:?}: {}", quiet.text());
+             assert!(quiet.image.is_none());
+         }
+         // Search uses this full-content layout, independently of presentation.
+@@ -252,7 +252,7 @@ pub(crate) fn assert_routine(cell: Box<dyn HistoryCell>) {
+         view.toggle_cmux_quiet();
+         draw(&mut view, &cells, 100);
+         assert_eq!(
+-            view.entry_layout(&cells, 0, false).unwrap().row_count() == 0,
++            view.entry_layout(&cells, 0, false).unwrap().text().trim() == "• Activity",
+             cfg!(feature = "cmux-quiet")
+         );
+     }
+@@ -567,7 +567,7 @@ fn cmux_tool_coverage_search_finds_hidden_edit_and_computer_backing_content() {
+         view.cancel_search();
+         draw(&mut view, &cells, 100);
+         assert_eq!(
+-            view.entry_layout(&cells, 0, false).unwrap().row_count() == 0,
++            view.entry_layout(&cells, 0, false).unwrap().text().trim() == "• Activity",
+             cfg!(feature = "cmux-quiet")
+         );
+     }
+@@ -651,7 +651,7 @@ fn cmux_tool_coverage_generated_image_pixels_survive_while_view_metadata_hides()
+     view.image_protocol = Some(crate::pets::ImageProtocol::Kitty);
+     draw(&mut view, &cells, 100);
+     let viewed = view.entry_layout(&cells, 0, false).unwrap();
+-    assert_eq!(viewed.row_count() == 0, cfg!(feature = "cmux-quiet"));
++    assert_eq!(viewed.text().trim() == "• Activity", cfg!(feature = "cmux-quiet"));
+     assert!(viewed.image.is_none());
+     let generated = view.entry_layout(&cells, 1, false).unwrap();
+     assert!(generated.text().contains(TOKEN));
+diff --git a/codex-rs/tui/src/transcript_view/layout.rs b/codex-rs/tui/src/transcript_view/layout.rs
+index 19a0e6fa5e193de05c9818962fbde1491bf6239e..8c3471b2f12a946c8e6d72dd650dfb14ead24c90 100644
+--- a/codex-rs/tui/src/transcript_view/layout.rs
++++ b/codex-rs/tui/src/transcript_view/layout.rs
+@@ -256,6 +256,14 @@ impl TranscriptView {
+             return Some(Arc::new(TextLayout::new(Vec::new(), width)));
+         }
+         let mode = self.mode;
++        if self.is_cmux_quiet() && !full_content && cell.quiet_fullscreen_has_routine() {
++            let follows_routine = crate::history_cell::quiet_batch_follows(&cells[..index]);
++            let mut layout = TextLayout::new(cell.quiet_fullscreen_batch_lines(width, follows_routine), width);
++            if index > 0 && !cell.is_stream_continuation() && layout.row_count() > 0 {
++                layout = layout.with_leading_separator();
++            }
++            return Some(Arc::new(layout));
++        }
+         let cmux_quiet = self.is_cmux_quiet();
+         let mut presentation = self.content_presentation(cell.as_ref(), full_content, mode);
+         let shortcut = self
+@@ -265,8 +273,8 @@ impl TranscriptView {
+         let shares_prompt_background = is_rich_user_prompt(cell.as_ref(), mode)
+             && (0..index)
+                 .rev()
+-                .find(|&previous| {
+-                    let previous = &cells[previous];
++                .find(|&previous_index| {
++                    let previous = &cells[previous_index];
+                     let key = EntryKey::cell(previous);
+                     if let Some(layout) = self.search.match_layout(key).or_else(|| {
+                         self.snapshot()
+@@ -275,6 +283,12 @@ impl TranscriptView {
+                     }) {
+                         return layout.row_count() > 0;
+                     }
++                    if cmux_quiet && previous.quiet_fullscreen_has_routine() {
++                        return !previous.quiet_fullscreen_batch_lines(
++                            width,
++                            crate::history_cell::quiet_batch_follows(&cells[..previous_index]),
++                        ).is_empty();
++                    }
+                     let previous_presentation =
+                         self.content_presentation(previous.as_ref(), self.detailed, mode);
+                     self.cache
+diff --git a/codex-rs/tui/src/transcript_view/layout_tests.rs b/codex-rs/tui/src/transcript_view/layout_tests.rs
+index 44b39bc..45863a6 100644
+--- a/codex-rs/tui/src/transcript_view/layout_tests.rs
++++ b/codex-rs/tui/src/transcript_view/layout_tests.rs
+@@ -654,14 +654,14 @@ mod quiet_fullscreen {
+         ];
+         let mut view = TranscriptView::default();
+         render(&mut view, &cells, 100);
+-        for index in 0..cells.len() { assert!(view.entry_layout(&cells, index, false).unwrap().text().is_empty()); }
++        for index in 0..cells.len() { assert_eq!(view.entry_layout(&cells, index, false).unwrap().text().trim(), if index == 0 { "• Activity" } else { "" }); }
+         view.toggle_cmux_quiet();
+         render(&mut view, &cells, 100);
+         let compact = view.entry_layout(&cells, 0, false).unwrap();
+         assert!(compact.text().contains(ARG), "current compact mode should restore invocation text");
+         view.toggle_cmux_quiet();
+         render(&mut view, &cells, 100);
+-        for index in 0..cells.len() { assert!(view.entry_layout(&cells, index, false).unwrap().text().is_empty()); }
++        for index in 0..cells.len() { assert_eq!(view.entry_layout(&cells, index, false).unwrap().text().trim(), if index == 0 { "• Activity" } else { "" }); }
+     }
+ 
+     #[cfg(feature = "cmux-quiet")]

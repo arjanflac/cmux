@@ -3,7 +3,7 @@ import SwiftUI
 enum SettingsSearchIndex {
     static let defaultSelectionID = sectionID(for: .account)
 
-    private static let sectionEntries: [SettingsSearchEntry] = SettingsNavigationTarget.allCases.map { target in
+    private static let sectionEntries: [SettingsSearchEntry] = SettingsNavigationTarget.allCases.filter { $0 != .personal || Bundle.main.object(forInfoDictionaryKey: "CMUXPersonalBuild") as? Bool == true }.map { target in
         SettingsSearchEntry(
             id: sectionID(for: target),
             kind: .section,

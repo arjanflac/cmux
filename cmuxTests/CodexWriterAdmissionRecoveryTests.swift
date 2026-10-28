@@ -1,4 +1,5 @@
 import AppKit
+import CMUXAgentLaunch
 import CmuxControlSocket
 import Darwin
 import Foundation
@@ -14,6 +15,35 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct CodexWriterAdmissionRecoveryTests {
+    @Test("Daemon frontend admission derives the exact saved account and still requires proof")
+    func managedFrontendUsesSavedRecord() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("cmux-attach-plan-" + UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let stock = root.appendingPathComponent("codex")
+        try Data([0xcf, 0xfa, 0xed, 0xfe]).write(to: stock)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: stock.path)
+        let session = "01a176fc-d044-7e62-92bb-de6c5c50c0d1"
+        let account = root.appendingPathComponent("account").path
+        let record = ControlSurfaceRestoreRecord(modeRawValue: "resumeAgent", kind: "codex",
+            checkpointID: session, source: "agent-hook", workingDirectory: root.path,
+            environment: ["CODEX_HOME": account], launchCommand: .init(launcher: "codex",
+                executablePath: stock.path, arguments: [stock.path, "resume", session],
+                workingDirectory: root.path, environment: ["CODEX_HOME": account], capturedAt: nil, source: "test"),
+            preparedArguments: nil, preparedArgumentsWorkingDirectory: nil,
+            permissionMode: nil, legacyCommand: nil)
+        let evidence = AgentRestoreCodexEvidence()
+        func candidate(home: String? = nil, enabled: Bool = true, verified: Bool = true) -> CodexManagedDaemonAttachPlan? {
+            evidence.managedFrontend(record: record, sessionID: session, effectiveHome: home ?? account,
+                frontendExecutable: root.appendingPathComponent("cmux-codex-quiet").path,
+                enabled: enabled, verify: { $0.codexHome == account && verified })
+        }
+        #expect(candidate()?.sessionID == session)
+        #expect(candidate(home: root.appendingPathComponent("wrong-account").path) == nil)
+        #expect(candidate(enabled: false) == nil)
+        #expect(candidate(verified: false) == nil)
+    }
+
     @Test(arguments: [false, true])
     func heldForeignWriterIsPresentedAndReleaseAdmitsTheSameConversation(launchLeasePending: Bool) async throws {
         try await withCodexRestoreSurface { workspace, panel, root, session in

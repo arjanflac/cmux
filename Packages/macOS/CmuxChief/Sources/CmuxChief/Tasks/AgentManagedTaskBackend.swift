@@ -48,7 +48,7 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
          claudeFactory: @escaping @Sendable (ClaudeCodeBrain.Configuration) -> any AgentClaudeDriver = { ClaudeCodeBrain(configuration: $0) },
          cancelTerminal: @escaping @Sendable (UUID) async throws -> Void = { _ in throw AgentManagedTaskError.unsupported("terminal") },
          openCode: AgentOpenCodeSession = AgentOpenCodeSession(),
-         cancelDeadline: Duration = .seconds(30), idleClaudeLimit: Int = 3, toolRouter: AgentTaskToolRouter? = nil) {
+         cancelDeadline: Duration = .seconds(30), idleClaudeLimit: Int = 1, toolRouter: AgentTaskToolRouter? = nil) {
         codex = AgentCodexTaskDriver(socketPath: "", taskCommand: ["cmux", "task"], cancelDeadline: cancelDeadline,
                                      connectionFactory: { _ in connection }, toolRouter: toolRouter)
         claude = AgentClaudeTaskDriver(taskCommand: ["cmux", "task"], cancelTerminal: cancelTerminal, cancelDeadline: cancelDeadline,
@@ -170,7 +170,7 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
 
     // MARK: Presentation handoff
 
-    /// Whether `id` has a live turn owned by this backend.
+    /// Whether `id` has a live or uncertain owned turn; uncertainty is never treated as safely idle.
     public func hasActiveTurn(id: UUID) async -> Bool {
         switch providers[id] {
         case .codex?: return await codex.hasActiveTurn(id: id)
@@ -179,6 +179,9 @@ public actor AgentManagedTaskBackend: AgentTaskBackend {
         case nil: return false
         }
     }
+
+    /// Releases an idle worker's retained resources without archiving or deleting provider history.
+    public func releaseIdleResources(id: UUID) async throws { try await park(id: id) }
 
     /// Releases an idle conversation's retained process so another client can own its session.
     ///

@@ -387,4 +387,27 @@ struct AgentTaskScopeAuthorityTests {
         let shortEntropy = AgentTaskScopeAuthority(tokenEntropy: { [1, 2] })
         await #expect(throws: AgentTaskScopeError.invalidEntropy) { try await issue(shortEntropy) }
     }
+    @Test func remainingChildCapacityReportsImmutableDirectAndRootBudgetAndRejectsRevokedScope() async throws {
+        let authority = authority()
+        let grant = try await issue(authority, budget: AgentTaskScopeBudget(maxDepth: 2, maxChildrenPerOwner: 3, maxDescendants: 2))
+        #expect(try await authority.remainingChildCapacity(owner: grant.scope) == 2)
+        _ = try await authority.allowChild(owner: grant.scope, newChildID: UUID())
+        #expect(try await authority.remainingChildCapacity(owner: grant.scope) == 1)
+        _ = try await authority.allowChild(owner: grant.scope, newChildID: UUID())
+        #expect(try await authority.remainingChildCapacity(owner: grant.scope) == 0)
+        await authority.revokeOwner(owner)
+        await #expect(throws: AgentTaskScopeError.revoked) { try await authority.remainingChildCapacity(owner: grant.scope) }
+        let fresh = try await issue(authority)
+        #expect(try await authority.remainingChildCapacity(owner: fresh.scope) == 0)
+    }
+
+    @Test func readOnlyAndMaximumDepthScopesCannotPromiseNewWorkerSchedules() async throws {
+        let authority = authority()
+        let reader = try await issue(authority, operations: [.read])
+        await #expect(throws: AgentTaskScopeError.operationDenied) { try await authority.remainingChildCapacity(owner: reader.scope) }
+        let shallow = self.authority()
+        let full = try await issue(shallow, budget: AgentTaskScopeBudget(maxDepth: 0))
+        #expect(try await shallow.remainingChildCapacity(owner: full.scope) == 0)
+    }
+
 }

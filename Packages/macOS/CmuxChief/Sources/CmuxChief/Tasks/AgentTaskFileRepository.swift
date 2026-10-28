@@ -21,6 +21,9 @@ public actor AgentTaskFileRepository: AgentTaskRepository {
         var finished = 0
         for file in files {
             var record = try JSONDecoder().decode(AgentTaskRecord.self, from: Data(contentsOf: file))
+            guard UUID(uuidString: file.deletingPathExtension().lastPathComponent) == record.id else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
             // Preserve unfinished task identities and ancestry regardless of
             // age. Cache only recent result bodies; read older ones on demand.
             if record.phase.isFinished {
@@ -33,10 +36,12 @@ public actor AgentTaskFileRepository: AgentTaskRepository {
     }
 
     /// Loads an older receipt on demand instead of retaining all results in memory.
-    public func read(_ id: UUID) throws -> AgentTaskRecord? {
+    public func read(_ id: UUID) async throws -> AgentTaskRecord? {
         let file = directory.appendingPathComponent(id.uuidString + ".json")
         guard FileManager.default.fileExists(atPath: file.path) else { return nil }
-        return try JSONDecoder().decode(AgentTaskRecord.self, from: Data(contentsOf: file))
+        let record = try JSONDecoder().decode(AgentTaskRecord.self, from: Data(contentsOf: file))
+        guard record.id == id else { throw CocoaError(.fileReadCorruptFile) }
+        return record
     }
 
     /// Atomically saves a receipt inside a user-private directory.

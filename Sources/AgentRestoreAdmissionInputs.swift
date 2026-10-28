@@ -10,6 +10,7 @@ struct AgentRestoreAdmissionInputs: Sendable {
     let codexHome: String?
     let waitForChange: Bool
     let launchLeasePending: Bool
+    var managedCodexFrontend = false
 }
 
 /// Remembers when each restore operation first asked for admission.
