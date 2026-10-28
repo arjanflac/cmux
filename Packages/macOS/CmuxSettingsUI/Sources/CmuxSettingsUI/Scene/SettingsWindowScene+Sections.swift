@@ -8,8 +8,8 @@ extension SettingsWindowRoot {
     /// Sections a window opening now mounts progressively. Cloud stays
     /// eager while unavailable: it renders nothing, so a placeholder would
     /// only advertise a section the sidebar hides.
-    static func mountOrder(cloudAvailable: Bool) -> [SettingsSectionID] {
-        SettingsSectionMountModel.displayOrder.filter { $0 != .cloudMachines || cloudAvailable }
+    static func mountOrder(cloudAvailable: Bool, personalAvailable: Bool = false) -> [SettingsSectionID] {
+        SettingsSectionMountModel.displayOrder.filter { ($0 != .cloudMachines || cloudAvailable) && ($0 != .personal || personalAvailable) }
     }
 
     func anchorID(for section: SettingsSectionID) -> String {
@@ -23,6 +23,9 @@ extension SettingsWindowRoot {
         // Cloud, Devices, Networking, the sidebar sections, Beta Features,
         // Automation, Computer Use, Browser (with embedded Import), Global
         // Hotkey, Keyboard Shortcuts, Workspace Colors, cmux.json, Reset.
+        if hostActions.isPersonalCustomizationAvailable {
+            slot(.personal, proxy: proxy) { PersonalSection(runtime: runtime) }
+        }
         slot(.account, proxy: proxy) {
             AccountSection(
                 defaultsStore: defaultsStore,
@@ -60,7 +63,7 @@ extension SettingsWindowRoot {
         }
 
         slot(.textBox, proxy: proxy) {
-            TextBoxSection(defaultsStore: defaultsStore, catalog: catalog)
+            TextBoxSection(defaultsStore: defaultsStore, catalog: catalog, showsLaunchControls: !hostActions.isPersonalCustomizationAvailable)
         }
 
         slot(.sleepyMode, proxy: proxy) {
@@ -103,7 +106,7 @@ extension SettingsWindowRoot {
         }
 
         slot(.betaFeatures, proxy: proxy) {
-            BetaFeaturesSection(defaultsStore: defaultsStore, catalog: catalog)
+            BetaFeaturesSection(defaultsStore: defaultsStore, catalog: catalog, showsConversationSidebar: !hostActions.isPersonalCustomizationAvailable)
         }
 
         slot(.automation, proxy: proxy) {
@@ -152,7 +155,8 @@ extension SettingsWindowRoot {
                 errorLog: runtime.errorLog,
                 hostActions: hostActions,
                 defaultShortcutResolver: runtime.shortcutDefaultResolver,
-                keymapProposals: runtime.keymapProposals
+                keymapProposals: runtime.keymapProposals,
+                showsBaseKeymap: !hostActions.isPersonalCustomizationAvailable
             )
         }
 

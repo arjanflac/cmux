@@ -1,6 +1,8 @@
 import SwiftUI
+import CmuxSettingsUI
 
 enum SettingsNavigationTarget: String, CaseIterable, Identifiable {
+    case personal
     case account
     case app
     case themes
@@ -30,6 +32,8 @@ enum SettingsNavigationTarget: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .personal:
+            return CmuxSettingsUI.SettingsSectionID.personal.title
         case .computers:
             return String(localized: "settings.section.devices", defaultValue: "Devices")
         case .account:
@@ -79,6 +83,8 @@ enum SettingsNavigationTarget: String, CaseIterable, Identifiable {
 
     var symbolName: String {
         switch self {
+        case .personal:
+            return CmuxSettingsUI.SettingsSectionID.personal.symbolName
         case .computers:
             return "desktopcomputer"
         case .account:
@@ -128,6 +134,8 @@ enum SettingsNavigationTarget: String, CaseIterable, Identifiable {
 
     var searchText: String {
         switch self {
+        case .personal:
+            return CmuxSettingsUI.SettingsSectionID.personal.searchKeywords
         case .computers:
             return String(localized: "settings.devices.keywords", defaultValue: "devices my devices computers macs mac discovery discover discoverable incoming access tailscale pairing remote workspaces")
         case .account:

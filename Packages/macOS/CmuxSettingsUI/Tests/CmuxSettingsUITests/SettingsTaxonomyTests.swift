@@ -15,7 +15,7 @@ struct SettingsTaxonomyTests {
 
     /// Locks the intended concept-to-leaf mapping for the browse sidebar.
     @Test func groupsFollowTheBrowseTaxonomy() {
-        #expect(SettingsTaxonomyGroup.general.sections == [.account, .app, .themes, .sleepyMode])
+        #expect(SettingsTaxonomyGroup.general.sections == [.personal, .account, .app, .themes, .sleepyMode])
         #expect(SettingsTaxonomyGroup.terminal.sections == [.terminal, .textBox])
         #expect(SettingsTaxonomyGroup.workspace.sections == [.workspaceColors])
         #expect(SettingsTaxonomyGroup.sidebarAndDock.sections == [.sidebarAppearance, .customSidebars])
@@ -30,7 +30,7 @@ struct SettingsTaxonomyTests {
 
     /// Verifies grouping leaves the search/deep-link section identities intact.
     @Test func taxonomyKeepsExistingSectionSearchIdentities() throws {
-        let index = SettingsSearchIndex(catalog: SettingCatalog(), curatedEntries: [])
+        let index = SettingsSearchIndex(catalog: SettingCatalog(), curatedEntries: [], personalCustomizationAvailable: true)
         let sectionEntries = index.match("")
         let entriesByID = Dictionary(uniqueKeysWithValues: sectionEntries.map { ($0.id, $0) })
 

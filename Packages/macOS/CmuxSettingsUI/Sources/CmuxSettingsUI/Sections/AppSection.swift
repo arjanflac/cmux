@@ -632,6 +632,7 @@ public struct AppSection: View {
             }
             SettingsCardDivider()
 
+            if !hostActions.isPersonalCustomizationAvailable {
             // Reorder on Notification
             SettingsCardRow(
                 configurationReview: .json("app.reorderOnNotification"),
@@ -650,6 +651,7 @@ public struct AppSection: View {
             }
             SettingsCardDivider()
 
+            }
             // Dock Badge
             SettingsCardRow(
                 configurationReview: .json("notifications.dockBadge"),

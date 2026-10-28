@@ -63,6 +63,11 @@ public protocol SettingsHostActions: AnyObject, CloudMachinesSettingsActions {
     /// external editor. The package's inline editor still works;
     /// this is the escape hatch for users who prefer their own
     /// editor.
+    /// Whether this host ships the personal cmux+ customization page.
+    var isPersonalCustomizationAvailable: Bool { get }
+    /// Changes the active cmux window using its existing sidebar action, not a saved setting.
+    func togglePersonalSidebar()
+
     func quietCodexStatus() async -> QuietCodexStatus
     func openQuietCodexBuilds()
 
@@ -464,6 +469,8 @@ public struct QuietCodexStatus: Sendable {
 }
 
 public extension SettingsHostActions {
+    var isPersonalCustomizationAvailable: Bool { false }
+    func togglePersonalSidebar() {}
     func quietCodexStatus() async -> QuietCodexStatus { .init(bundledVersion: nil, stockVersion: nil, compatible: false) }
     func openQuietCodexBuilds() {}
     /// Returns the registry-backed agent choices shown by notification sound settings.

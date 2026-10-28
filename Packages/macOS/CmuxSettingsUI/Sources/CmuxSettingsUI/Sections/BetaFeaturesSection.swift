@@ -6,6 +6,7 @@ import SwiftUI
 /// toggles. Each toggle gates an unstable feature that is off by default.
 @MainActor
 public struct BetaFeaturesSection: View {
+    private let showsConversationSidebar: Bool
     @State private var feed: DefaultsValueModel<Bool>
     @State private var conversationSidebar: DefaultsValueModel<Bool>
     @State private var extensions: DefaultsValueModel<Bool>
@@ -21,7 +22,8 @@ public struct BetaFeaturesSection: View {
     /// custom sidebars opt-in.
     @State private var customSidebarsManagedByPolicy = ManagedDevicePolicy().isEnforced(.disableCustomSidebars)
 
-    public init(defaultsStore: UserDefaultsSettingsStore, catalog: SettingCatalog) {
+    public init(defaultsStore: UserDefaultsSettingsStore, catalog: SettingCatalog, showsConversationSidebar: Bool = true) {
+        self.showsConversationSidebar = showsConversationSidebar
         _feed = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.betaFeatures.rightSidebarFeed))
         _conversationSidebar = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.betaFeatures.conversationSidebar))
         _extensions = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.betaFeatures.extensions))
@@ -45,8 +47,10 @@ public struct BetaFeaturesSection: View {
                 SettingsCardDivider()
                 feedRow
                 SettingsCardDivider()
-                conversationSidebarRow
-                SettingsCardDivider()
+                if showsConversationSidebar {
+                    conversationSidebarRow
+                    SettingsCardDivider()
+                }
                 extensionsRow
                 SettingsCardDivider()
                 customSidebarsRow
