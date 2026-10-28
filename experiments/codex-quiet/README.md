@@ -145,6 +145,13 @@ until an agent reviews the new source pin, adapts patches, runs regressions and
 bundles a replacement. The button does not automatically repatch arbitrary
 upstream code, update Codex or replace a running app.
 
+The current source targets Codex **0.165.0**. Its stock managed updater can
+advance the shared daemon independently while cmux is open. Launch and restore
+eligibility derive the required version from the bundled manifest and still
+require an exact compatible stock CLI/daemon. This setting does not pin global
+Codex updates. A mismatch uses stock before submission; keep that fallback until
+the matching derived frontend has been built and verified.
+
 The app observes trusted cmux-owned chat IDs on the native coordinator's existing
 connection. Read-only `thread/read` metadata and `thread/status/changed` cover
 phone activity while a frontend sleeps or closes. Transport loss is unknown;
