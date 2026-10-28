@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import json
 import pty
 import shutil
 import socket
@@ -388,10 +389,13 @@ def test_headless_marker_follows_the_subcommand(failures: list[str]) -> None:
         )
 
 
-def run_quiet_wrapper_case(*,check=0,quiet_exit=0,version='0.164.0',in_cmux=True,tty=True,enabled=True):
+def run_quiet_wrapper_case(*,check=0,quiet_exit=0,version='0.164.0',in_cmux=True,tty=True,enabled=True,manifest_release='rust-v0.164.0',attach_only=True):
  with tempfile.TemporaryDirectory() as temp:
-  root=Path(temp); wrapper=root/'cmux-codex-wrapper'; shutil.copy2(SOURCE_WRAPPER,wrapper); wrapper.chmod(0o755)
-  stock=root/'codex'; quiet=root/'cmux-codex-quiet'; log=root/'events'
+  root=Path(temp); bin_dir=root/'bin'; bin_dir.mkdir(); wrapper=bin_dir/'cmux-codex-wrapper'; shutil.copy2(SOURCE_WRAPPER,wrapper); wrapper.chmod(0o755)
+  if manifest_release is not None:
+   manifest=root/'licenses'/'codex-quiet'/'manifest.json'; manifest.parent.mkdir(parents=True)
+   manifest.write_text(json.dumps({'release':manifest_release,'attach_only':attach_only}))
+  stock=root/'codex'; quiet=bin_dir/'cmux-codex-quiet'; log=root/'events'
   stock.write_text('#!/bin/sh\nif [ "$1" = --version ]; then echo "codex-cli '+version+'"; exit 0; fi\necho stock >> "$EVENTS"\n'); stock.chmod(0o755)
   quiet.write_text('#!/bin/sh\nif [ "$1" = --cmux-check ]; then echo check >> "$EVENTS"; exit '+str(check)+'; fi\necho quiet >> "$EVENTS"\nexit '+str(quiet_exit)+'\n'); quiet.chmod(0o755)
   env=os.environ.copy()
@@ -414,6 +418,12 @@ def test_quiet_frontend_routes_before_submission_and_never_replays(failures: lis
         ({"check": 1}, (0, ["check", "stock"])),
         ({"quiet_exit": 42}, (42, ["check", "quiet"])),
         ({"version": "0.165.0"}, (0, ["stock"])),
+        ({"version": "0.165.0", "manifest_release": "rust-v0.165.0"}, (0, ["check", "quiet"])),
+        ({"manifest_release": "rust-v0.165.0"}, (0, ["stock"])),
+        ({"manifest_release": None}, (0, ["stock"])),
+        ({"manifest_release": "rust-v0.164.0\n"}, (0, ["stock"])),
+        ({"manifest_release": 164}, (0, ["stock"])),
+        ({"attach_only": False}, (0, ["stock"])),
         ({"in_cmux": False}, (0, ["stock"])),
         ({"tty": False}, (0, ["stock"])),
         ({"enabled": False}, (0, ["stock"])),
