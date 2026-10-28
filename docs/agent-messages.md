@@ -94,6 +94,33 @@ Completed inbox events and per-turn receipts survive recent-cache pruning.
 These controls are local-only. No global skills, hooks, aliases, launcher
 replacement, Claude configuration or standalone scheduling service is installed.
 
+## Personal settings
+
+The personal app groups these controls in **Settings > cmux+**, at the top of
+the settings sidebar. The page uses the existing setting keys and stores; opening
+it does not change defaults or launch agents. Search results and older links to
+relocated controls lead to the same page. Other builds retain their regular panes.
+
+The page contains quiet-renderer compatibility and build links, background
+coordination, auto-resume, terminal memory controls, TextBox launch defaults,
+workspace ordering, the Session-first keymap and Conversation Sidebar. The sidebar
+button uses the existing action for the last active main window; it is not a new
+global visibility preference. Included window movement, narrower resize and input
+layout fixes need no separate switch. Chief remains separate from this coordinator.
+
+Quiet mode currently covers the **fullscreen transcript**. The inline/terminal
+scrollback renderer has a separate output path and is not covered. Ctrl+T retains
+the fullscreen quiet/compact toggle. This build compiles the derived TUI target,
+not a replacement stock CLI or daemon executable, although its upstream Rust
+libraries still need compilation.
+
+Pure frontend updates may reuse a retained compiled native app when the only
+changes are the quiet frontend subtree and its two exact proof/build workflows.
+Native, packaging and policy changes still require a new native base. New native
+archives are retained for 90 days; existing archives keep their original expiry.
+Source, workflow, patch, binary and signature checks remain required. Repackaging
+still stages a complete app and replaces only a closed installation.
+
 ## Hook-delivered messages
 
 `cmux agent message` sends a message to the agent running in another workspace or surface. cmux delivers it through that agent's own hooks, never by typing into its terminal. A message can't land in a prompt someone is halfway through typing, and it can't press Enter for them.
@@ -248,7 +275,7 @@ existing private SQLite page quota; storage exhaustion still fails closed.
 
 ## Session-first navigation
 
-Settings > Keyboard Shortcuts > Base Keymap > **Session-first** previews an
+Settings > cmux+ > Base Keymap > **Session-first** in the personal app previews an
 optional layout: Cmd+T creates a sidebar workspace for a new conversation,
 Cmd+N adds a terminal surface to the current workspace, and Ctrl+Tab /
 Ctrl+Shift+Tab move between sidebar workspaces. Cmd+D and Cmd+Shift+D still
@@ -257,7 +284,7 @@ choosing **cmux (Default)** removes the preset's overrides. It does not move,
 close or merge existing workspaces or change their directories.
 
 For a conversation list instead of workspace rows, enable **Conversation
-Sidebar** in Settings > Beta Features, then choose **Conversations** from the
+Sidebar** in Settings > cmux+, then choose **Conversations** from the
 left sidebar picker. In the personal build the local switch is sufficient;
 upstream builds also require their release rollout. This existing native view combines live Codex/Claude and
 other supported agent sessions with Vault history, deduplicates by provider and
