@@ -145,8 +145,12 @@ until an agent reviews the new source pin, adapts patches, runs regressions and
 bundles a replacement. The button does not automatically repatch arbitrary
 upstream code, update Codex or replace a running app.
 
-The current source targets Codex **0.165.0**. Its stock managed updater can
-advance the shared daemon independently while cmux is open. Launch and restore
+The current source targets Codex **0.165.0**. Four layout patches were rebased
+onto its shared transcript layout helper; the other fourteen patches and all
+non-layout sections retain their earlier bytes. Earlier byte-preservation notes
+describe cohort boundaries within a release, not an absence of upgrade rebases.
+
+Codex’s stock managed updater can advance the shared daemon independently while cmux is open. Launch and restore
 eligibility derive the required version from the bundled manifest and still
 require an exact compatible stock CLI/daemon. This setting does not pin global
 Codex updates. A mismatch uses stock before submission; keep that fallback until
