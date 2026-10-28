@@ -57,28 +57,46 @@
              .data
 --- a/codex-rs/tui/src/transcript_view/layout.rs
 +++ b/codex-rs/tui/src/transcript_view/layout.rs
-@@ -168,6 +168,9 @@
+@@ -64,9 +64,13 @@ fn cell_content_layout(
+     mode: HistoryRenderMode,
+     presentation: CellPresentation,
+     shortcut: Option<ShortcutHint>,
++    cmux_quiet: bool,
+ ) -> TextLayout {
++    if cmux_quiet && !presentation.detailed && cell.quiet_fullscreen_is_routine() {
++        return TextLayout::new(Vec::new(), width);
++    }
+     let mut layout = if presentation.disclosure {
+-        let quiet = (!presentation.expanded)
++        let quiet = (!presentation.expanded && (!cfg!(feature = "cmux-quiet") || cmux_quiet))
+             .then(|| cell.quiet_fullscreen_line(width))
+             .flatten();
+         let quiet_disclosure = quiet.is_some();
+@@ -247,6 +251,7 @@ impl TranscriptView {
              return Some(Arc::new(TextLayout::new(Vec::new(), width)));
          }
          let mode = self.mode;
-+        if self.is_cmux_quiet() && !full_content && cell.quiet_fullscreen_is_routine() {
-+            return Some(Arc::new(TextLayout::new(Vec::new(), width)));
-+        }
-         let ids = cell.activity_ids();
-         let disclosure = !self.detailed && mode == HistoryRenderMode::Rich && !ids.is_empty();
-         let manually_expanded = self.disclosure.is_expanded(&ids);
-@@ -191,9 +194,10 @@
-             .disclosure
-             .keymap
-             .primary_hint(KeymapContext::Global, "open_transcript");
 +        let cmux_quiet = self.is_cmux_quiet();
+         let mut presentation = self.content_presentation(cell.as_ref(), full_content, mode);
+         let shortcut = self
+             .disclosure
+@@ -275,6 +280,7 @@ impl TranscriptView {
+                                 mode,
+                                 previous_presentation,
+                                 shortcut,
++                                cmux_quiet,
+                             )
+                         })
+                 })
+@@ -285,7 +291,7 @@ impl TranscriptView {
+         presentation.turn_tip_space = self.turn_tip_key == Some(EntryKey::cell(cell));
          Some(self.cache.get(cell, width, presentation, || {
-             let mut layout = if disclosure {
--                let quiet = (!expanded)
-+                let quiet = (!expanded && (!cfg!(feature = "cmux-quiet") || cmux_quiet))
-                     .then(|| cell.quiet_fullscreen_line(width))
-                     .flatten();
-                 let quiet_disclosure = quiet.is_some();
+             let mut layout =
+-                cell_content_layout(cell.as_ref(), width, mode, presentation, shortcut);
++                cell_content_layout(cell.as_ref(), width, mode, presentation, shortcut, cmux_quiet);
+             if shares_prompt_background {
+                 layout = layout.without_leading_blank_row();
+             }
 --- a/codex-rs/tui/src/chatwidget/activity_presentation.rs
 +++ b/codex-rs/tui/src/chatwidget/activity_presentation.rs
 @@ -22,7 +22,7 @@

@@ -239,33 +239,33 @@ index 5b14559f6325d54aeee6a835287460631d4ca7bb..e67ed4a5fc829cfbbae61ad8199fb84f
      fn retained_hyperlink_lines(&self, width: u16, detailed: bool) -> Vec<HyperlinkLine> {
          if detailed {
 diff --git a/codex-rs/tui/src/transcript_view/layout.rs b/codex-rs/tui/src/transcript_view/layout.rs
-index f91e3d022576624b954554ae20d6a091f70ad489..20b30c36efae3b936e0a4bbad4df39262384603b 100644
+index dd81a380471e0cd7e4ee2dc3315f747c2d592f84..50c50b01de96871d76723c14099d8bf9c38b4ec5 100644
 --- a/codex-rs/tui/src/transcript_view/layout.rs
 +++ b/codex-rs/tui/src/transcript_view/layout.rs
-@@ -193,15 +193,25 @@ impl TranscriptView {
-             .primary_hint(KeymapContext::Global, "open_transcript");
-         Some(self.cache.get(cell, width, presentation, || {
-             let mut layout = if disclosure {
-+                let quiet = (!expanded)
-+                    .then(|| cell.quiet_fullscreen_line(width))
-+                    .flatten();
-+                let quiet_disclosure = quiet.is_some();
-                 activity_layout(
-                     ActivityTranscriptLines {
-                         activity: if expanded {
-                             cell.expanded_hyperlink_lines(width)
-+                        } else if let Some(line) = quiet {
-+                            vec![line]
-                         } else {
-                             cell.compact_hyperlink_lines(width)
-                         },
-                         auxiliary: Vec::new(),
--                        disclosure: cell.activity_disclosure(width),
-+                        disclosure: if quiet_disclosure {
-+                            Some(ActivityDisclosure::Generic)
-+                        } else {
-+                            cell.activity_disclosure(width)
-+                        },
-                     },
-                     width,
-                     expanded,
+@@ -66,15 +66,25 @@ fn cell_content_layout(
+     shortcut: Option<ShortcutHint>,
+ ) -> TextLayout {
+     let mut layout = if presentation.disclosure {
++        let quiet = (!presentation.expanded)
++            .then(|| cell.quiet_fullscreen_line(width))
++            .flatten();
++        let quiet_disclosure = quiet.is_some();
+         activity_layout(
+             ActivityTranscriptLines {
+                 activity: if presentation.expanded {
+                     cell.expanded_hyperlink_lines(width)
++                } else if let Some(line) = quiet {
++                    vec![line]
+                 } else {
+                     cell.compact_hyperlink_lines(width)
+                 },
+                 auxiliary: Vec::new(),
+-                disclosure: cell.activity_disclosure(width),
++                disclosure: if quiet_disclosure {
++                    Some(ActivityDisclosure::Generic)
++                } else {
++                    cell.activity_disclosure(width)
++                },
+             },
+             width,
+             presentation.expanded,
