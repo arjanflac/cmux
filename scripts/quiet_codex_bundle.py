@@ -13,7 +13,7 @@ PROOF = ROOT / 'experiments/codex-quiet'
 
 
 def validate_native_reuse(native_sha: str, frontend_sha: str, comparison: dict) -> None:
-    """Reuse a compiled app only when its descendant changed frontend-proof files alone."""
+    """Reuse a compiled app for frontend-proof files and their two exact CI workflows."""
     if not all(re.fullmatch(r'[0-9a-f]{40}', value) for value in [native_sha, frontend_sha]):
         raise ValueError('Expected immutable source commit identities')
     if native_sha == frontend_sha:
@@ -25,7 +25,10 @@ def validate_native_reuse(native_sha: str, frontend_sha: str, comparison: dict) 
         raise ValueError('Cannot establish a complete descendant source comparison')
     for item in files:
         for name in [item.get('filename'), item.get('previous_filename', item.get('filename'))]:
-            if (not isinstance(name, str) or not name.startswith('experiments/codex-quiet/')
+            if (not isinstance(name, str) or not (
+                    name.startswith('experiments/codex-quiet/') or name in (
+                        '.github/workflows/quiet-codex-proof.yml',
+                        '.github/workflows/quiet-codex-frontend.yml'))
                     or '..' in Path(name).parts):
                 raise ValueError('Native inputs changed; compile a new app instead of reusing this artifact')
 
