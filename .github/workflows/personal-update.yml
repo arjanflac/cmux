@@ -243,7 +243,8 @@ jobs:
           name: cmux-native-unpackaged-arm64-${{ github.run_id }}
           path: dist/native/*
           compression-level: 0
-          retention-days: 7
+          # Frontend-only upgrades reuse this compiled base across CLI releases.
+          retention-days: 90
       - name: Keep failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
