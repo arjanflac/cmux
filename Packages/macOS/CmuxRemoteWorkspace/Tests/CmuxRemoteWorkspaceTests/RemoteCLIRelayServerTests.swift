@@ -40,7 +40,7 @@ private final class RecordingRelayRewriter: RemoteRelayCommandRewriting, @unchec
 
 /// Minimal one-shot unix socket server standing in for the local cmux
 /// control socket: reads the request to EOF, records it, writes `response`.
-private final class FakeUnixSocketServer: @unchecked Sendable {
+final class FakeUnixSocketServer: @unchecked Sendable {
     let path: String
     private let response: Data?
     private let lock = NSLock()
@@ -49,6 +49,7 @@ private final class FakeUnixSocketServer: @unchecked Sendable {
     private let clientHangupProbe = DispatchSemaphore(value: 0)
     private let clientHungUp = DispatchSemaphore(value: 0)
     private let listenFD: Int32
+    private let workerFinished = DispatchGroup()
 
     var request: Data {
         lock.lock()
@@ -56,7 +57,7 @@ private final class FakeUnixSocketServer: @unchecked Sendable {
         return _request
     }
 
-    init(response: Data?) throws {
+    init(response: Data?, acceptClient: @escaping @Sendable (Int32) -> Int32 = { Darwin.accept($0, nil, nil) }) throws {
         self.response = response
         path = NSTemporaryDirectory() + "cmux-relay-test-\(UUID().uuidString.prefix(8)).sock"
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -95,8 +96,11 @@ private final class FakeUnixSocketServer: @unchecked Sendable {
             throw NSError(domain: "FakeUnixSocketServer", code: Int(listenErrno), userInfo: [NSLocalizedDescriptionKey: "listen() failed errno=\(listenErrno)"])
         }
         self.listenFD = fd
+        workerFinished.enter()
+        let workerFinished = self.workerFinished
         Thread.detachNewThread { [weak self] in
-            let client = accept(fd, nil, nil)
+            defer { workerFinished.leave() }
+            let client = acceptClient(fd)
             guard client >= 0 else { return }
             // Darwin refuses socket options with EINVAL once a client has
             // hung up before accept, so a write there would raise SIGPIPE and
@@ -155,9 +159,13 @@ private final class FakeUnixSocketServer: @unchecked Sendable {
         return clientHungUp.wait(timeout: .now() + timeout) == .success
     }
 
-    func close() {
+    func close(joinTimeout: DispatchTimeInterval = .seconds(1)) {
         Darwin.close(listenFD)
         unlink(path)
+    }
+
+    func waitForWorkerCompletion(timeout: DispatchTimeInterval) -> Bool {
+        workerFinished.wait(timeout: .now() + timeout) == .success
     }
 }
 
