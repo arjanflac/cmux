@@ -40,7 +40,9 @@ private final class RecordingRelayRewriter: RemoteRelayCommandRewriting, @unchec
 
 /// Minimal one-shot unix socket server standing in for the local cmux
 /// control socket: reads the request to EOF, records it, writes `response`.
-private final class FakeUnixSocketServer: @unchecked Sendable {
+/// Unchecked Sendable: the lock protects request/cancellation state. The owned
+/// worker alone closes its listener and peer, even if cancellation cannot join.
+final class FakeUnixSocketServer: @unchecked Sendable {
     let path: String
     private let response: Data?
     private let lock = NSLock()
@@ -48,7 +50,8 @@ private final class FakeUnixSocketServer: @unchecked Sendable {
     private let requestReceived = DispatchSemaphore(value: 0)
     private let clientHangupProbe = DispatchSemaphore(value: 0)
     private let clientHungUp = DispatchSemaphore(value: 0)
-    private let listenFD: Int32
+    private var stopping = false
+    private let workerFinished = DispatchGroup()
 
     var request: Data {
         lock.lock()
@@ -56,7 +59,7 @@ private final class FakeUnixSocketServer: @unchecked Sendable {
         return _request
     }
 
-    init(response: Data?) throws {
+    init(response: Data?, acceptClient: @escaping @Sendable (Int32) -> Int32 = { Darwin.accept($0, nil, nil) }) throws {
         self.response = response
         path = NSTemporaryDirectory() + "cmux-relay-test-\(UUID().uuidString.prefix(8)).sock"
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -94,55 +97,93 @@ private final class FakeUnixSocketServer: @unchecked Sendable {
             Darwin.close(fd)
             throw NSError(domain: "FakeUnixSocketServer", code: Int(listenErrno), userInfo: [NSLocalizedDescriptionKey: "listen() failed errno=\(listenErrno)"])
         }
-        self.listenFD = fd
-        Thread.detachNewThread { [weak self] in
-            let client = accept(fd, nil, nil)
-            guard client >= 0 else { return }
-            // Darwin refuses socket options with EINVAL once a client has
-            // hung up before accept, so a write there would raise SIGPIPE and
-            // kill the test process. Only a socket that took SO_NOSIGPIPE is
-            // written to; the other has no reader left.
-            var noSigPipe: Int32 = 1
-            let canWrite = withUnsafePointer(to: &noSigPipe) { pointer in
-                setsockopt(
-                    client,
-                    SOL_SOCKET,
-                    SO_NOSIGPIPE,
-                    pointer,
-                    socklen_t(MemoryLayout<Int32>.size)
-                ) == 0
+        guard fcntl(fd, F_SETFL, fcntl(fd, F_GETFL) | O_NONBLOCK) == 0 else {
+            let failure = errno
+            Darwin.close(fd)
+            unlink(path)
+            throw POSIXError(POSIXErrorCode(rawValue: failure) ?? .EIO)
+        }
+        workerFinished.enter()
+        Thread.detachNewThread { [self] in
+            defer {
+                Darwin.close(fd)
+                workerFinished.leave()
             }
+            var client: Int32 = -1
+            while !isStopped {
+                guard waitForIO(fd, events: Int16(POLLIN)) else { return }
+                client = acceptClient(fd)
+                if client >= 0 { break }
+                if errno != EINTR && errno != EAGAIN && errno != EWOULDBLOCK { return }
+            }
+            guard client >= 0 else { return }
+            defer { Darwin.close(client) }
+            // Every peer inherits SO_NOSIGPIPE from the listener. Keep all
+            // worker I/O nonblocking so cancellation needs no cross-thread
+            // close/shutdown that could race descriptor reuse or a write.
+            guard fcntl(client, F_SETFL, fcntl(client, F_GETFL) | O_NONBLOCK) == 0 else { return }
             var scratch = [UInt8](repeating: 0, count: 4096)
-            while true {
+            while !isStopped {
+                guard waitForIO(client, events: Int16(POLLIN)) else { return }
                 let count = Darwin.read(client, &scratch, scratch.count)
                 if count > 0 {
-                    self?.lock.lock()
-                    self?._request.append(scratch, count: count)
-                    self?.lock.unlock()
+                    lock.lock()
+                    _request.append(scratch, count: count)
+                    lock.unlock()
                     continue
                 }
+                if count < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) { continue }
+                guard count == 0 else { return }
                 break
             }
-            self?.requestReceived.signal()
-            if let response = self?.response {
-                if canWrite {
-                    response.withUnsafeBytes { raw in
-                        _ = Darwin.write(client, raw.baseAddress, raw.count)
-                    }
-                }
+            guard !isStopped else { return }
+            requestReceived.signal()
+            if let response {
+                write(response, to: client)
             } else {
-                self?.clientHangupProbe.wait()
+                while !isStopped {
+                    if clientHangupProbe.wait(timeout: .now() + .milliseconds(20)) == .success { break }
+                }
                 let deadline = Date().addingTimeInterval(2)
-                while Date() < deadline {
+                while !isStopped && Date() < deadline {
                     var probe: UInt8 = 0
-                    if !canWrite || Darwin.write(client, &probe, 1) <= 0 {
-                        self?.clientHungUp.signal()
+                    if Darwin.write(client, &probe, 1) <= 0 {
+                        clientHungUp.signal()
                         break
                     }
                     usleep(10_000)
                 }
             }
-            Darwin.close(client)
+        }
+    }
+
+    private var isStopped: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return stopping
+    }
+
+    private func waitForIO(_ descriptor: Int32, events: Int16) -> Bool {
+        while !isStopped {
+            var readiness = pollfd(fd: descriptor, events: events, revents: 0)
+            let ready = Darwin.poll(&readiness, 1, 20)
+            if ready < 0 && errno == EINTR { continue }
+            if ready < 0 || readiness.revents & Int16(POLLNVAL) != 0 { return false }
+            if ready > 0 { return true }
+        }
+        return false
+    }
+
+    private func write(_ response: Data, to client: Int32) {
+        var sent = 0
+        while sent < response.count && !isStopped {
+            guard waitForIO(client, events: Int16(POLLOUT)) else { return }
+            let count = response.withUnsafeBytes { raw in
+                Darwin.write(client, raw.baseAddress!.advanced(by: sent), raw.count - sent)
+            }
+            if count > 0 { sent += count; continue }
+            if count < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) { continue }
+            return
         }
     }
 
@@ -155,9 +196,19 @@ private final class FakeUnixSocketServer: @unchecked Sendable {
         return clientHungUp.wait(timeout: .now() + timeout) == .success
     }
 
-    func close() {
-        Darwin.close(listenFD)
+    func close(joinTimeout: DispatchTimeInterval = .seconds(1)) {
+        lock.lock()
+        stopping = true
+        lock.unlock()
+        clientHangupProbe.signal()
+        if !waitForWorkerCompletion(timeout: joinTimeout) {
+            Issue.record("The owned relay fixture did not stop before its join deadline")
+        }
         unlink(path)
+    }
+
+    func waitForWorkerCompletion(timeout: DispatchTimeInterval) -> Bool {
+        workerFinished.wait(timeout: .now() + timeout) == .success
     }
 }
 
