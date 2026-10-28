@@ -1,4 +1,3 @@
-import CryptoKit
 import Darwin
 import Foundation
 
@@ -38,14 +37,9 @@ public struct CodexManagedDaemonAttachProbe: Sendable {
               let manifestData = try? Data(contentsOf: URL(fileURLWithPath: plan.frontendExecutable)
                 .deletingLastPathComponent().deletingLastPathComponent()
                 .appendingPathComponent("licenses/codex-quiet/manifest.json")),
-              let manifest = try? JSONSerialization.jsonObject(with: manifestData) as? [String: Any],
-              manifest["attach_only"] as? Bool == true,
-              manifest["release"] as? String == "rust-v0.164.0",
-              manifest["commit"] as? String == "6aaac694803004a63c6f393d153c96d22521a6b9",
-              manifest["repository"] as? String == "https://github.com/openai/codex",
-              manifest["binary_sha256"] as? String == SHA256.hash(data: binary).map({ String(format: "%02x", $0) }).joined(),
+              let manifest = CodexQuietManifest(data: manifestData), manifest.verifiesBinary(binary),
               run(plan.stockExecutable, arguments: ["--version"], environment: plan.environment,
-                  cwd: plan.workingDirectory, expectedOutput: "codex-cli 0.164.0"),
+                  cwd: plan.workingDirectory, expectedOutput: "codex-cli \(manifest.version)"),
               run(plan.frontendExecutable, arguments: ["--cmux-check"] + plan.arguments.dropFirst(),
                   environment: plan.environment, cwd: plan.workingDirectory) else { return false }
         return true
